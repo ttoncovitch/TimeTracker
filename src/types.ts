@@ -33,6 +33,9 @@ export interface EmployeeDayRecord {
   
   totalOverbreak: number;
 
+  tardinessMinutes: number;
+  earlyLeaveMinutes: number;
+
   inferredShift?: string;
   hasMealWithoutShortAnomaly?: boolean;
 }
@@ -45,6 +48,8 @@ export interface EmployeeSummary {
   totalWorkMinutes: number;
   totalBreakMinutes: number;
   totalOverbreakMinutes: number;
+  totalTardinessMinutes: number;
+  totalEarlyLeaveMinutes: number;
   wcAlerts: number;
   idleAlerts: number;
   wcTotalMinutes?: number;

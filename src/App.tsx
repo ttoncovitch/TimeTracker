@@ -34,6 +34,7 @@ export default function App() {
   const [includeWcGlobal, setIncludeWcGlobal] = useState(false);
   const [includeIdleGlobal, setIncludeIdleGlobal] = useState(false);
   const [includeNonModGlobal, setIncludeNonModGlobal] = useState(false);
+  const [includeTardinessGlobal, setIncludeTardinessGlobal] = useState(false);
   const [filterMinorOverbreaks, setFilterMinorOverbreaks] = useState(false);
   const [selectedDates, setSelectedDates] = useState<Date[] | undefined>();
 
@@ -101,10 +102,11 @@ export default function App() {
         let prayingOverbreak = Math.max(0, prayingDur - 15);
         let idleOverbreak = idleDur;
 
-        const isWcOnly = includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && typeFilter === 'all';
-        const isIdleOnly = includeIdleGlobal && !includeWcGlobal && !includeNonModGlobal && typeFilter === 'all';
-        const isNonModOnly = includeNonModGlobal && !includeWcGlobal && !includeIdleGlobal && typeFilter === 'all';
-        const isOverbreakOnly = typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal;
+        const isWcOnly = includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
+        const isIdleOnly = includeIdleGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
+        const isNonModOnly = includeNonModGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && typeFilter === 'all';
+        const isTardinessOnly = includeTardinessGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && typeFilter === 'all';
+        const isOverbreakOnly = typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal;
 
         let dailyOverbreak = 0;
         if (isWcOnly) {
@@ -155,9 +157,10 @@ export default function App() {
 
         if (shiftFilter.length > 0 && r.inferredShift && !shiftFilter.includes(cleanShift(r.inferredShift))) return false;
 
-        const isWcOnly = includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && typeFilter === 'all';
-        const isIdleOnly = includeIdleGlobal && !includeWcGlobal && !includeNonModGlobal && typeFilter === 'all';
-        const isNonModOnly = includeNonModGlobal && !includeWcGlobal && !includeIdleGlobal && typeFilter === 'all';
+        const isWcOnly = includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
+        const isIdleOnly = includeIdleGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
+        const isNonModOnly = includeNonModGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && typeFilter === 'all';
+        const isTardinessOnly = includeTardinessGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && typeFilter === 'all';
 
         if (isWcOnly) {
            if (r.wcDuration <= 0) return false;
@@ -165,11 +168,13 @@ export default function App() {
            if (r.idleDuration <= 0) return false;
         } else if (isNonModOnly) {
            if (!r.breaks.some(b => b.type === 'non_moderating')) return false;
-        } else if (typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal) {
+        } else if (isTardinessOnly) {
+           if ((r.tardinessMinutes || 0) <= 0) return false;
+        } else if (typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal) {
            if (r.totalOverbreak <= 0) return false;
-        } else if (includeWcGlobal || includeIdleGlobal || includeNonModGlobal || typeFilter === 'idle_overbreak_wc') {
+        } else if (includeWcGlobal || includeIdleGlobal || includeNonModGlobal || includeTardinessGlobal || typeFilter === 'idle_overbreak_wc') {
            // If multiple are on, or just one that isn't in exclusive mode (though currently toggles are simple)
-           if (r.totalOverbreak <= 0 && r.wcDuration <= 0 && r.idleDuration <= 0 && !r.breaks.some(b => b.type === 'non_moderating')) return false;
+           if (r.totalOverbreak <= 0 && r.wcDuration <= 0 && r.idleDuration <= 0 && !r.breaks.some(b => b.type === 'non_moderating') && (r.tardinessMinutes || 0) <= 0) return false;
         }
 
         return true;
@@ -182,6 +187,8 @@ export default function App() {
       const idleAlerts = records.reduce((acc, r) => acc + (r.idleDuration > 0 ? 1 : 0), 0);
       const wcTotalMinutes = records.reduce((acc, r) => acc + r.wcDuration, 0);
       const idleTotalMinutes = records.reduce((acc, r) => acc + r.idleDuration, 0);
+      const totalTardinessMinutes = records.reduce((acc, r) => acc + (r.tardinessMinutes || 0), 0);
+      const totalEarlyLeaveMinutes = records.reduce((acc, r) => acc + (r.earlyLeaveMinutes || 0), 0);
       const totalWorkMinutes = records.reduce((acc, r) => acc + (r.totalWorkTimeMillis / 60000), 0);
       const totalBreakMinutes = records.reduce((acc, r) => {
         const breakMins = r.breaks.reduce((bAcc, b) => bAcc + b.durationMinutes, 0);
@@ -196,6 +203,8 @@ export default function App() {
         totalWorkMinutes: Math.round(totalWorkMinutes),
         totalBreakMinutes: Math.round(totalBreakMinutes),
         totalOverbreakMinutes: Math.round(totalOverbreak),
+        totalTardinessMinutes: Math.round(totalTardinessMinutes),
+        totalEarlyLeaveMinutes: Math.round(totalEarlyLeaveMinutes),
         wcAlerts,
         idleAlerts,
         wcTotalMinutes,
@@ -204,7 +213,7 @@ export default function App() {
     }).filter(Boolean) as EmployeeSummary[];
 
     return filtered;
-  }, [summaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, filterMinorOverbreaks]);
+  }, [summaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, includeTardinessGlobal, filterMinorOverbreaks]);
 
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -566,6 +575,12 @@ export default function App() {
                                NON-MOD
                              </button>
                              <button
+                               onClick={() => setIncludeTardinessGlobal(!includeTardinessGlobal)}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeTardinessGlobal ? 'bg-orange-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               TARDINESS
+                             </button>
+                             <button
                                onClick={() => setFilterMinorOverbreaks(!filterMinorOverbreaks)}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${filterMinorOverbreaks ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                                title="Mostra apenas agentes com total de 2 minutos ou menos"
@@ -581,9 +596,9 @@ export default function App() {
 
                 <div className="min-h-[600px]">
                   {activeTab === 'dashboard' ? (
-                    <StatsDashboard summaries={filteredSummaries} allSummaries={summaries} latestDate={latestDate} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalFilterMajorOverbreaks={false} />
+                    <StatsDashboard summaries={filteredSummaries} allSummaries={summaries} latestDate={latestDate} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalFilterMajorOverbreaks={false} />
                   ) : (
-                    <EmployeeList summaries={filteredSummaries} allSummaries={summaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalFilterMajorOverbreaks={false} />
+                    <EmployeeList summaries={filteredSummaries} allSummaries={summaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalFilterMajorOverbreaks={false} />
                   )}
                 </div>
               </motion.div>

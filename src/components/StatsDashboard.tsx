@@ -15,15 +15,17 @@ interface StatsDashboardProps {
   globalIncludeWc: boolean;
   globalIncludeIdle: boolean;
   globalIncludeNonMod: boolean;
+  globalIncludeTardiness: boolean;
   globalFilterMajorOverbreaks: boolean;
 }
 
-export function StatsDashboard({ summaries, allSummaries, latestDate, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalFilterMajorOverbreaks }: StatsDashboardProps) {
+export function StatsDashboard({ summaries, allSummaries, latestDate, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalFilterMajorOverbreaks }: StatsDashboardProps) {
   const { t } = useLanguage();
   
-  const isWcOnly = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && globalTypeFilter === 'all';
-  const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && globalTypeFilter === 'all';
-  const isNonModOnly = globalIncludeNonMod && !globalIncludeWc && !globalIncludeIdle && globalTypeFilter === 'all';
+  const isWcOnly = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
+  const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
+  const isNonModOnly = globalIncludeNonMod && !globalIncludeWc && !globalIncludeIdle && !globalIncludeTardiness && globalTypeFilter === 'all';
+  const isTardinessOnly = globalIncludeTardiness && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && globalTypeFilter === 'all';
 
   const [detailsSortMode, setDetailsSortMode] = useState<'duration' | 'date'>('duration');
 
@@ -59,10 +61,11 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
             if (idleOver <= 2) idleOver = 0;
         }
 
-        const isWcOnly = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && globalTypeFilter === 'all';
-        const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && globalTypeFilter === 'all';
-        const isOverbreakOnly = globalTypeFilter === 'idle_overbreak_wc' && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod;
-        const isNonModOnlyCalc = globalIncludeNonMod && !globalIncludeWc && !globalIncludeIdle && globalTypeFilter === 'all';
+        const isWcOnly = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
+        const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
+        const isOverbreakOnly = globalTypeFilter === 'idle_overbreak_wc' && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness;
+        const isNonModOnlyCalc = globalIncludeNonMod && !globalIncludeWc && !globalIncludeIdle && !globalIncludeTardiness && globalTypeFilter === 'all';
+        const isTardinessOnlyCalc = globalIncludeTardiness && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && globalTypeFilter === 'all';
 
         let dailyOverbreak = 0;
         if (isNonModOnlyCalc) {
@@ -71,6 +74,8 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
           dailyOverbreak = wcOver;
         } else if (isIdleOnly) {
           dailyOverbreak = idleOver;
+        } else if (isTardinessOnlyCalc) {
+          dailyOverbreak = r.tardinessMinutes || 0;
         } else if (isOverbreakOnly) {
           dailyOverbreak = mealOver + shortOver + wellnessOver + prayingOver;
         } else {
@@ -78,6 +83,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
           dailyOverbreak = mealOver + shortOver + wellnessOver + prayingOver;
           if (globalIncludeWc) dailyOverbreak += wcOver;
           if (globalIncludeIdle) dailyOverbreak += idleOver;
+          if (globalIncludeTardiness) dailyOverbreak += (r.tardinessMinutes || 0);
         }
 
         return {
@@ -129,15 +135,18 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
   } else if (isIdleOnly) {
       affectedCount = filteredSummaries.filter(s => s.idleAlerts > 0).length;
       affectedText = "Com Ociosidade";
+  } else if (isTardinessOnly) {
+      affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0)).length;
+      affectedText = "Chegaram Atrasados";
   } else if (globalTypeFilter === 'idle_overbreak_wc') {
-      affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || (globalIncludeWc && s.wcAlerts > 0) || (globalIncludeIdle && s.idleAlerts > 0)).length;
+      affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || (globalIncludeWc && s.wcAlerts > 0) || (globalIncludeIdle && s.idleAlerts > 0) || (globalIncludeTardiness && s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0))).length;
       affectedText = "COM OVERBREAK";
   } else {
-      affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || s.wcAlerts > 0 || s.idleAlerts > 0).length;
+      affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || s.wcAlerts > 0 || s.idleAlerts > 0 || s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0)).length;
       affectedText = "COM OVERBREAK (Geral)";
   }
 
-  const isDefaultNoFilters = globalTypeFilter === 'all' && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod;
+  const isDefaultNoFilters = globalTypeFilter === 'all' && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness;
 
   const isWcApplicable = isDefaultNoFilters || globalIncludeWc;
   const isIdleApplicable = isDefaultNoFilters || globalIncludeIdle;
@@ -155,6 +164,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
 
   const isOnlyOrganic = isWcOnly;
   const isOnlyIdle = isIdleOnly;
+  const isOnlyTardiness = isTardinessOnly;
 
   let sumDailyAverages = 0;
   let validAgentsCount = 0;
@@ -168,6 +178,8 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
           metricTotal = s.dailyRecords.reduce((acc, r) => acc + (r.wcDuration || 0), 0);
       } else if (isOnlyIdle) {
           metricTotal = s.dailyRecords.reduce((acc, r) => acc + (r.idleDuration || 0), 0);
+      } else if (isOnlyTardiness) {
+          metricTotal = s.dailyRecords.reduce((acc, r) => acc + (r.tardinessMinutes || 0), 0);
       } else {
           metricTotal = s.totalOverbreakMinutes;
       }
@@ -211,6 +223,11 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
         } else if (isOnlyIdle) {
            if (r.idleDuration > 0) {
              stats[shiftLabel].minutes += r.idleDuration;
+             stats[shiftLabel].occurrences += 1;
+           }
+        } else if (isOnlyTardiness) {
+           if ((r.tardinessMinutes || 0) > 0) {
+             stats[shiftLabel].minutes += r.tardinessMinutes || 0;
              stats[shiftLabel].occurrences += 1;
            }
         } else {
@@ -463,17 +480,17 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
 
       {(() => {
          const isOverbreaksOnly = globalTypeFilter === 'idle_overbreak_wc';
-         const showIdleCard = isIdleApplicable && !isOverbreaksOnly;
-         const showOverbreakCard = isOverbreaksOnly;
+         const showIdleCard = isIdleApplicable && !isOverbreaksOnly && !isTardinessOnly;
+         const showOverbreakCard = isOverbreaksOnly || isTardinessOnly;
 
          let topCardsCount = 1; // avg
-         if (isWcApplicable) topCardsCount++;
+         if (isWcApplicable && !isTardinessOnly) topCardsCount++;
          if (showIdleCard || showOverbreakCard) topCardsCount++;
          
          const topGridClass = topCardsCount === 3 ? "md:grid-cols-3" : topCardsCount === 2 ? "md:grid-cols-2" : "md:grid-cols-1";
 
-         const showTopPerformers = !isIdleOnly;
-         const botPanesCount = 1 + (isWcApplicable ? 1 : 0) + (showTopPerformers ? 1 : 0);
+         const showTopPerformers = !isIdleOnly && !isTardinessOnly;
+         const botPanesCount = 1 + (isWcApplicable && !isTardinessOnly ? 1 : 0) + (showTopPerformers ? 1 : 0);
          const paneSpan = botPanesCount === 3 ? 'lg:col-span-4' : botPanesCount === 2 ? 'lg:col-span-6' : 'lg:col-span-12';
 
          return (
@@ -485,6 +502,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                       {isNonModOnly ? "Tempo médio de Non-Moderating/Dia" :
                        isWcOnly ? "Média Organic Break/Dia por agente" :
                        isIdleOnly ? "Média Idle/Dia por agente" :
+                       isTardinessOnly ? "Média Atraso/Dia por agente" :
                        "MÉDIA OVERBREAK/DIA POR AGENTE"}
                     </p>
                     <div className="flex items-baseline gap-1">
@@ -530,7 +548,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                   </CardContent>
                 </Card>
 
-                {isWcApplicable && (
+                {isWcApplicable && !isTardinessOnly && (
                   <Card className="rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <CardContent className="p-5">
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{t('wcAlerts')}</p>
@@ -569,7 +587,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                 {showOverbreakCard && (
                   <Card className="rounded-2xl shadow-sm border border-rose-200 overflow-hidden bg-rose-50">
                     <CardContent className="p-5">
-                      <p className="text-[10px] font-bold text-rose-800 uppercase tracking-widest mb-1">Tempo Total de Overbreak</p>
+                      <p className="text-[10px] font-bold text-rose-800 uppercase tracking-widest mb-1">{isTardinessOnly ? 'Tempo Total de Atrasos' : 'Tempo Total de Overbreak'}</p>
                       <div className="flex items-baseline gap-2">
                         <p className="text-2xl font-black text-rose-600">
                            {totalOverbreak > 59 ? (
@@ -587,13 +605,13 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
                 <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                   <CardHeader className={`${isNonModOnly ? 'bg-emerald-50/50 border-emerald-100/50' : 'bg-rose-50/50 border-rose-100/50'} border-b py-4 shrink-0 rounded-t-2xl`}>
-                    <CardTitle className={`text-sm font-black uppercase tracking-widest ${isNonModOnly ? 'text-emerald-800' : 'text-rose-800'} flex items-center gap-2`}>
-                      <AlertCircle size={16} /> {isNonModOnly ? "BOTTOM 5" : isIdleOnly ? "Tempo em Idle" : "Tempo de Overbreaks"}
+                    <CardTitle className={`text-sm font-black uppercase tracking-widest ${isNonModOnly ? 'text-emerald-800' : isTardinessOnly ? 'text-orange-800' : 'text-rose-800'} flex items-center gap-2`}>
+                      <AlertCircle size={16} /> {isNonModOnly ? "BOTTOM 5" : isIdleOnly ? "Tempo em Idle" : isTardinessOnly ? "TOP 5 ATRASADOS" : "Tempo de Overbreaks"}
                     </CardTitle>
-                    <CardDescription className={`text-xs ${isNonModOnly ? 'text-emerald-600/80' : 'text-rose-600/80'} mt-1`}>
+                    <CardDescription className={`text-xs ${isNonModOnly ? 'text-emerald-600/80' : isTardinessOnly ? 'text-orange-600/80' : 'text-rose-600/80'} mt-1`}>
                       {isNonModOnly 
                          ? `Menos tempo em Non-Moderating`
-                         : isIdleOnly ? "Mais tempo total em idle" : "Mais tempo total de overbreak"}
+                         : isIdleOnly ? "Mais tempo total em idle" : isTardinessOnly ? "Mais tempo de atrasos na jornada" : "Mais tempo total de overbreak"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="p-0 flex-1">
@@ -616,8 +634,8 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                               summary={s} 
                               rank={i+1} 
                               metricValue={`${Math.floor(s.totalOverbreakMinutes / 60)}h ${s.totalOverbreakMinutes % 60}m`} 
-                              metricLabel="excedidos" 
-                              colorClass="text-rose-700"
+                              metricLabel={isTardinessOnly ? "atraso" : "excedidos"} 
+                              colorClass={isTardinessOnly ? "text-orange-700" : "text-rose-700"}
                            />
                         ))
                       )}
@@ -658,26 +676,46 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
 
                 {showTopPerformers && (
                   <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
-                    <CardHeader className="bg-emerald-50/50 border-b border-emerald-100/50 py-4 shrink-0 rounded-t-2xl">
-                      <CardTitle className="text-sm font-black uppercase tracking-widest text-emerald-800 flex items-center gap-2">
-                        <CheckCircle2 size={16} /> {t('topPerformers')}
+                    <CardHeader className={`${isNonModOnly ? 'bg-amber-50/50 border-amber-100/50' : 'bg-emerald-50/50 border-emerald-100/50'} border-b py-4 shrink-0 rounded-t-2xl`}>
+                      <CardTitle className={`text-sm font-black uppercase tracking-widest ${isNonModOnly ? 'text-amber-800' : 'text-emerald-800'} flex items-center gap-2`}>
+                        {isNonModOnly ? (
+                           <><AlertCircle size={16} /> TOP 5 NON-MOD</>
+                        ) : (
+                           <><CheckCircle2 size={16} /> {t('topPerformers')}</>
+                        )}
                       </CardTitle>
-                      <CardDescription className="text-xs text-emerald-600/80 mt-1">{t('topPerformersDesc')}</CardDescription>
+                      <CardDescription className={`text-xs ${isNonModOnly ? 'text-amber-600/80' : 'text-emerald-600/80'} mt-1`}>
+                        {isNonModOnly ? "Mais tempo em Non-Moderating" : t('topPerformersDesc')}
+                      </CardDescription>
                     </CardHeader>
                     <CardContent className="p-0 flex-1">
                       <div className="divide-y divide-slate-50">
-                        {topPerformers.map((s, i) => (
-                           <AgentLine 
-                              key={`${s.employeeName}-${i}`} 
-                              summary={s} 
-                              rank={i+1} 
-                              metricValue={s.totalOverbreakMinutes === 0 ? "Perfeito" : `${s.totalOverbreakMinutes}m`} 
-                              metricLabel={s.totalOverbreakMinutes === 0 ? "" : "excedidos"} 
-                              colorClass="text-emerald-700"
-                              hideTooltip={true}
-                           />
-                        ))}
-                        {topPerformers.length === 0 && (
+                        {isNonModOnly ? (
+                          agentsByOverbreakDuration.map((s, i) => (
+                             <AgentLine 
+                                key={`${s.employeeName}-${i}`} 
+                                summary={s} 
+                                rank={i+1} 
+                                metricValue={`${Math.floor(s.totalOverbreakMinutes / 60)}h ${s.totalOverbreakMinutes % 60}m`} 
+                                metricLabel="tempo" 
+                                colorClass="text-amber-700"
+                                hideTooltip={true}
+                             />
+                          ))
+                        ) : (
+                          topPerformers.map((s, i) => (
+                             <AgentLine 
+                                key={`${s.employeeName}-${i}`} 
+                                summary={s} 
+                                rank={i+1} 
+                                metricValue={s.totalOverbreakMinutes === 0 ? "Perfeito" : `${s.totalOverbreakMinutes}m`} 
+                                metricLabel={s.totalOverbreakMinutes === 0 ? "" : "excedidos"} 
+                                colorClass="text-emerald-700"
+                                hideTooltip={true}
+                             />
+                          ))
+                        )}
+                        {((isNonModOnly ? agentsByOverbreakDuration.length : topPerformers.length) === 0) && (
                           <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
                         )}
                       </div>
@@ -692,15 +730,17 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
         <Card className="lg:col-span-12 rounded-2xl shadow-sm border border-slate-200 overflow-hidden bg-white">
           <CardHeader className="bg-slate-50/50 border-b border-slate-100 py-4">
             <CardTitle className="text-sm font-black uppercase tracking-widest text-slate-700">
-              {isNonModOnly ? `Alertas Non-Moderating` : 
+               {isNonModOnly ? `Alertas Non-Moderating` : 
                isWcOnly ? 'Alertas Organic' : 
                isIdleOnly ? 'Alertas Idle' : 
+               isTardinessOnly ? 'Alertas de Atraso' :
                t('auditLogOverbreak')}
             </CardTitle>
             <CardDescription className="text-xs text-slate-500 mt-1">
               {isNonModOnly ? `Detalhamento dos colaboradores em Non-Moderating` : 
                isWcOnly ? 'Detalhamento dos colaboradores em uso de Organic' : 
                isIdleOnly ? 'Detalhamento dos colaboradores em status Idle' : 
+               isTardinessOnly ? 'Detalhamento dos colaboradores com atrasos na jornada' :
                t('needAttentionDesc')}
             </CardDescription>
           </CardHeader>
@@ -713,23 +753,25 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                     <div>
                       <span className="font-bold text-sm text-slate-800">{s.employeeName}</span>
                       <p className="text-[10px] text-slate-500 mt-0.5">
-                        {isWcOnly ? "Uso de Organic contabilizado." : isIdleOnly ? "Apresentou ociosidade crítica." : s.idleAlerts > 0 ? "Apresentou ociosidade crítica." : s.wcAlerts > 0 ? "Uso excessivo de status (Organic)." : "Excedeu tempo de pausas."}
+                        {isWcOnly ? "Uso de Organic contabilizado." : isIdleOnly ? "Apresentou ociosidade crítica." : isTardinessOnly ? "Registrou atraso na jornada." : s.idleAlerts > 0 ? "Apresentou ociosidade crítica." : s.wcAlerts > 0 ? "Uso excessivo de status (Organic)." : "Excedeu tempo de pausas."}
                       </p>
                     </div>
                   </div>
                   <div className="flex gap-2 items-center">
                     <Dialog>
-                      <DialogTrigger className={`px-3 py-1.5 text-xs font-black rounded-lg uppercase shadow-sm flex items-center gap-1 group transition-colors ${isWcOnly ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : isIdleOnly ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : 'bg-rose-100 text-rose-700 hover:bg-rose-200'}`}>
+                      <DialogTrigger className={`px-3 py-1.5 text-xs font-black rounded-lg uppercase shadow-sm flex items-center gap-1 group transition-colors ${isWcOnly ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : isIdleOnly ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : isTardinessOnly ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-rose-100 text-rose-700 hover:bg-rose-200'}`}>
                            {isWcOnly ? (
                              <span className="flex items-center gap-1.5">
                                <span>TOT: <span className="font-bold">{Math.floor((s.wcTotalMinutes || 0) / 60)}h {(s.wcTotalMinutes || 0) % 60}m</span></span>
                                <span className="opacity-40 font-normal">|</span>
                                <span className="text-rose-600">EXC: <span className="font-bold">{Math.floor(s.totalOverbreakMinutes / 60)}h {s.totalOverbreakMinutes % 60}m</span></span>
                              </span>
+                           ) : isTardinessOnly ? (
+                             <span>{Math.floor(s.totalOverbreakMinutes / 60)}h {s.totalOverbreakMinutes % 60}m ATRASO</span>
                            ) : (
                              <span>{Math.floor(s.totalOverbreakMinutes / 60)}h {s.totalOverbreakMinutes % 60}m {isIdleOnly ? 'IDLE' : 'OVER'}</span>
                            )}
-                           <span className={`rounded px-1 group-hover:bg-opacity-80 ml-1 ${isWcOnly ? 'bg-amber-200 text-amber-800' : isIdleOnly ? 'bg-rose-200 text-rose-800' : 'bg-rose-200 text-rose-800'}`}>Detalhes</span>
+                           <span className={`rounded px-1 group-hover:bg-opacity-80 ml-1 ${isWcOnly ? 'bg-amber-200 text-amber-800' : isIdleOnly ? 'bg-rose-200 text-rose-800' : isTardinessOnly ? 'bg-orange-200 text-orange-800' : 'bg-rose-200 text-rose-800'}`}>Detalhes</span>
                       </DialogTrigger>
                       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col rounded-3xl border-slate-200 p-0 overflow-hidden shadow-2xl">
                          <div className="bg-slate-900 text-white p-6 shrink-0 flex flex-col gap-4">

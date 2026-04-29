@@ -102,6 +102,8 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           let totalWorkMinutes = 0;
           let totalBreakMinutes = 0;
           let totalOverbreakMinutes = 0;
+          let totalTardinessMinutes = 0;
+          let totalEarlyLeaveMinutes = 0;
           let wcAlertsCount = 0;
           let idleAlertsCount = 0;
           
@@ -197,6 +199,8 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               totalWorkMinutes += record.totalWorkTimeMillis / (1000 * 60);
               totalBreakMinutes += (record.mealDuration + record.shortDuration + record.wellnessDuration + record.wcDuration + record.prayingDuration + record.idleDuration);
               totalOverbreakMinutes += record.totalOverbreak;
+              totalTardinessMinutes += record.tardinessMinutes;
+              totalEarlyLeaveMinutes += record.earlyLeaveMinutes;
               if (record.wcDuration > LIMITS.WC) wcAlertsCount++;
               if (record.idleDuration > 0) idleAlertsCount++;
              }
@@ -211,6 +215,8 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               totalWorkMinutes: Math.round(totalWorkMinutes),
               totalBreakMinutes: Math.round(totalBreakMinutes),
               totalOverbreakMinutes: Math.round(totalOverbreakMinutes),
+              totalTardinessMinutes: Math.round(totalTardinessMinutes),
+              totalEarlyLeaveMinutes: Math.round(totalEarlyLeaveMinutes),
               wcAlerts: wcAlertsCount,
               idleAlerts: idleAlertsCount,
               dailyRecords: dailyRecords.sort((a,b) => a.date.localeCompare(b.date))
@@ -282,14 +288,15 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
         }
     }
 
-    return { status, subStatus, remarks, durationMinutes, startTime, endTime, rawInfo: String(row[3] || '') + ' ' + String(row[4] || '') };
+    return { status, subStatus, remarks, durationMinutes, startTime, endTime, rawInfo: String(row[3] || '') + ' ' + String(row[4] || ''), row };
   }).filter(e => e !== null) as any[];
 
   if (events.length === 0) {
       return {
         date, employeeName: employeeName || 'Unknown', totalWorkTimeMillis: 0, breaks: [],
         mealDuration: 0, shortDuration: 0, wellnessDuration: 0, wcDuration: 0, prayingDuration: 0, idleDuration: 0,
-        mealOverbreak: 0, shortOverbreak: 0, wellnessOverbreak: 0, prayingOverbreak: 0, wcOverbreak: 0, idleOverbreak: 0, totalOverbreak: 0
+        mealOverbreak: 0, shortOverbreak: 0, wellnessOverbreak: 0, prayingOverbreak: 0, wcOverbreak: 0, idleOverbreak: 0, totalOverbreak: 0,
+        tardinessMinutes: 0, earlyLeaveMinutes: 0
       };
   }
 
@@ -339,6 +346,9 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
   }
   
   const shiftEndPlus10 = new Date(shiftEndLimit.getTime() + 10 * 60000);
+
+  let actualStartTime: Date | null = null;
+  let actualEndTime: Date | null = null;
 
   // 3. Process Events
   events.forEach(e => {
@@ -405,7 +415,32 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
            durationMinutes: e.durationMinutes
        });
     }
+
+    if (currentBreakType !== 'offline' && currentBreakType !== 'forgot_status') {
+       if (!actualStartTime) {
+           actualStartTime = e.startTime;
+       }
+       if (!actualEndTime || e.endTime > actualEndTime) {
+           actualEndTime = e.endTime;
+       }
+    }
   });
+
+  let tardinessMinutes = 0;
+  if (actualStartTime) {
+      const diff = Math.round((actualStartTime.getTime() - shiftStartLimit.getTime()) / 60000);
+      if (diff > 0 && diff < 8 * 60) {
+          tardinessMinutes = diff;
+      }
+  }
+
+  let earlyLeaveMinutes = 0;
+  if (actualEndTime) {
+      const diff = Math.round((shiftEndLimit.getTime() - actualEndTime.getTime()) / 60000);
+      if (diff > 0 && diff < 8 * 60) {
+          earlyLeaveMinutes = diff;
+      }
+  }
 
   const mealDuration = breaks.filter(b => b.type === 'meal').reduce((sum, b) => sum + b.durationMinutes, 0);
   const shortDuration = breaks.filter(b => b.type === 'short').reduce((sum, b) => sum + b.durationMinutes, 0);
@@ -454,7 +489,9 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
     prayingOverbreak: prayingOver,
     wcOverbreak: wcOver,
     idleOverbreak: idleOver,
-    totalOverbreak: totalOver
+    totalOverbreak: totalOver,
+    tardinessMinutes,
+    earlyLeaveMinutes
   };
 }
 

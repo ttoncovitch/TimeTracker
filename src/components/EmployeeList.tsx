@@ -17,12 +17,13 @@ interface EmployeeListProps {
   globalIncludeWc: boolean;
   globalIncludeIdle: boolean;
   globalIncludeNonMod: boolean;
+  globalIncludeTardiness: boolean;
   globalFilterMajorOverbreaks: boolean;
 }
 
-export function EmployeeList({ summaries, allSummaries, latestDate, initialFilter = 'all', globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalFilterMajorOverbreaks }: EmployeeListProps) {
+export function EmployeeList({ summaries, allSummaries, latestDate, initialFilter = 'all', globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalFilterMajorOverbreaks }: EmployeeListProps) {
   const { t } = useLanguage();
-  const isWcOnly = globalTypeFilter === 'all' && globalIncludeWc && !globalIncludeNonMod && !globalIncludeIdle;
+  const isWcOnly = globalTypeFilter === 'all' && globalIncludeWc && !globalIncludeNonMod && !globalIncludeIdle && !globalIncludeTardiness;
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEmp, setSelectedEmp] = useState<EmployeeSummary | null>(null);
@@ -45,6 +46,8 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
     if (sortBy === 'praying') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.prayingOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.prayingOverbreak, 0); }
     if (sortBy === 'wc') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.wcOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.wcOverbreak, 0); }
     if (sortBy === 'idle') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0); }
+    if (sortBy === 'tardiness') { aVal = a.totalTardinessMinutes; bVal = b.totalTardinessMinutes; }
+    if (sortBy === 'earlyLeave') { aVal = a.totalEarlyLeaveMinutes; bVal = b.totalEarlyLeaveMinutes; }
     if (sortBy === 'nonMod') { 
         aVal = a.dailyRecords.reduce((acc, r) => acc + r.breaks.filter(b => b.type === 'non_moderating').reduce((s, b) => s + b.durationMinutes, 0), 0); 
         bVal = b.dailyRecords.reduce((acc, r) => acc + r.breaks.filter(b => b.type === 'non_moderating').reduce((s, b) => s + b.durationMinutes, 0), 0); 
@@ -102,6 +105,8 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('nonMod')}>N.M {sortBy === 'nonMod' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('wc')}>Organic {sortBy === 'wc' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('idle')}>IDLE {sortBy === 'idle' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('tardiness')}>T.N {sortBy === 'tardiness' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('earlyLeave')}>E.L {sortBy === 'earlyLeave' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('total')}>{t('total')} {sortBy === 'total' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 pl-4 pr-8 text-right font-black whitespace-nowrap">{t('status')}</th>
                 </tr>
@@ -114,7 +119,9 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                   const hasPrayingOver = s.dailyRecords.some(r => r.prayingOverbreak > 0);
                   const hasWcExc = s.wcAlerts > 0;
                   const hasIdleExc = s.idleAlerts > 0;
-                  const isAlertRow = hasMealOver || hasShortOver || hasWellnessOver || hasPrayingOver || hasWcExc || hasIdleExc;
+                  const hasTardiness = s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0);
+                  const hasEarlyLeave = s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0);
+                  const isAlertRow = hasMealOver || hasShortOver || hasWellnessOver || hasPrayingOver || hasWcExc || hasIdleExc || hasTardiness || hasEarlyLeave;
 
                   const mealTotal = s.dailyRecords.reduce((acc, r) => acc + r.mealOverbreak, 0);
                   const shortTotal = s.dailyRecords.reduce((acc, r) => acc + r.shortOverbreak, 0);
@@ -123,6 +130,8 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                   const nonModTotal = s.dailyRecords.reduce((acc, r) => acc + r.breaks.filter(b => b.type === 'non_moderating').reduce((sum, b) => sum + b.durationMinutes, 0), 0);
                   const wcTotal = s.dailyRecords.reduce((acc, r) => acc + r.wcOverbreak, 0);
                   const idleTotal = s.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0);
+                  const tardinessTotal = s.dailyRecords.reduce((acc, r) => acc + (r.tardinessMinutes || 0), 0);
+                  const earlyLeaveTotal = s.dailyRecords.reduce((acc, r) => acc + (r.earlyLeaveMinutes || 0), 0);
 
                   return (
                     <tr 
@@ -182,6 +191,18 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                         </span>
                       </td>
 
+                      <td className="py-4 px-2 text-center" title={tardinessTotal > 0 ? `${tardinessTotal}m atraso` : 'No tardiness'}>
+                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${tardinessTotal > 0 ? 'bg-orange-100 text-orange-700 font-black border border-orange-200' : 'text-slate-300 font-bold'}`}>
+                          {tardinessTotal > 0 ? `${tardinessTotal}m` : '0m'}
+                        </span>
+                      </td>
+
+                      <td className="py-4 px-2 text-center" title={earlyLeaveTotal > 0 ? `${earlyLeaveTotal}m saída antecipada` : 'No early leave'}>
+                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${earlyLeaveTotal > 0 ? 'bg-orange-100 text-orange-700 font-black border border-orange-200' : 'text-slate-300 font-bold'}`}>
+                          {earlyLeaveTotal > 0 ? `${earlyLeaveTotal}m` : '0m'}
+                        </span>
+                      </td>
+
                       <td className="py-4 px-2 text-center" title={s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m ${isWcOnly ? 'Organic' : 'excedentes'}` : 'No overbreak'}>
                         <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${s.totalOverbreakMinutes > 0 ? (isWcOnly ? 'bg-amber-100 border border-amber-200 text-amber-600 font-black' : 'bg-rose-100 text-rose-700 font-black') : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
                           {s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m` : 'OK'}
@@ -227,14 +248,14 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
 
       <Dialog open={!!selectedEmp} onOpenChange={(open) => !open && setSelectedEmp(null)}>
         <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] flex flex-col rounded-[2rem] border-slate-200 p-0 overflow-hidden shadow-2xl">
-           {selectedEmp && <EmployeeDetail summary={selectedEmp} latestDate={latestDate || new Date()} initialFilter={initialFilter} t={t} globalTypeFilter={globalTypeFilter} globalIncludeWc={globalIncludeWc} globalIncludeIdle={globalIncludeIdle} globalIncludeNonMod={globalIncludeNonMod} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} />}
+           {selectedEmp && <EmployeeDetail summary={selectedEmp} latestDate={latestDate || new Date()} initialFilter={initialFilter} t={t} globalTypeFilter={globalTypeFilter} globalIncludeWc={globalIncludeWc} globalIncludeIdle={globalIncludeIdle} globalIncludeNonMod={globalIncludeNonMod} globalIncludeTardiness={globalIncludeTardiness} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} />}
         </DialogContent>
       </Dialog>
     </div>
   );
 }
 
-function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalFilterMajorOverbreaks }: { summary: EmployeeSummary; latestDate: Date, initialFilter: string, t: any, globalTypeFilter: 'all' | 'idle_overbreak_wc', globalIncludeWc: boolean, globalIncludeIdle: boolean, globalIncludeNonMod: boolean, globalFilterMajorOverbreaks: boolean }) {
+function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalFilterMajorOverbreaks }: { summary: EmployeeSummary; latestDate: Date, initialFilter: string, t: any, globalTypeFilter: 'all' | 'idle_overbreak_wc', globalIncludeWc: boolean, globalIncludeIdle: boolean, globalIncludeNonMod: boolean, globalIncludeTardiness: boolean, globalFilterMajorOverbreaks: boolean }) {
   const today = new Date();
   
   // Start with the initialFilter mapped to 'today', 'week', or 'month'
@@ -252,6 +273,7 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
   const [includeWc, setIncludeWc] = useState(globalIncludeWc);
   const [includeIdle, setIncludeIdle] = useState(globalIncludeIdle);
   const [filterNm, setFilterNm] = useState(globalIncludeNonMod);
+  const [includeTardiness, setIncludeTardiness] = useState(globalIncludeTardiness);
 
   let records = s.dailyRecords;
   
@@ -273,19 +295,22 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
   }
 
   // Se SOMENTE o WC estiver selecionado GLOBALMENTE
-  const isWcOnly = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && globalTypeFilter === 'all';
-  const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && globalTypeFilter === 'all';
+  const isWcOnly = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
+  const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
+  const isTardinessOnly = globalIncludeTardiness && !globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && globalTypeFilter === 'all';
 
   if (filterNm) {
     records = records.filter(r => r.breaks.some(b => b.type === 'non_moderating'));
-  } else if (onlyExceptions && !isWcOnly && !isIdleOnly) {
+  } else if (onlyExceptions && !isWcOnly && !isIdleOnly && !isTardinessOnly) {
     records = records.filter(r => 
-      r.mealOverbreak > 0 || r.shortOverbreak > 0 || r.wellnessOverbreak > 0 || r.prayingOverbreak > 0 || (includeIdle && r.idleDuration > 0) || (includeWc && r.wcDuration > 10)
+      r.mealOverbreak > 0 || r.shortOverbreak > 0 || r.wellnessOverbreak > 0 || r.prayingOverbreak > 0 || (includeIdle && r.idleDuration > 0) || (includeWc && r.wcDuration > 10) || (includeTardiness && ((r.tardinessMinutes || 0) > 0 || (r.earlyLeaveMinutes || 0) > 0))
     );
   } else if (isWcOnly) {
     records = records.filter(r => r.wcDuration > 0);
   } else if (isIdleOnly) {
     records = records.filter(r => r.idleDuration > 0);
+  } else if (isTardinessOnly) {
+    records = records.filter(r => (r.tardinessMinutes || 0) > 0 || (r.earlyLeaveMinutes || 0) > 0);
   }
 
   const totalPeriodOverbreak = records.reduce((acc, r) => {
@@ -354,6 +379,12 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
                         N.M
                       </button>
                       <button
+                        onClick={() => setIncludeTardiness(!includeTardiness)}
+                        className={`px-2 py-1 shrink-0 rounded text-[9px] font-black uppercase tracking-wider transition-colors w-full sm:w-auto ${includeTardiness ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                      >
+                        T.N
+                      </button>
+                      <button
                         onClick={() => setIncludeIdle(!includeIdle)}
                         className={`px-2 py-1 shrink-0 rounded text-[9px] font-black uppercase tracking-wider transition-colors w-full sm:w-auto ${includeIdle ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
                       >
@@ -386,7 +417,7 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
         <div className="p-6 md:p-8">
           <div className="space-y-6">
             {records.length > 0 ? records.map((day, idx) => (
-              <DayRecordCard key={`${day.date}-${idx}`} record={day} isWcOnly={isWcOnly} isIdleOnly={isIdleOnly} filterNm={filterNm} includeWc={includeWc} includeIdle={includeIdle} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} onlyExceptions={onlyExceptions} />
+              <DayRecordCard key={`${day.date}-${idx}`} record={day} isWcOnly={isWcOnly} isIdleOnly={isIdleOnly} isTardinessOnly={isTardinessOnly} filterNm={filterNm} includeWc={includeWc} includeIdle={includeIdle} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} onlyExceptions={onlyExceptions} />
             )) : (
               <div className="text-center py-12">
                  <p className="text-slate-400 font-bold uppercase tracking-widest text-xs italic">Nenhum registro para o período.</p>
@@ -399,11 +430,11 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
   );
 }
 
-const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; isIdleOnly?: boolean; filterNm?: boolean; includeWc?: boolean; includeIdle?: boolean; globalFilterMajorOverbreaks: boolean; onlyExceptions?: boolean }> = ({ record, isWcOnly, isIdleOnly, filterNm, includeWc, includeIdle, globalFilterMajorOverbreaks, onlyExceptions }) => {
+const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; isIdleOnly?: boolean; isTardinessOnly?: boolean; filterNm?: boolean; includeWc?: boolean; includeIdle?: boolean; globalFilterMajorOverbreaks: boolean; onlyExceptions?: boolean }> = ({ record, isWcOnly, isIdleOnly, isTardinessOnly, filterNm, includeWc, includeIdle, globalFilterMajorOverbreaks, onlyExceptions }) => {
     const isWcAlert = record.wcDuration > 10;
-    const hasAnyOverbreak = record.mealOverbreak > 0 || record.shortOverbreak > 0 || record.wellnessOverbreak > 0 || record.prayingOverbreak > 0 || isWcAlert || record.idleOverbreak > 0;
+    const hasAnyOverbreak = record.mealOverbreak > 0 || record.shortOverbreak > 0 || record.wellnessOverbreak > 0 || record.prayingOverbreak > 0 || isWcAlert || record.idleOverbreak > 0 || (record.tardinessMinutes || 0) > 0 || (record.earlyLeaveMinutes || 0) > 0;
     
-    const isHighlighted = filterNm ? record.breaks.some(b => b.type === 'non_moderating') : isWcOnly ? record.wcDuration > 0 : isIdleOnly ? record.idleDuration > 0 : hasAnyOverbreak;
+    const isHighlighted = filterNm ? record.breaks.some(b => b.type === 'non_moderating') : isWcOnly ? record.wcDuration > 0 : isIdleOnly ? record.idleDuration > 0 : isTardinessOnly ? ((record.tardinessMinutes || 0) > 0 || (record.earlyLeaveMinutes || 0) > 0) : hasAnyOverbreak;
 
     // Calculate cumulative sums to correctly identify which breaks contribute to overbreaks
     const typeSums: Record<string, number> = {};
@@ -460,10 +491,10 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
     const nmTotalDuration = typeSums['non_moderating'] || 0;
 
     return (
-        <div className={`flex flex-col p-5 border rounded-2xl shadow-sm transition-all relative overflow-hidden bg-white ${isHighlighted ? (filterNm ? 'border-teal-200 ring-teal-50/50 ring-4' : isWcOnly ? 'border-amber-200 ring-amber-50/50 ring-4' : isIdleOnly ? 'border-rose-200 ring-rose-50/50 ring-4' : 'border-rose-200 ring-rose-50/50 ring-4') : 'border-slate-100'}`}>
+        <div className={`flex flex-col p-5 border rounded-2xl shadow-sm transition-all relative overflow-hidden bg-white ${isHighlighted ? (filterNm ? 'border-teal-200 ring-teal-50/50 ring-4' : isWcOnly ? 'border-amber-200 ring-amber-50/50 ring-4' : isIdleOnly ? 'border-rose-200 ring-rose-50/50 ring-4' : isTardinessOnly ? 'border-orange-200 ring-orange-50/50 ring-4' : 'border-rose-200 ring-rose-50/50 ring-4') : 'border-slate-100'}`}>
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
                 <div className="flex items-center gap-3">
-                    <span className={`text-base font-black tracking-tight ${isHighlighted ? (filterNm ? 'text-teal-900' : isWcOnly ? 'text-amber-900' : isIdleOnly ? 'text-rose-900' : 'text-rose-900') : 'text-slate-900'}`}>{format(new Date(record.date), 'dd/MM/yyyy')}</span>
+                    <span className={`text-base font-black tracking-tight ${isHighlighted ? (filterNm ? 'text-teal-900' : isWcOnly ? 'text-amber-900' : isIdleOnly ? 'text-rose-900' : isTardinessOnly ? 'text-orange-900' : 'text-rose-900') : 'text-slate-900'}`}>{format(new Date(record.date), 'dd/MM/yyyy')}</span>
                     {record.inferredShift && (
                        <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-bold uppercase tracking-wider border border-blue-100">
                           Shift: {record.inferredShift}
@@ -561,6 +592,32 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                                 <div className="flex items-center gap-2">
                                     {record.idleDuration > 0 ? (
                                         <span className="text-base font-black text-red-600">+{record.idleDuration}m</span>
+                                    ) : (
+                                        <span className="text-base font-black text-emerald-500">OK</span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {!isWcOnly && (
+                            <div title={`Tardiness: ${record.tardinessMinutes || 0}m`}>
+                                <p className="text-[10px] text-orange-400 uppercase font-bold tracking-widest mb-1">T.N</p>
+                                <div className="flex items-center gap-2">
+                                    {(record.tardinessMinutes || 0) > 0 ? (
+                                        <span className="text-base font-black text-orange-600">+{record.tardinessMinutes}m</span>
+                                    ) : (
+                                        <span className="text-base font-black text-emerald-500">OK</span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {!isWcOnly && (
+                            <div title={`Early Leave: ${record.earlyLeaveMinutes || 0}m`}>
+                                <p className="text-[10px] text-orange-400 uppercase font-bold tracking-widest mb-1">E.L</p>
+                                <div className="flex items-center gap-2">
+                                    {(record.earlyLeaveMinutes || 0) > 0 ? (
+                                        <span className="text-base font-black text-orange-600">+{record.earlyLeaveMinutes}m</span>
                                     ) : (
                                         <span className="text-base font-black text-emerald-500">OK</span>
                                     )}
