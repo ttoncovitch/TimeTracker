@@ -16,12 +16,13 @@ interface EmployeeListProps {
   globalTypeFilter: 'all' | 'idle_overbreak_wc';
   globalIncludeWc: boolean;
   globalIncludeIdle: boolean;
+  globalIncludeNonMod: boolean;
   globalFilterMajorOverbreaks: boolean;
 }
 
-export function EmployeeList({ summaries, allSummaries, latestDate, initialFilter = 'all', globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalFilterMajorOverbreaks }: EmployeeListProps) {
+export function EmployeeList({ summaries, allSummaries, latestDate, initialFilter = 'all', globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalFilterMajorOverbreaks }: EmployeeListProps) {
   const { t } = useLanguage();
-  const isWcOnly = globalTypeFilter === 'all' && globalIncludeWc;
+  const isWcOnly = globalTypeFilter === 'all' && globalIncludeWc && !globalIncludeNonMod && !globalIncludeIdle;
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEmp, setSelectedEmp] = useState<EmployeeSummary | null>(null);
@@ -226,14 +227,14 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
 
       <Dialog open={!!selectedEmp} onOpenChange={(open) => !open && setSelectedEmp(null)}>
         <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] flex flex-col rounded-[2rem] border-slate-200 p-0 overflow-hidden shadow-2xl">
-           {selectedEmp && <EmployeeDetail summary={selectedEmp} latestDate={latestDate || new Date()} initialFilter={initialFilter} t={t} globalTypeFilter={globalTypeFilter} globalIncludeWc={globalIncludeWc} globalIncludeIdle={globalIncludeIdle} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} />}
+           {selectedEmp && <EmployeeDetail summary={selectedEmp} latestDate={latestDate || new Date()} initialFilter={initialFilter} t={t} globalTypeFilter={globalTypeFilter} globalIncludeWc={globalIncludeWc} globalIncludeIdle={globalIncludeIdle} globalIncludeNonMod={globalIncludeNonMod} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} />}
         </DialogContent>
       </Dialog>
     </div>
   );
 }
 
-function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalFilterMajorOverbreaks }: { summary: EmployeeSummary; latestDate: Date, initialFilter: string, t: any, globalTypeFilter: 'all' | 'idle_overbreak_wc', globalIncludeWc: boolean, globalIncludeIdle: boolean, globalFilterMajorOverbreaks: boolean }) {
+function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalFilterMajorOverbreaks }: { summary: EmployeeSummary; latestDate: Date, initialFilter: string, t: any, globalTypeFilter: 'all' | 'idle_overbreak_wc', globalIncludeWc: boolean, globalIncludeIdle: boolean, globalIncludeNonMod: boolean, globalFilterMajorOverbreaks: boolean }) {
   const today = new Date();
   
   // Start with the initialFilter mapped to 'today', 'week', or 'month'
@@ -250,7 +251,7 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
   );
   const [includeWc, setIncludeWc] = useState(globalIncludeWc);
   const [includeIdle, setIncludeIdle] = useState(globalIncludeIdle);
-  const [filterNm, setFilterNm] = useState(false);
+  const [filterNm, setFilterNm] = useState(globalIncludeNonMod);
 
   let records = s.dailyRecords;
   
@@ -272,8 +273,8 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
   }
 
   // Se SOMENTE o WC estiver selecionado GLOBALMENTE
-  const isWcOnly = globalIncludeWc && !globalIncludeIdle && globalTypeFilter === 'all';
-  const isIdleOnly = globalIncludeIdle && !globalIncludeWc && globalTypeFilter === 'all';
+  const isWcOnly = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && globalTypeFilter === 'all';
+  const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && globalTypeFilter === 'all';
 
   if (filterNm) {
     records = records.filter(r => r.breaks.some(b => b.type === 'non_moderating'));

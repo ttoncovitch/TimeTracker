@@ -14,63 +14,23 @@ interface StatsDashboardProps {
   globalTypeFilter: 'all' | 'idle_overbreak_wc';
   globalIncludeWc: boolean;
   globalIncludeIdle: boolean;
+  globalIncludeNonMod: boolean;
   globalFilterMajorOverbreaks: boolean;
 }
 
-const STATUS_COMBOS = [
-  { id: 'wc', label: 'Organic', types: ['wc'], color: 'bg-amber-500' },
-  { id: 'rest', label: 'Rest', types: ['meal', 'short'], color: 'bg-lime-500' },
-  { id: 'wellness', label: 'Wellness', types: ['wellness', 'praying'], color: 'bg-blue-400' },
-  { id: 'idle', label: 'Idle', types: ['idle'], color: 'bg-rose-500' },
-  { id: 'meeting', label: 'Meeting', types: ['meeting'], color: 'bg-indigo-500' },
-  { id: 'moderation', label: 'Moderation', types: ['moderating'], color: 'bg-purple-500' },
-  { id: 'non_moderation', label: 'Non-Moderating', types: ['non_moderating'], color: 'bg-teal-500' }
-];
-
-export function StatsDashboard({ summaries, allSummaries, latestDate, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalFilterMajorOverbreaks }: StatsDashboardProps) {
+export function StatsDashboard({ summaries, allSummaries, latestDate, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalFilterMajorOverbreaks }: StatsDashboardProps) {
   const { t } = useLanguage();
   
-  const isWcOnly = globalIncludeWc && !globalIncludeIdle && globalTypeFilter === 'all';
-  const isIdleOnly = globalIncludeIdle && !globalIncludeWc && globalTypeFilter === 'all';
+  const isWcOnly = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && globalTypeFilter === 'all';
+  const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && globalTypeFilter === 'all';
+  const isNonModOnly = globalIncludeNonMod && !globalIncludeWc && !globalIncludeIdle && globalTypeFilter === 'all';
 
-  const [statusFilterActive, setStatusFilterActive] = useState(false);
-  const [selectedStatusCombo, setSelectedStatusCombo] = useState<string>('rest');
-  const [selectedSubType, setSelectedSubType] = useState<string>('all');
   const [detailsSortMode, setDetailsSortMode] = useState<'duration' | 'date'>('duration');
-  
-  const activeStatusFilter = statusFilterActive && selectedStatusCombo 
-    ? STATUS_COMBOS.find(c => c.id === selectedStatusCombo) 
-    : null;
-
-  const availableSubTypes = useMemo(() => {
-    if (activeStatusFilter?.id !== 'non_moderation') return [];
-    const subs = new Set<string>();
-    summaries.forEach(s => {
-      s.dailyRecords.forEach(r => {
-        r.breaks.forEach(b => {
-          if (b.type === 'non_moderating' && b.subType) {
-            subs.add(b.subType);
-          }
-        });
-      });
-    });
-    return Array.from(subs).sort();
-  }, [summaries, activeStatusFilter]);
 
   const dashboardSummaries = useMemo(() => {
-    if (!activeStatusFilter) return summaries;
-
-    const allowedTypes = activeStatusFilter.types;
-
     return summaries.map(s => {
       const newRecords = s.dailyRecords.map(r => {
-        const allowedBreaks = r.breaks.filter(b => {
-          if (!allowedTypes.includes(b.type)) return false;
-          if (activeStatusFilter.id === 'non_moderation' && selectedSubType !== 'all') {
-            return b.subType === selectedSubType;
-          }
-          return true;
-        });
+        const allowedBreaks = r.breaks;
         
         let wcDur = 0, idleDur = 0, mealDur = 0, shortDur = 0, wellnessDur = 0, prayingDur = 0, meetingDur = 0, modDur = 0, nonModDur = 0;
         
@@ -99,25 +59,14 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
             if (idleOver <= 2) idleOver = 0;
         }
 
-        const isWcOnly = globalIncludeWc && !globalIncludeIdle && globalTypeFilter === 'all';
-        const isIdleOnly = globalIncludeIdle && !globalIncludeWc && globalTypeFilter === 'all';
-        const isOverbreakOnly = globalTypeFilter === 'idle_overbreak_wc' && !globalIncludeWc && !globalIncludeIdle;
+        const isWcOnly = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && globalTypeFilter === 'all';
+        const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && globalTypeFilter === 'all';
+        const isOverbreakOnly = globalTypeFilter === 'idle_overbreak_wc' && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod;
+        const isNonModOnlyCalc = globalIncludeNonMod && !globalIncludeWc && !globalIncludeIdle && globalTypeFilter === 'all';
 
         let dailyOverbreak = 0;
-        if (activeStatusFilter && activeStatusFilter.id === 'meeting') {
-          dailyOverbreak = meetingDur;
-        } else if (activeStatusFilter && activeStatusFilter.id === 'moderation') {
-          dailyOverbreak = modDur;
-        } else if (activeStatusFilter && activeStatusFilter.id === 'non_moderation') {
+        if (isNonModOnlyCalc) {
           dailyOverbreak = nonModDur;
-        } else if (activeStatusFilter && activeStatusFilter.id === 'idle') {
-          dailyOverbreak = idleOver;
-        } else if (activeStatusFilter && activeStatusFilter.id === 'wc') {
-          dailyOverbreak = wcOver;
-        } else if (activeStatusFilter && activeStatusFilter.id === 'rest') {
-          dailyOverbreak = mealOver + shortOver;
-        } else if (activeStatusFilter && activeStatusFilter.id === 'wellness') {
-          dailyOverbreak = wellnessOver + prayingOver;
         } else if (isWcOnly) {
           dailyOverbreak = wcOver;
         } else if (isIdleOnly) {
@@ -162,7 +111,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
         idleAlerts
       };
     });
-  }, [summaries, activeStatusFilter, globalFilterMajorOverbreaks, selectedSubType]);
+  }, [summaries, globalFilterMajorOverbreaks, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalTypeFilter]);
 
   const filteredSummaries = dashboardSummaries;
 
@@ -171,26 +120,9 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
   let affectedCount = 0;
   let affectedText = '';
 
-  if (statusFilterActive && activeStatusFilter) {
-      if (activeStatusFilter.id === 'wc') {
-          affectedCount = filteredSummaries.filter(s => s.wcAlerts > 0).length;
-          affectedText = "Em Excesso de Organic";
-      } else if (activeStatusFilter.id === 'idle') {
-          affectedCount = filteredSummaries.filter(s => s.idleAlerts > 0).length;
-          affectedText = "Com Ociosidade";
-      } else if (activeStatusFilter.id === 'meeting') {
-          affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => r.breaks.some(b => b.type === 'meeting'))).length;
-          affectedText = "Em Reunião";
-      } else if (activeStatusFilter.id === 'moderation') {
-          affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => r.breaks.some(b => b.type === 'moderating'))).length;
-          affectedText = "Em Moderação";
-      } else if (activeStatusFilter.id === 'non_moderation') {
-          affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => r.breaks.some(b => b.type === 'non_moderating'))).length;
-          affectedText = "Em Non-Moderating";
-      } else {
-          affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0).length;
-          affectedText = "COM OVERBREAK";
-      }
+  if (isNonModOnly) {
+      affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => r.breaks.some(b => b.type === 'non_moderating'))).length;
+      affectedText = "Em Non-Moderating";
   } else if (isWcOnly) {
       affectedCount = filteredSummaries.filter(s => s.wcAlerts > 0).length;
       affectedText = "Em Excesso de Organic";
@@ -205,12 +137,10 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
       affectedText = "COM OVERBREAK (Geral)";
   }
 
-  const isDefaultNoFilters = globalTypeFilter === 'all' && !globalIncludeWc && !globalIncludeIdle;
+  const isDefaultNoFilters = globalTypeFilter === 'all' && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod;
 
-  const isWcApplicable = (statusFilterActive && activeStatusFilter && activeStatusFilter.types.includes('wc')) || 
-                        (!statusFilterActive && (isDefaultNoFilters || globalIncludeWc));
-  const isIdleApplicable = (statusFilterActive && activeStatusFilter && activeStatusFilter.types.includes('idle')) || 
-                          (!statusFilterActive && (isDefaultNoFilters || globalIncludeIdle));
+  const isWcApplicable = isDefaultNoFilters || globalIncludeWc;
+  const isIdleApplicable = isDefaultNoFilters || globalIncludeIdle;
 
   const totalOverbreak = filteredSummaries.reduce((acc, curr) => acc + curr.totalOverbreakMinutes, 0);
   const totalDays = filteredSummaries.reduce((acc, curr) => acc + curr.dailyRecords.length, 0);
@@ -223,8 +153,8 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
   const totalWcAgents = filteredSummaries.filter(s => s.dailyRecords.some(r => r.wcDuration > 0)).length;
   const totalIdleAgents = filteredSummaries.filter(s => s.idleAlerts > 0).length;
 
-  const isOnlyOrganic = activeStatusFilter?.id === 'wc' || isWcOnly;
-  const isOnlyIdle = activeStatusFilter?.id === 'idle' || isIdleOnly;
+  const isOnlyOrganic = isWcOnly;
+  const isOnlyIdle = isIdleOnly;
 
   let sumDailyAverages = 0;
   let validAgentsCount = 0;
@@ -334,9 +264,6 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
   const agentsBottom5Special = [...filteredSummaries]
     .filter(s => {
       if (s.isTraining || s.totalOverbreakMinutes === 0) return false;
-      if (activeStatusFilter?.id === 'moderation') {
-        return s.totalOverbreakMinutes >= 60;
-      }
       return true;
     })
     .sort((a, b) => a.totalOverbreakMinutes - b.totalOverbreakMinutes)
@@ -445,7 +372,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
           <div className="min-w-0 pr-4 cursor-help">
             <p className="font-bold text-xs text-slate-800 truncate">{summary.employeeName}</p>
             <p className="text-[10px] text-slate-400 truncate">
-              {activeStatusFilter && (activeStatusFilter.id === 'meeting' || activeStatusFilter.id === 'moderation' || activeStatusFilter.id === 'non_moderation') ? (
+              {isNonModOnly ? (
                 <>
                   Total: {Math.floor(summary.totalOverbreakMinutes / 60)}h {summary.totalOverbreakMinutes % 60}m | Média/Dia: {Math.floor((summary.totalOverbreakMinutes / summary.dailyRecords.length) / 60)}h {Math.round((summary.totalOverbreakMinutes / summary.dailyRecords.length) % 60)}m
                 </>
@@ -498,11 +425,11 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                   </div>
                 </div>
                 <div className="pl-6 flex-1 min-w-max">
-                  <p className={`text-[11px] font-black uppercase tracking-widest mb-1 truncate ${(activeStatusFilter?.id === 'meeting' || activeStatusFilter?.id === 'moderation') ? 'text-emerald-500' : (activeStatusFilter?.id === 'non_moderation') ? 'text-amber-500' : (affectedCount > 0 ? 'text-rose-500' : 'text-emerald-500')}`}>{affectedText}</p>
+                  <p className={`text-[11px] font-black uppercase tracking-widest mb-1 truncate ${isNonModOnly ? 'text-amber-500' : (affectedCount > 0 ? 'text-rose-500' : 'text-emerald-500')}`}>{affectedText}</p>
                   <div className="flex items-baseline gap-1.5">
-                     <p className={`text-3xl font-black tracking-tight ${(activeStatusFilter?.id === 'meeting' || activeStatusFilter?.id === 'moderation') ? 'text-emerald-600' : (activeStatusFilter?.id === 'non_moderation') ? 'text-amber-600' : (affectedCount > 0 ? 'text-rose-600' : 'text-emerald-600')}`}>{affectedCount}</p>
-                     <span className={`text-xs font-bold tracking-wide uppercase ${(activeStatusFilter?.id === 'meeting' || activeStatusFilter?.id === 'moderation') ? 'text-emerald-400' : (activeStatusFilter?.id === 'non_moderation') ? 'text-amber-400' : (affectedCount > 0 ? 'text-rose-400' : 'text-emerald-400')}`}>
-                       {(activeStatusFilter?.id === 'meeting' || activeStatusFilter?.id === 'moderation' || activeStatusFilter?.id === 'non_moderation') ? 'AGENTES' : 'Afetados'}
+                     <p className={`text-3xl font-black tracking-tight ${isNonModOnly ? 'text-amber-600' : (affectedCount > 0 ? 'text-rose-600' : 'text-emerald-600')}`}>{affectedCount}</p>
+                     <span className={`text-xs font-bold tracking-wide uppercase ${isNonModOnly ? 'text-amber-400' : (affectedCount > 0 ? 'text-rose-400' : 'text-emerald-400')}`}>
+                       {isNonModOnly ? 'AGENTES' : 'Afetados'}
                      </span>
                   </div>
                 </div>
@@ -532,96 +459,6 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
             </div>
           </CardContent>
         </Card>
-
-        <Card className="rounded-2xl shadow-sm border border-slate-200 overflow-visible w-full md:w-auto shrink-0">
-          <CardContent className="p-6 flex flex-col justify-center h-full">
-            <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-3 block">Filtro de Status Específico</p>
-            <div className="flex items-center gap-4">
-              {/* Custom Hover Dropdown */}
-              <div className="relative group/dropdown z-50">
-                <button className="flex items-center justify-between gap-3 w-64 px-4 py-3 bg-slate-100 text-slate-800 font-bold text-sm rounded-xl border border-slate-200 hover:bg-slate-200 hover:border-slate-300 transition-all shadow-sm">
-                   <div className="flex items-center gap-2.5 truncate">
-                     <span className={`w-3 h-3 rounded-full shrink-0 ${STATUS_COMBOS.find(c => c.id === selectedStatusCombo)?.color || 'bg-slate-400'}`}></span>
-                     <span className="truncate">
-                       {STATUS_COMBOS.find(c => c.id === selectedStatusCombo)?.label || 'Selecione'}
-                       {selectedStatusCombo === 'non_moderation' && selectedSubType !== 'all' && ` - ${selectedSubType}`}
-                     </span>
-                   </div>
-                   <div className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded uppercase font-black flex items-center justify-center shrink-0">
-                     <span className="group-hover/dropdown:rotate-180 transition-transform duration-300">▼</span>
-                   </div>
-                </button>
-                
-                <div className="absolute top-[calc(100%+8px)] left-0 w-64 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 opacity-0 invisible group-hover/dropdown:opacity-100 group-hover/dropdown:visible transition-all overflow-visible transform origin-top-left scale-95 group-hover/dropdown:scale-100">
-                  <div className="p-1.5 space-y-0.5 relative">
-                     {STATUS_COMBOS.map(c => (
-                        <div key={c.id} className="relative group/nested">
-                           <button
-                             onClick={() => { 
-                               setSelectedStatusCombo(c.id); 
-                               if (c.id !== 'non_moderation') setSelectedSubType('all');
-                               setStatusFilterActive(true); 
-                             }}
-                             className={`w-full text-left flex items-center justify-between px-3 py-2.5 text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors ${selectedStatusCombo === c.id ? 'text-white bg-slate-700/80 shadow-inner' : 'text-slate-300'}`}
-                           >
-                              <div className="flex items-center gap-2.5">
-                                <span className={`w-2.5 h-2.5 rounded-full shadow-sm ${c.color}`}></span>
-                                {c.label}
-                              </div>
-                              {c.id === 'non_moderation' && availableSubTypes.length > 0 ? (
-                                <span className="text-slate-500 font-medium text-xs">▶</span>
-                              ) : (
-                                <span className="text-slate-500 font-medium">›</span>
-                              )}
-                           </button>
-                           
-                           {/* Nested Sub-Menu inside the map */}
-                           {c.id === 'non_moderation' && availableSubTypes.length > 0 && (
-                             <div className="absolute left-[100%] top-0 pl-2 w-64 opacity-0 invisible group-hover/nested:opacity-100 group-hover/nested:visible transition-all z-[60]">
-                               <div className="bg-slate-800 rounded-xl shadow-2xl border border-slate-700 overflow-hidden max-h-80 overflow-y-auto">
-                                 <div className="p-1.5 space-y-0.5">
-                                    <button
-                                      onClick={() => { setSelectedStatusCombo('non_moderation'); setSelectedSubType('all'); setStatusFilterActive(true); }}
-                                      className={`w-full text-left flex items-center justify-between px-3 py-2.5 text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors ${(selectedStatusCombo === 'non_moderation' && selectedSubType === 'all') ? 'text-white bg-slate-700/80 shadow-inner' : 'text-slate-300'}`}
-                                    >
-                                       Todos os Status
-                                    </button>
-                                    {availableSubTypes.map(st => (
-                                       <button
-                                         key={st}
-                                         onClick={() => { setSelectedStatusCombo('non_moderation'); setSelectedSubType(st); setStatusFilterActive(true); }}
-                                         className={`w-full text-left flex items-center justify-between px-3 py-2.5 text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors ${(selectedStatusCombo === 'non_moderation' && selectedSubType === st) ? 'text-white bg-slate-700/80 shadow-inner' : 'text-slate-300'}`}
-                                       >
-                                          <span className="truncate" title={st}>{st}</span>
-                                       </button>
-                                    ))}
-                                 </div>
-                               </div>
-                             </div>
-                           )}
-                        </div>
-                     ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Removed the separate button for subTypes */}
-
-              {/* On-Off Switch */}
-              <button 
-                onClick={() => setStatusFilterActive(!statusFilterActive)}
-                className={`relative inline-flex h-9 w-16 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none shadow-inner ${statusFilterActive ? 'bg-blue-600' : 'bg-slate-300'}`}
-              >
-                <span className="sr-only">Ativar Filtro de Status</span>
-                <span className={`inline-block h-7 w-7 transform rounded-full bg-white shadow-md ring-0 transition-transform duration-300 ease-in-out ${statusFilterActive ? 'translate-x-3.5' : '-translate-x-3.5'}`} />
-              </button>
-              
-              <span className={`text-xs font-bold uppercase tracking-widest ${statusFilterActive ? 'text-blue-600' : 'text-slate-400'}`}>
-                {statusFilterActive ? 'ON' : 'OFF'}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {(() => {
@@ -635,7 +472,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
          
          const topGridClass = topCardsCount === 3 ? "md:grid-cols-3" : topCardsCount === 2 ? "md:grid-cols-2" : "md:grid-cols-1";
 
-         const showTopPerformers = !(activeStatusFilter?.id === 'idle' || isIdleOnly);
+         const showTopPerformers = !isIdleOnly;
          const botPanesCount = 1 + (isWcApplicable ? 1 : 0) + (showTopPerformers ? 1 : 0);
          const paneSpan = botPanesCount === 3 ? 'lg:col-span-4' : botPanesCount === 2 ? 'lg:col-span-6' : 'lg:col-span-12';
 
@@ -645,15 +482,13 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                 <Card className="rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                   <CardContent className="p-5">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                      {activeStatusFilter?.id === 'meeting' ? "Tempo médio em Meeting/Dia" : 
-                       activeStatusFilter?.id === 'moderation' ? "Tempo médio de Moderação/Dia" : 
-                       activeStatusFilter?.id === 'non_moderation' ? "Tempo médio de Non-Moderating/Dia" :
-                       (activeStatusFilter?.id === 'wc' || isWcOnly) ? "Média Organic Break/Dia por agente" :
-                       (activeStatusFilter?.id === 'idle' || isIdleOnly) ? "Média Idle/Dia por agente" :
+                      {isNonModOnly ? "Tempo médio de Non-Moderating/Dia" :
+                       isWcOnly ? "Média Organic Break/Dia por agente" :
+                       isIdleOnly ? "Média Idle/Dia por agente" :
                        "MÉDIA OVERBREAK/DIA POR AGENTE"}
                     </p>
                     <div className="flex items-baseline gap-1">
-                      {(activeStatusFilter?.id === 'meeting' || activeStatusFilter?.id === 'moderation' || activeStatusFilter?.id === 'non_moderation') ? (
+                      {isNonModOnly ? (
                         <>
                           <p className="text-2xl font-black text-slate-900">
                             {totalDays ? Math.floor((totalOverbreak / totalDays) / 60) : 0}<span className="text-sm">h</span> {totalDays ? Math.round((totalOverbreak / totalDays) % 60) : 0}
@@ -677,7 +512,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                               </>
                             )}
                           </div>
-                          {(activeStatusFilter?.id === 'wc' || isWcOnly) && (
+                          {isWcOnly && (
                             <div className="absolute right-0 top-1/2 -translate-y-1/2 border-l border-slate-200 pl-3">
                                <p className="text-[9px] font-black uppercase text-slate-400 leading-tight mb-0.5">Média sem Top 5</p>
                                <p className="text-sm font-bold text-slate-600 tracking-tight leading-none">
@@ -751,19 +586,19 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
               
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
                 <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
-                  <CardHeader className={`${(activeStatusFilter?.id === 'meeting' || activeStatusFilter?.id === 'moderation' || activeStatusFilter?.id === 'non_moderation') ? 'bg-emerald-50/50 border-emerald-100/50' : 'bg-rose-50/50 border-rose-100/50'} border-b py-4 shrink-0 rounded-t-2xl`}>
-                    <CardTitle className={`text-sm font-black uppercase tracking-widest ${(activeStatusFilter?.id === 'meeting' || activeStatusFilter?.id === 'moderation' || activeStatusFilter?.id === 'non_moderation') ? 'text-emerald-800' : 'text-rose-800'} flex items-center gap-2`}>
-                      <AlertCircle size={16} /> {activeStatusFilter && (activeStatusFilter.id === 'meeting' || activeStatusFilter.id === 'moderation' || activeStatusFilter.id === 'non_moderation') ? "BOTTOM 5" : (activeStatusFilter?.id === 'idle' || isIdleOnly) ? "Tempo em Idle" : "Tempo de Overbreaks"}
+                  <CardHeader className={`${isNonModOnly ? 'bg-emerald-50/50 border-emerald-100/50' : 'bg-rose-50/50 border-rose-100/50'} border-b py-4 shrink-0 rounded-t-2xl`}>
+                    <CardTitle className={`text-sm font-black uppercase tracking-widest ${isNonModOnly ? 'text-emerald-800' : 'text-rose-800'} flex items-center gap-2`}>
+                      <AlertCircle size={16} /> {isNonModOnly ? "BOTTOM 5" : isIdleOnly ? "Tempo em Idle" : "Tempo de Overbreaks"}
                     </CardTitle>
-                    <CardDescription className={`text-xs ${(activeStatusFilter?.id === 'meeting' || activeStatusFilter?.id === 'moderation' || activeStatusFilter?.id === 'non_moderation') ? 'text-emerald-600/80' : 'text-rose-600/80'} mt-1`}>
-                      {activeStatusFilter && (activeStatusFilter.id === 'meeting' || activeStatusFilter.id === 'moderation' || activeStatusFilter.id === 'non_moderation') 
-                         ? `Menos tempo em ${selectedSubType !== 'all' ? selectedSubType : activeStatusFilter.label}`
-                         : (activeStatusFilter?.id === 'idle' || isIdleOnly) ? "Mais tempo total em idle" : "Mais tempo total de overbreak"}
+                    <CardDescription className={`text-xs ${isNonModOnly ? 'text-emerald-600/80' : 'text-rose-600/80'} mt-1`}>
+                      {isNonModOnly 
+                         ? `Menos tempo em Non-Moderating`
+                         : isIdleOnly ? "Mais tempo total em idle" : "Mais tempo total de overbreak"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="p-0 flex-1">
                     <div className="divide-y divide-slate-50">
-                      {activeStatusFilter && (activeStatusFilter.id === 'meeting' || activeStatusFilter.id === 'moderation' || activeStatusFilter.id === 'non_moderation') ? (
+                      {isNonModOnly ? (
                          agentsBottom5Special.map((s, i) => (
                             <AgentLine 
                                key={`${s.employeeName}-${i}`} 
@@ -786,7 +621,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                            />
                         ))
                       )}
-                      {((activeStatusFilter && (activeStatusFilter.id === 'meeting' || activeStatusFilter.id === 'moderation' || activeStatusFilter.id === 'non_moderation') ? agentsBottom5Special.length : agentsByOverbreakDuration.length) === 0) && (
+                      {((isNonModOnly ? agentsBottom5Special.length : agentsByOverbreakDuration.length) === 0) && (
                         <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
                       )}
                     </div>
@@ -857,13 +692,13 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
         <Card className="lg:col-span-12 rounded-2xl shadow-sm border border-slate-200 overflow-hidden bg-white">
           <CardHeader className="bg-slate-50/50 border-b border-slate-100 py-4">
             <CardTitle className="text-sm font-black uppercase tracking-widest text-slate-700">
-              {activeStatusFilter ? `Alertas ${activeStatusFilter.label}` : 
+              {isNonModOnly ? `Alertas Non-Moderating` : 
                isWcOnly ? 'Alertas Organic' : 
                isIdleOnly ? 'Alertas Idle' : 
                t('auditLogOverbreak')}
             </CardTitle>
             <CardDescription className="text-xs text-slate-500 mt-1">
-              {activeStatusFilter ? `Detalhamento dos colaboradores em ${activeStatusFilter.label}` : 
+              {isNonModOnly ? `Detalhamento dos colaboradores em Non-Moderating` : 
                isWcOnly ? 'Detalhamento dos colaboradores em uso de Organic' : 
                isIdleOnly ? 'Detalhamento dos colaboradores em status Idle' : 
                t('needAttentionDesc')}
@@ -923,23 +758,19 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                                   .flatMap(r => r.breaks.map(b => ({ ...b, date: r.date })))
                                   .filter(b => b.type !== 'forgot_status' && b.type !== 'offline')
                                   .filter(b => {
-                                      if (activeStatusFilter) {
-                                          if (!activeStatusFilter.types.includes(b.type)) return false;
-                                          if (activeStatusFilter.id === 'non_moderation' && selectedSubType !== 'all') {
-                                              return b.subType === selectedSubType;
-                                          }
-                                          return true;
+                                      if (isNonModOnly) {
+                                          return b.type === 'non_moderating';
                                       }
                                       
-                                      const isWcOnly = globalIncludeWc && !globalIncludeIdle && globalTypeFilter === 'all';
-                                      const isIdleOnly = globalIncludeIdle && !globalIncludeWc && globalTypeFilter === 'all';
-                                      const isOverbreakOnly = globalTypeFilter === 'idle_overbreak_wc' && !globalIncludeWc && !globalIncludeIdle;
+                                      const isWcOnlyFilt = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && globalTypeFilter === 'all';
+                                      const isIdleOnlyFilt = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && globalTypeFilter === 'all';
 
-                                      if (isWcOnly) return b.type === 'wc';
-                                      if (isIdleOnly) return b.type === 'idle' && (!globalFilterMajorOverbreaks || b.durationMinutes > 2);
+                                      if (isWcOnlyFilt) return b.type === 'wc';
+                                      if (isIdleOnlyFilt) return b.type === 'idle' && (!globalFilterMajorOverbreaks || b.durationMinutes > 2);
                                       
                                       if (b.type === 'wc') return globalIncludeWc;
                                       if (b.type === 'idle') return globalIncludeIdle && (!globalFilterMajorOverbreaks || b.durationMinutes > 2);
+                                      if (b.type === 'non_moderating') return globalIncludeNonMod;
                                       
                                       // Standard Overbreaks
                                       let idealTime = (b.type === 'meal') ? 60 : (b.type === 'short') ? 30 : (b.type === 'wellness' || b.type === 'praying') ? 15 : 0;
@@ -983,8 +814,8 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                                           if (!b.remarks || b.remarks.trim().length === 0) return false;
                                           const lowRemark = b.remarks.toLowerCase();
                                           if (lowRemark.includes("system changes state to idle") || lowRemark.includes("系统切换空闲状态")) return false;
-                                          const isShortOrCoaching = b.type === 'short' || b.type === 'meeting' || b.type === 'training' || b.rawStatus.toLowerCase().includes('coaching') || (b.subType || '').toLowerCase().includes('coaching') || lowRemark.includes('coaching');
-                                          return isShortOrCoaching;
+                                          const isRelevantNote = b.type === 'non_moderating' || b.type === 'short' || b.type === 'meeting' || b.type === 'training' || b.rawStatus.toLowerCase().includes('coaching') || (b.subType || '').toLowerCase().includes('coaching') || lowRemark.includes('coaching');
+                                          return isRelevantNote;
                                         })() && (
                                           <div className="mt-2 text-xs bg-slate-50 p-2 rounded border border-slate-100 italic text-slate-600">
                                             <span className="font-bold not-italic text-[10px] uppercase text-slate-400 block mb-1">Observação do Agente:</span>
@@ -995,12 +826,8 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                                     );
                                   })}
                                {s.dailyRecords.flatMap(r => r.breaks).filter(b => b.type !== 'forgot_status' && b.type !== 'offline').filter(b => {
-                                     if (activeStatusFilter) {
-                                         if (!activeStatusFilter.types.includes(b.type)) return false;
-                                         if (activeStatusFilter.id === 'non_moderation' && selectedSubType !== 'all') {
-                                             return b.subType === selectedSubType;
-                                         }
-                                         return true;
+                                     if (isNonModOnly) {
+                                         return b.type === 'non_moderating';
                                      }
                                      if (b.type === 'wc') return globalIncludeWc;
                                      if (b.type === 'idle') return globalIncludeIdle;

@@ -33,6 +33,7 @@ export default function App() {
   const [shiftFilter, setShiftFilter] = useState<string[]>([]);
   const [includeWcGlobal, setIncludeWcGlobal] = useState(false);
   const [includeIdleGlobal, setIncludeIdleGlobal] = useState(false);
+  const [includeNonModGlobal, setIncludeNonModGlobal] = useState(false);
   const [filterMinorOverbreaks, setFilterMinorOverbreaks] = useState(false);
   const [selectedDates, setSelectedDates] = useState<Date[] | undefined>();
 
@@ -100,9 +101,10 @@ export default function App() {
         let prayingOverbreak = Math.max(0, prayingDur - 15);
         let idleOverbreak = idleDur;
 
-        const isWcOnly = includeWcGlobal && !includeIdleGlobal && typeFilter === 'all';
-        const isIdleOnly = includeIdleGlobal && !includeWcGlobal && typeFilter === 'all';
-        const isOverbreakOnly = typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal;
+        const isWcOnly = includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && typeFilter === 'all';
+        const isIdleOnly = includeIdleGlobal && !includeWcGlobal && !includeNonModGlobal && typeFilter === 'all';
+        const isNonModOnly = includeNonModGlobal && !includeWcGlobal && !includeIdleGlobal && typeFilter === 'all';
+        const isOverbreakOnly = typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal;
 
         let dailyOverbreak = 0;
         if (isWcOnly) {
@@ -153,18 +155,21 @@ export default function App() {
 
         if (shiftFilter.length > 0 && r.inferredShift && !shiftFilter.includes(cleanShift(r.inferredShift))) return false;
 
-        const isWcOnly = includeWcGlobal && !includeIdleGlobal && typeFilter === 'all';
-        const isIdleOnly = includeIdleGlobal && !includeWcGlobal && typeFilter === 'all';
+        const isWcOnly = includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && typeFilter === 'all';
+        const isIdleOnly = includeIdleGlobal && !includeWcGlobal && !includeNonModGlobal && typeFilter === 'all';
+        const isNonModOnly = includeNonModGlobal && !includeWcGlobal && !includeIdleGlobal && typeFilter === 'all';
 
         if (isWcOnly) {
            if (r.wcDuration <= 0) return false;
         } else if (isIdleOnly) {
            if (r.idleDuration <= 0) return false;
-        } else if (typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal) {
+        } else if (isNonModOnly) {
+           if (!r.breaks.some(b => b.type === 'non_moderating')) return false;
+        } else if (typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal) {
            if (r.totalOverbreak <= 0) return false;
-        } else if (includeWcGlobal || includeIdleGlobal || typeFilter === 'idle_overbreak_wc') {
+        } else if (includeWcGlobal || includeIdleGlobal || includeNonModGlobal || typeFilter === 'idle_overbreak_wc') {
            // If multiple are on, or just one that isn't in exclusive mode (though currently toggles are simple)
-           if (r.totalOverbreak <= 0 && r.wcDuration <= 0 && r.idleDuration <= 0) return false;
+           if (r.totalOverbreak <= 0 && r.wcDuration <= 0 && r.idleDuration <= 0 && !r.breaks.some(b => b.type === 'non_moderating')) return false;
         }
 
         return true;
@@ -199,7 +204,7 @@ export default function App() {
     }).filter(Boolean) as EmployeeSummary[];
 
     return filtered;
-  }, [summaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, filterMinorOverbreaks]);
+  }, [summaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, filterMinorOverbreaks]);
 
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -468,10 +473,11 @@ export default function App() {
 
                         {/* Bottom Filter Row: Calendars and Options */}
                         <div className="flex gap-2 flex-wrap justify-end w-full">
-                          <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm overflow-x-auto w-full sm:w-auto">
+                          <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto">
+                            <span className="text-[10px] font-black uppercase text-slate-400 px-2">Período:</span>
                             <Popover>
                               <PopoverTrigger
-                                   className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 bg-amber-500 text-white shadow-md hover:bg-amber-600`}
+                                   className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 bg-amber-500 text-white shadow-md hover:bg-amber-600`}
                                  >
                                    <CalendarIcon size={12} />
                                    Calendário {selectedDates && selectedDates.length > 0 ? `(${selectedDates.length})` : ''}
@@ -481,7 +487,7 @@ export default function App() {
                                      <Button 
                                        variant="outline" 
                                        size="sm" 
-                                       className="text-[10px] font-bold uppercase h-7 px-2 border-slate-200"
+                                       className="text-[10px] font-bold uppercase h-7 px-2 border-slate-200 rounded-full"
                                        onClick={() => {
                                           const now = new Date();
                                           const start = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -499,7 +505,7 @@ export default function App() {
                                      <Button 
                                        variant="ghost" 
                                        size="sm" 
-                                       className="text-[10px] font-bold uppercase h-7 px-2 text-rose-500 hover:text-rose-600"
+                                       className="text-[10px] font-bold uppercase h-7 px-2 text-rose-500 hover:text-rose-600 rounded-full"
                                        onClick={() => setSelectedDates(undefined)}
                                      >
                                        Limpar
@@ -526,35 +532,42 @@ export default function App() {
                                          setSelectedDates(undefined);
                                      }
                                  }}
-                                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${timeFilter === filter && (!selectedDates || selectedDates.length === 0) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                                 className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${timeFilter === filter && (!selectedDates || selectedDates.length === 0) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
                                >
                                  {filter === 'month' ? t('filterMonth') : filter === 'week' ? t('filterWeek') : t('filterDay')}
                                </button>
                             ))}
                           </div>
                           
-                          <div className="flex gap-2 w-full sm:w-auto">
+                          <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto">
+                             <span className="text-[10px] font-black uppercase text-slate-400 px-2 shrink-0">Status:</span>
                              <button 
                                onClick={() => setTypeFilter(typeFilter === 'all' ? 'idle_overbreak_wc' : 'all')}
-                               className={`px-4 py-1.5 w-full sm:w-auto border rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${typeFilter === 'idle_overbreak_wc' ? 'bg-rose-500 border-rose-500 text-white shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 shadow-sm'}`}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${typeFilter === 'idle_overbreak_wc' ? 'bg-rose-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                OVERBREAKS
                              </button>
                              <button
                                onClick={() => setIncludeWcGlobal(!includeWcGlobal)}
-                               className={`px-4 py-1.5 w-full sm:w-auto border rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeWcGlobal ? 'bg-amber-500 border-amber-500 text-white shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 shadow-sm'}`}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeWcGlobal ? 'bg-amber-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                Organic
                              </button>
                              <button
                                onClick={() => setIncludeIdleGlobal(!includeIdleGlobal)}
-                               className={`px-4 py-1.5 w-full sm:w-auto border rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeIdleGlobal ? 'bg-rose-500 border-rose-500 text-white shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 shadow-sm'}`}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeIdleGlobal ? 'bg-rose-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                IDLE
                              </button>
                              <button
+                               onClick={() => setIncludeNonModGlobal(!includeNonModGlobal)}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeNonModGlobal ? 'bg-teal-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               NON-MOD
+                             </button>
+                             <button
                                onClick={() => setFilterMinorOverbreaks(!filterMinorOverbreaks)}
-                               className={`px-4 py-1.5 w-full sm:w-auto border rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${filterMinorOverbreaks ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 shadow-sm'}`}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${filterMinorOverbreaks ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                                title="Mostra apenas agentes com total de 2 minutos ou menos"
                              >
                                2min or less
@@ -568,9 +581,9 @@ export default function App() {
 
                 <div className="min-h-[600px]">
                   {activeTab === 'dashboard' ? (
-                    <StatsDashboard summaries={filteredSummaries} allSummaries={summaries} latestDate={latestDate} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalFilterMajorOverbreaks={false} />
+                    <StatsDashboard summaries={filteredSummaries} allSummaries={summaries} latestDate={latestDate} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalFilterMajorOverbreaks={false} />
                   ) : (
-                    <EmployeeList summaries={filteredSummaries} allSummaries={summaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalFilterMajorOverbreaks={false} />
+                    <EmployeeList summaries={filteredSummaries} allSummaries={summaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalFilterMajorOverbreaks={false} />
                   )}
                 </div>
               </motion.div>
