@@ -36,10 +36,15 @@ export default function App() {
   const [filterMinorOverbreaks, setFilterMinorOverbreaks] = useState(false);
   const [selectedDates, setSelectedDates] = useState<Date[] | undefined>();
 
+  const cleanShift = (shift: string) => {
+    const match = shift.match(/\b(\d{2}:\d{2}-\d{2}:\d{2})\b/);
+    return match ? match[1] : shift;
+  };
+
   const availableShifts = useMemo(() => {
     const shifts = new Set<string>();
     summaries.forEach(s => s.dailyRecords.forEach(r => {
-      if (r.inferredShift) shifts.add(r.inferredShift);
+      if (r.inferredShift) shifts.add(cleanShift(r.inferredShift));
     }));
     return Array.from(shifts).sort((a, b) => {
       const orderMap: Record<string, number> = {
@@ -146,7 +151,7 @@ export default function App() {
            if (timeFilter === 'day' && !(d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear())) return false;
         }
 
-        if (shiftFilter.length > 0 && r.inferredShift && !shiftFilter.includes(r.inferredShift)) return false;
+        if (shiftFilter.length > 0 && r.inferredShift && !shiftFilter.includes(cleanShift(r.inferredShift))) return false;
 
         const isWcOnly = includeWcGlobal && !includeIdleGlobal && typeFilter === 'all';
         const isIdleOnly = includeIdleGlobal && !includeWcGlobal && typeFilter === 'all';

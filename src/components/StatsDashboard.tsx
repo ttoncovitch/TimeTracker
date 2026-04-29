@@ -269,22 +269,24 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
     filteredSummaries.forEach(s => {
       s.dailyRecords.forEach(r => {
         if (!r.inferredShift) return;
-        if (!stats[r.inferredShift]) stats[r.inferredShift] = { minutes: 0, occurrences: 0 };
+        const match = r.inferredShift.match(/\b(\d{2}:\d{2}-\d{2}:\d{2})\b/);
+        const shiftLabel = match ? match[1] : r.inferredShift;
+        if (!stats[shiftLabel]) stats[shiftLabel] = { minutes: 0, occurrences: 0 };
         
         if (isOnlyOrganic) {
            if (r.wcDuration > 0) {
-             stats[r.inferredShift].minutes += r.wcDuration;
-             stats[r.inferredShift].occurrences += 1;
+             stats[shiftLabel].minutes += r.wcDuration;
+             stats[shiftLabel].occurrences += 1;
            }
         } else if (isOnlyIdle) {
            if (r.idleDuration > 0) {
-             stats[r.inferredShift].minutes += r.idleDuration;
-             stats[r.inferredShift].occurrences += 1;
+             stats[shiftLabel].minutes += r.idleDuration;
+             stats[shiftLabel].occurrences += 1;
            }
         } else {
            if (r.totalOverbreak > 0) {
-             stats[r.inferredShift].minutes += r.totalOverbreak;
-             stats[r.inferredShift].occurrences += 1;
+             stats[shiftLabel].minutes += r.totalOverbreak;
+             stats[shiftLabel].occurrences += 1;
            }
         }
       });
@@ -508,7 +510,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
               <div className="pl-6 flex-1 hidden xl:flex flex-col gap-2">
                  {/* Most Minutes */}
                  <div className="flex flex-col">
-                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title="Shift com mais tempo neste filtro">Pico de Minutos</p>
+                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title="Shift com mais tempo neste filtro">Shift com mais minutos</p>
                    <div className="flex items-center gap-1.5">
                      <span className="text-[10px] font-black text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded uppercase border border-slate-200">{shiftStats.mostMinutes.shift}</span>
                      <span className="text-[11px] font-bold text-rose-500">
@@ -520,7 +522,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                  </div>
                  {/* Most Occurrences */}
                  <div className="flex flex-col">
-                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title="Shift com mais ocorrências neste filtro">Pico de Ocorrências</p>
+                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title="Shift com mais ocorrências neste filtro">Shift com mais ocorrências</p>
                    <div className="flex items-center gap-1.5">
                      <span className="text-[10px] font-black text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded uppercase border border-slate-200">{shiftStats.mostOccurrences.shift}</span>
                      <span className="text-[11px] font-bold text-amber-500">{shiftStats.mostOccurrences.occurrences}x</span>
