@@ -2,6 +2,8 @@
 export interface BreakSession {
   type: 'meal' | 'short' | 'wellness' | 'wc' | 'praying' | 'idle' | 'other' | 'forgot_status' | 'offline' | 'moderating' | 'non_moderating' | 'meeting' | 'training';
   rawStatus?: string;
+  subType?: string;
+  remarks?: string;
   startTime: Date;
   endTime: Date;
   durationMinutes: number;

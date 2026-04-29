@@ -116,7 +116,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              
              const status = String(row[3] || '').trim().toLowerCase();
              const subStatus = String(row[4] || '').trim().toLowerCase();
-             const remarks = String(row[5] || '').trim().toLowerCase();
+             const remarks = String(row[5] || '').trim();
              
              const durationHours = isNaN(Number(row[6])) ? 0 : Number(row[6]);
              const durationMinutes = Math.round(durationHours * 60);
@@ -230,10 +230,11 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
 }
 
 const SHIFTS = [
-  { startHour: 7, startMinute: 0, endHour: 16, endMinute: 0, label: 'Morning (07:00-16:00)' },
-  { startHour: 8, startMinute: 0, endHour: 17, endMinute: 0, label: 'Morning (08:00-17:00)' },
-  { startHour: 14, startMinute: 0, endHour: 23, endMinute: 0, label: 'Late (14:00-23:00)' },
-  { startHour: 22, startMinute: 30, endHour: 7, endMinute: 30, label: 'Nightshift (22:30-07:30)', crossesMidnight: true }
+  { startHour: 7, startMinute: 0, endHour: 16, endMinute: 0, label: '07:00-16:00' },
+  { startHour: 8, startMinute: 0, endHour: 17, endMinute: 0, label: '08:00-17:00' },
+  { startHour: 9, startMinute: 0, endHour: 18, endMinute: 0, label: '09:00-18:00' },
+  { startHour: 14, startMinute: 0, endHour: 23, endMinute: 0, label: '14:00-23:00' },
+  { startHour: 22, startMinute: 30, endHour: 7, endMinute: 30, label: '22:30-07:30', crossesMidnight: true }
 ];
 
 function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRecord {
@@ -253,7 +254,7 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
     
     const status = String(row[3] || '').trim().toLowerCase();
     const subStatus = String(row[4] || '').trim().toLowerCase();
-    const remarks = String(row[5] || '').trim().toLowerCase();
+    const remarks = String(row[5] || '').trim();
     
     const durationHours = isNaN(Number(row[6])) ? 0 : Number(row[6]);
     const durationMinutes = Math.round(durationHours * 60);
@@ -341,27 +342,37 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
 
   // 3. Process Events
   events.forEach(e => {
+    // Combine status, subStatus, and remarks for comprehensive detection
     const combinedInfo = `${e.status} ${e.subStatus} ${e.remarks}`.toLowerCase();
     
-    let isWork = false;
-    if (e.status.includes('trabalho') || e.status.includes('work') || e.status.includes('available') || e.status.includes('on queue') || e.status.includes('em chamada') || e.status.includes('in call') || e.status.includes('moderat') || combinedInfo.includes('non-moderat')) {
-       isWork = true;
-       totalWorkTimeMillis += e.durationMinutes * 60 * 1000;
-    } 
+    let isWork = combinedInfo.includes('trabalho') || 
+                 combinedInfo.includes('work') || 
+                 combinedInfo.includes('available') || 
+                 combinedInfo.includes('on queue') || 
+                 combinedInfo.includes('em chamada') || 
+                 combinedInfo.includes('in call') || 
+                 combinedInfo.includes('moderat') || 
+                 combinedInfo.includes('moderation') ||
+                 combinedInfo.includes('non moderation') ||
+                 combinedInfo.includes('non-moderation') ||
+                 combinedInfo.includes('non moderating') ||
+                 combinedInfo.includes('meeting') ||
+                 combinedInfo.includes('reuni');
 
-    if (!isWork || combinedInfo.includes('moderat') || combinedInfo.includes('non-moderat') || combinedInfo.includes('meeting') || combinedInfo.includes('training')) {
-       let currentBreakType: BreakSession['type'] = 'other';
-       
-       if (e.startTime > shiftEndPlus10) {
-           currentBreakType = 'forgot_status';
-       } else if (combinedInfo.includes('non-moderat')) {
-           currentBreakType = 'non_moderating';
-       } else if (combinedInfo.includes('moderat')) {
-           currentBreakType = 'moderating';
+    if (isWork) {
+       totalWorkTimeMillis += e.durationMinutes * 60 * 1000;
+    }
+
+    let currentBreakType: BreakSession['type'] = 'other';
+    
+    if (combinedInfo.includes('non moderation') || combinedInfo.includes('non-moderation') || combinedInfo.includes('non_moderating') || combinedInfo.includes('non moderation task') || combinedInfo.includes('non moderating task')) {
+        currentBreakType = 'non_moderating';
+    } else if (combinedInfo.includes('moderat') || combinedInfo.includes('moderation') || combinedInfo.includes('moderação')) {
+        currentBreakType = 'moderating';
+    } else if (combinedInfo.includes('meeting') || combinedInfo.includes('reuni')) {
+           currentBreakType = 'meeting';
        } else if (combinedInfo.includes('training') || combinedInfo.includes('treinamento')) {
            currentBreakType = 'training';
-       } else if (combinedInfo.includes('meeting') || combinedInfo.includes('reunião') || combinedInfo.includes('reuniao')) {
-           currentBreakType = 'meeting';
        } else if (combinedInfo.includes('meal') || combinedInfo.includes('almoço')) {
            currentBreakType = 'meal';
        } else if (WC_KEYWORDS.some(k => combinedInfo.includes(k) || combinedInfo === k)) {
@@ -378,54 +389,21 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
            currentBreakType = 'short';
        }
        
-       // If the duration is impossibly long (> 3 hours), they forgot to change status. Reclassify to avoid breaking metrics.
-       if (e.durationMinutes > 180 && currentBreakType !== 'offline' && currentBreakType !== 'idle' && currentBreakType !== 'moderating' && currentBreakType !== 'non_moderating') {
+    if (!isWork || currentBreakType === 'moderating' || currentBreakType === 'non_moderating' || currentBreakType === 'meeting') {
+       // Only reclassify as 'forgot_status' if it's REALLY not work, and long.
+       if (!isWork && e.durationMinutes > 180 && currentBreakType !== 'offline') {
            currentBreakType = 'forgot_status';
        }
 
-       // Handle long events spanning past shift end
-       if (e.endTime > shiftEndPlus10) {
-           const durationInside = Math.max(0, (shiftEndLimit.getTime() - e.startTime.getTime()) / 60000);
-           const durationOutside = Math.max(0, (e.endTime.getTime() - Math.max(e.startTime.getTime(), shiftEndLimit.getTime())) / 60000);
-           
-           const adjustedTypeInside: 'forgot_status' = 'forgot_status';
-
-           if (durationInside > 0 && currentBreakType !== 'offline') {
-               breaks.push({
-                   type: adjustedTypeInside,
-                   rawStatus: e.rawStatus || e.rawInfo?.trim() || '',
-                   startTime: e.startTime,
-                   endTime: new Date(e.startTime.getTime() + durationInside * 60000),
-                   durationMinutes: Math.round(durationInside)
-               });
-           }
-           if (durationOutside > 0 && currentBreakType !== 'offline') {
-               breaks.push({
-                   type: 'forgot_status',
-                   rawStatus: currentBreakType === 'idle' ? 'Forgot to change / Idle' : 'Forgot to change status',
-                   startTime: new Date(e.endTime.getTime() - durationOutside * 60000),
-                   endTime: e.endTime,
-                   durationMinutes: Math.round(durationOutside)
-               });
-           }
-           if (currentBreakType === 'offline') {
-               breaks.push({
-                   type: currentBreakType,
-                   rawStatus: e.rawStatus || e.rawInfo?.trim() || '',
-                   startTime: e.startTime,
-                   endTime: e.endTime,
-                   durationMinutes: e.durationMinutes
-               });
-           }
-       } else {
-           breaks.push({
-               type: currentBreakType,
-               rawStatus: e.rawStatus || e.rawInfo?.trim() || '',
-               startTime: e.startTime,
-               endTime: e.endTime,
-               durationMinutes: e.durationMinutes
-           });
-       }
+       breaks.push({
+           type: currentBreakType,
+           rawStatus: e.rawStatus || e.rawInfo?.trim() || '',
+           subType: e.subStatus,
+           remarks: e.remarks || String(e.row?.[4] || '').trim(),
+           startTime: e.startTime,
+           endTime: e.endTime,
+           durationMinutes: e.durationMinutes
+       });
     }
   });
 
