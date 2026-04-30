@@ -4,6 +4,9 @@ export interface BreakSession {
   rawStatus?: string;
   subType?: string;
   remarks?: string;
+  originalStatus?: string;
+  originalSubStatus?: string;
+  originalRemark?: string;
   startTime: Date;
   endTime: Date;
   durationMinutes: number;
@@ -22,6 +25,9 @@ export interface EmployeeDayRecord {
   wcDuration: number;
   prayingDuration: number;
   idleDuration: number;
+  nonModDuration: number;
+  reviewAndAppealDuration: number;
+  awaitingTasksDuration: number;
   
   // Overbreaks in minutes
   mealOverbreak: number;
@@ -35,21 +41,44 @@ export interface EmployeeDayRecord {
 
   tardinessMinutes: number;
   earlyLeaveMinutes: number;
+  actualStartTime?: Date | null;
+  actualEndTime?: Date | null;
 
   inferredShift?: string;
+  scheduledShift?: string;
+  hasSingleShort30m?: boolean;
   hasMealWithoutShortAnomaly?: boolean;
+}
+
+export interface CalendarData {
+  email: string;
+  name: string;
+  lob?: string;
+  language?: string;
+  supervisor?: string;
+  shift?: string; // If fixed shift, or schedule per date
+  schedule?: Record<string, string>; // date -> shift mapping
 }
 
 export interface EmployeeSummary {
   employeeName: string;
   email: string;
   department: string;
+  lob?: string;
+  language?: string;
+  supervisor?: string;
+  shift?: string; // from calendar
+  calendarName?: string; // overriding inferred name
   isTraining: boolean;
   totalWorkMinutes: number;
   totalBreakMinutes: number;
   totalOverbreakMinutes: number;
   totalTardinessMinutes: number;
   totalEarlyLeaveMinutes: number;
+  totalNonModMinutes: number;
+  totalReviewAndAppealMinutes: number;
+  totalAwaitingTasksMinutes: number;
+  totalShort30MinRecords?: number;
   wcAlerts: number;
   idleAlerts: number;
   wcTotalMinutes?: number;

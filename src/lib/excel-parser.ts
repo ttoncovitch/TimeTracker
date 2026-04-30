@@ -82,8 +82,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           const email = String(row[1] || '').toLowerCase();
           if (!email || !email.includes('@')) return; 
           
-          const namePart = email.split('@')[0];
-          const name = namePart.split('.').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ').replace(/[0-9]/g, '').trim();
+          const name = email.split('@')[0];
 
           row.push(name); 
           row.push(email); 
@@ -106,6 +105,10 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           let totalEarlyLeaveMinutes = 0;
           let wcAlertsCount = 0;
           let idleAlertsCount = 0;
+          let totalShort30MinRecords = 0;
+          let totalNonModMinutes = 0;
+          let totalReviewAndAppealMinutes = 0;
+          let totalAwaitingTasksMinutes = 0;
           
           let finalName = '';
           let finalDepartment = '';
@@ -119,6 +122,10 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              const status = String(row[3] || '').trim().toLowerCase();
              const subStatus = String(row[4] || '').trim().toLowerCase();
              const remarks = String(row[5] || '').trim();
+             
+             const originalStatus = String(row[3] || '').trim();
+             const originalSubStatus = String(row[4] || '').trim();
+             const originalRemark = String(row[5] || '').trim();
              
              const durationHours = isNaN(Number(row[6])) ? 0 : Number(row[6]);
              const durationMinutes = Math.round(durationHours * 60);
@@ -152,7 +159,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
                 }
              }
 
-             return { date, employeeName, department: String(row[2] || ''), status, subStatus, remarks, rawInfo, durationMinutes, startTime, endTime, row };
+             return { date, employeeName, department: String(row[2] || ''), status, subStatus, remarks, originalStatus, originalSubStatus, originalRemark, rawInfo, durationMinutes, startTime, endTime, row };
           }).sort((a,b) => a.startTime.getTime() - b.startTime.getTime());
 
           if (allEvents.length === 0) return;
@@ -201,8 +208,12 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               totalOverbreakMinutes += record.totalOverbreak;
               totalTardinessMinutes += record.tardinessMinutes;
               totalEarlyLeaveMinutes += record.earlyLeaveMinutes;
+              if (record.hasSingleShort30m) totalShort30MinRecords++;
               if (record.wcDuration > LIMITS.WC) wcAlertsCount++;
               if (record.idleDuration > 0) idleAlertsCount++;
+              totalNonModMinutes += record.nonModDuration;
+              totalReviewAndAppealMinutes += record.reviewAndAppealDuration;
+              totalAwaitingTasksMinutes += record.awaitingTasksDuration;
              }
           });
 
@@ -217,6 +228,10 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               totalOverbreakMinutes: Math.round(totalOverbreakMinutes),
               totalTardinessMinutes: Math.round(totalTardinessMinutes),
               totalEarlyLeaveMinutes: Math.round(totalEarlyLeaveMinutes),
+              totalNonModMinutes: Math.round(totalNonModMinutes),
+              totalReviewAndAppealMinutes: Math.round(totalReviewAndAppealMinutes),
+              totalAwaitingTasksMinutes: Math.round(totalAwaitingTasksMinutes),
+              totalShort30MinRecords,
               wcAlerts: wcAlertsCount,
               idleAlerts: idleAlertsCount,
               dailyRecords: dailyRecords.sort((a,b) => a.date.localeCompare(b.date))
@@ -262,6 +277,10 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
     const subStatus = String(row[4] || '').trim().toLowerCase();
     const remarks = String(row[5] || '').trim();
     
+    const originalStatus = String(row[3] || '').trim();
+    const originalSubStatus = String(row[4] || '').trim();
+    const originalRemark = String(row[5] || '').trim();
+    
     const durationHours = isNaN(Number(row[6])) ? 0 : Number(row[6]);
     const durationMinutes = Math.round(durationHours * 60);
     
@@ -288,13 +307,14 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
         }
     }
 
-    return { status, subStatus, remarks, durationMinutes, startTime, endTime, rawInfo: String(row[3] || '') + ' ' + String(row[4] || ''), row };
+    return { status, subStatus, remarks, originalStatus, originalSubStatus, originalRemark, durationMinutes, startTime, endTime, rawInfo: String(row[3] || '') + ' ' + String(row[4] || ''), row };
   }).filter(e => e !== null) as any[];
 
   if (events.length === 0) {
       return {
         date, employeeName: employeeName || 'Unknown', totalWorkTimeMillis: 0, breaks: [],
         mealDuration: 0, shortDuration: 0, wellnessDuration: 0, wcDuration: 0, prayingDuration: 0, idleDuration: 0,
+        nonModDuration: 0, reviewAndAppealDuration: 0, awaitingTasksDuration: 0,
         mealOverbreak: 0, shortOverbreak: 0, wellnessOverbreak: 0, prayingOverbreak: 0, wcOverbreak: 0, idleOverbreak: 0, totalOverbreak: 0,
         tardinessMinutes: 0, earlyLeaveMinutes: 0
       };
@@ -399,24 +419,43 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
            currentBreakType = 'short';
        }
        
-    if (!isWork || currentBreakType === 'moderating' || currentBreakType === 'non_moderating' || currentBreakType === 'meeting') {
-       // Only reclassify as 'forgot_status' if it's REALLY not work, and long.
-       if (!isWork && e.durationMinutes > 180 && currentBreakType !== 'offline') {
-           currentBreakType = 'forgot_status';
-       }
+     // Only reclassify as 'forgot_status' if it's REALLY not work, and long.
+     if (!isWork && e.durationMinutes > 180 && currentBreakType !== 'offline') {
+         currentBreakType = 'forgot_status';
+     }
+     
+     // default work type if not set
+     if (isWork && currentBreakType === 'other') {
+         currentBreakType = 'moderating'; // default work display
+     }
+     
+     let finalEndTime = e.endTime;
+     let finalDuration = e.durationMinutes;
+     if (currentBreakType === 'offline' && e.endTime > shiftEndLimit) {
+         finalEndTime = new Date(Math.min(e.endTime.getTime(), shiftEndLimit.getTime()));
+         finalDuration = Math.round((finalEndTime.getTime() - e.startTime.getTime()) / 60000);
+         if (finalDuration < 0) {
+             finalDuration = 0;
+             finalEndTime = e.startTime;
+         }
+     }
 
-       breaks.push({
-           type: currentBreakType,
-           rawStatus: e.rawStatus || e.rawInfo?.trim() || '',
-           subType: e.subStatus,
-           remarks: e.remarks || String(e.row?.[4] || '').trim(),
-           startTime: e.startTime,
-           endTime: e.endTime,
-           durationMinutes: e.durationMinutes
-       });
-    }
+     if (finalDuration > 0 || currentBreakType === 'offline') {
+         breaks.push({
+             type: currentBreakType,
+             rawStatus: e.rawStatus || e.rawInfo?.trim() || '',
+             subType: e.subStatus,
+             remarks: e.originalRemark,
+             originalStatus: e.originalStatus,
+             originalSubStatus: e.originalSubStatus,
+             originalRemark: e.originalRemark,
+             startTime: e.startTime,
+             endTime: finalEndTime,
+             durationMinutes: finalDuration
+         });
+     }
 
-    if (currentBreakType !== 'offline' && currentBreakType !== 'forgot_status') {
+    if (currentBreakType !== 'forgot_status' && currentBreakType !== 'offline') {
        if (!actualStartTime) {
            actualStartTime = e.startTime;
        }
@@ -436,21 +475,81 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
 
   let earlyLeaveMinutes = 0;
   if (actualEndTime) {
-      const diff = Math.round((shiftEndLimit.getTime() - actualEndTime.getTime()) / 60000);
-      if (diff > 0 && diff < 8 * 60) {
-          earlyLeaveMinutes = diff;
+      if (shiftEndLimit.getTime() <= Date.now() + 60000) {
+          const diff = Math.round((shiftEndLimit.getTime() - actualEndTime.getTime()) / 60000);
+          if (diff > 0 && diff < 8 * 60) {
+              earlyLeaveMinutes = diff;
+              // Dynamically insert an offline break for early leave
+              breaks.push({
+                  type: 'offline',
+                  rawStatus: 'offline (system inferred)',
+                  subType: '',
+                  remarks: '',
+                  originalStatus: 'offline',
+                  originalSubStatus: '',
+                  originalRemark: '',
+                  startTime: new Date(actualEndTime),
+                  endTime: new Date(shiftEndLimit),
+                  durationMinutes: diff
+              });
+          }
+      }
+  }
+
+  // Find internal gaps between events
+  const sortedEventsForGaps = [...events].sort((a,b) => a.startTime.getTime() - b.startTime.getTime());
+  let lastEnd = actualStartTime ? new Date(actualStartTime) : null;
+  
+  if (lastEnd) {
+      for (const e of sortedEventsForGaps) {
+          if (e.startTime > lastEnd) {
+              const gapMins = Math.round((e.startTime.getTime() - lastEnd.getTime()) / 60000);
+              if (gapMins > 0 && gapMins < 8 * 60) { // arbitrary bound so we don't insert massive 14 hr gaps
+                  // Insert implicit offline for gaps
+                  breaks.push({
+                      type: 'offline',
+                      rawStatus: 'offline/gap (system inferred)',
+                      subType: '',
+                      remarks: '',
+                      originalStatus: 'offline',
+                      originalSubStatus: '',
+                      originalRemark: '',
+                      startTime: new Date(lastEnd),
+                      endTime: new Date(e.startTime),
+                      durationMinutes: gapMins
+                  });
+              }
+          }
+          if (e.endTime > lastEnd) {
+              lastEnd = new Date(e.endTime);
+          }
       }
   }
 
   const mealDuration = breaks.filter(b => b.type === 'meal').reduce((sum, b) => sum + b.durationMinutes, 0);
-  const shortDuration = breaks.filter(b => b.type === 'short').reduce((sum, b) => sum + b.durationMinutes, 0);
+  const shortBreaks = breaks.filter(b => b.type === 'short');
+  const shortDuration = shortBreaks.reduce((sum, b) => sum + b.durationMinutes, 0);
+  
+  let hasSingleShort30m = false;
+  if (shortBreaks.length === 1 && shortBreaks[0].durationMinutes >= 20) {
+      hasSingleShort30m = true;
+  }
+  
   const wellnessDuration = breaks.filter(b => b.type === 'wellness').reduce((sum, b) => sum + b.durationMinutes, 0);
   const prayingDuration = breaks.filter(b => b.type === 'praying').reduce((sum, b) => sum + b.durationMinutes, 0);
   const wcDuration = breaks.filter(b => b.type === 'wc').reduce((sum, b) => sum + b.durationMinutes, 0);
   const idleDuration = breaks.filter(b => b.type === 'idle').reduce((sum, b) => sum + b.durationMinutes, 0);
+  const nonModDuration = breaks.filter(b => b.type === 'non_moderating').reduce((sum, b) => sum + b.durationMinutes, 0);
+  const reviewAndAppealDuration = breaks.filter(b => b.type === 'non_moderating' && (b.subType?.toLowerCase().includes('review') || b.subType?.toLowerCase().includes('appeal'))).reduce((sum, b) => sum + b.durationMinutes, 0);
+  const awaitingTasksDuration = breaks.filter(b => b.type === 'non_moderating' && b.subType?.toLowerCase().includes('awaiting tasks')).reduce((sum, b) => sum + b.durationMinutes, 0);
 
   let mealOver = Math.max(0, mealDuration - LIMITS.MEAL);
   let shortOver = Math.max(0, shortDuration - LIMITS.SHORT);
+  
+  // Tolerance of 2 minutes for single 30m breaks
+  if (hasSingleShort30m && shortOver <= 2) {
+      shortOver = 0;
+  }
   
   let hasMealWithoutShortAnomaly = false;
   
@@ -470,11 +569,14 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
   
   const totalOver = mealOver + shortOver + wellnessOver + prayingOver + idleOver;
 
+  breaks.sort((a,b) => a.startTime.getTime() - b.startTime.getTime());
+
   return {
     date,
     employeeName: employeeName || 'Unknown',
     inferredShift: closestShift.label,
     hasMealWithoutShortAnomaly,
+    hasSingleShort30m,
     totalWorkTimeMillis,
     breaks,
     mealDuration,
@@ -483,6 +585,9 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
     wcDuration,
     prayingDuration,
     idleDuration,
+    nonModDuration,
+    reviewAndAppealDuration,
+    awaitingTasksDuration,
     mealOverbreak: mealOver,
     shortOverbreak: shortOver,
     wellnessOverbreak: wellnessOver,
@@ -491,7 +596,9 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
     idleOverbreak: idleOver,
     totalOverbreak: totalOver,
     tardinessMinutes,
-    earlyLeaveMinutes
+    earlyLeaveMinutes,
+    actualStartTime,
+    actualEndTime
   };
 }
 

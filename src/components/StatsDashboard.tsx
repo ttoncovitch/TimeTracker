@@ -10,22 +10,46 @@ import { format } from 'date-fns';
 interface StatsDashboardProps {
   summaries: EmployeeSummary[];
   allSummaries: EmployeeSummary[];
+  periodSummaries?: EmployeeSummary[];
   latestDate?: Date;
   globalTypeFilter: 'all' | 'idle_overbreak_wc';
   globalIncludeWc: boolean;
   globalIncludeIdle: boolean;
   globalIncludeNonMod: boolean;
   globalIncludeTardiness: boolean;
+  globalIncludeEarlyLeave: boolean;
+  globalIncludeShort30Min?: boolean;
+  globalIncludeCheck?: boolean;
   globalFilterMajorOverbreaks: boolean;
+  globalShiftFilter?: string[];
+  basePeriodCount?: number;
 }
 
-export function StatsDashboard({ summaries, allSummaries, latestDate, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalFilterMajorOverbreaks }: StatsDashboardProps) {
+export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], latestDate, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalFilterMajorOverbreaks, globalShiftFilter = [], basePeriodCount }: StatsDashboardProps) {
   const { t } = useLanguage();
   
-  const isWcOnly = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
-  const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
-  const isNonModOnly = globalIncludeNonMod && !globalIncludeWc && !globalIncludeIdle && !globalIncludeTardiness && globalTypeFilter === 'all';
-  const isTardinessOnly = globalIncludeTardiness && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && globalTypeFilter === 'all';
+  const isWcOnly = globalIncludeWc && !globalIncludeShort30Min && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && globalTypeFilter === 'all';
+  const isIdleOnly = globalIncludeIdle && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && globalTypeFilter === 'all';
+  const isNonModOnly = globalIncludeNonMod && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && globalTypeFilter === 'all';
+  const isTardinessOnly = globalIncludeTardiness && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeEarlyLeave && !globalIncludeCheck && globalTypeFilter === 'all';
+  const isEarlyLeaveOnly = globalIncludeEarlyLeave && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeCheck && globalTypeFilter === 'all';
+  const isShort30MinOnly = globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && globalTypeFilter === 'all';
+  const isCheckOnly = (globalIncludeCheck && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && globalTypeFilter === 'all') || (globalShiftFilter.length === 1 && globalShiftFilter[0] === 'CHECK');
+
+  const hasCheckFilter = globalShiftFilter.includes('CHECK') || !!globalIncludeCheck;
+  const specificShifts = globalShiftFilter.filter(s => s !== 'CHECK');
+  const isCheckAndShift = hasCheckFilter && specificShifts.length > 0;
+
+  const cleanShift = (shift: string) => {
+    const match = shift.match(/\b(\d{2}:\d{2}-\d{2}:\d{2})\b/);
+    return match ? match[1] : shift;
+  };
+
+  const agentsDoPeriodoCount = isCheckAndShift ? periodSummaries.filter(s => s.dailyRecords.some(r => r.scheduledShift && specificShifts.includes(cleanShift(r.scheduledShift)))).length : 0;
+  
+  const agentsNoPeriodoCount = isCheckAndShift ? periodSummaries.filter(s => s.dailyRecords.some(r => r.inferredShift && specificShifts.includes(cleanShift(r.inferredShift)))).length : 0;
+
+  const agentsDeOutroPeriodoCount = isCheckAndShift ? periodSummaries.filter(s => s.dailyRecords.some(r => r.inferredShift && specificShifts.includes(cleanShift(r.inferredShift)) && r.scheduledShift && !specificShifts.includes(cleanShift(r.scheduledShift)))).length : 0;
 
   const [detailsSortMode, setDetailsSortMode] = useState<'duration' | 'date'>('duration');
 
@@ -61,11 +85,12 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
             if (idleOver <= 2) idleOver = 0;
         }
 
-        const isWcOnly = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
-        const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
-        const isOverbreakOnly = globalTypeFilter === 'idle_overbreak_wc' && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness;
-        const isNonModOnlyCalc = globalIncludeNonMod && !globalIncludeWc && !globalIncludeIdle && !globalIncludeTardiness && globalTypeFilter === 'all';
-        const isTardinessOnlyCalc = globalIncludeTardiness && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && globalTypeFilter === 'all';
+        const isWcOnly = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
+        const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
+        const isOverbreakOnly = globalTypeFilter === 'idle_overbreak_wc' && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave;
+        const isNonModOnlyCalc = globalIncludeNonMod && !globalIncludeWc && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
+        const isTardinessOnlyCalc = globalIncludeTardiness && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
+        const isEarlyLeaveOnlyCalc = globalIncludeEarlyLeave && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
 
         let dailyOverbreak = 0;
         if (isNonModOnlyCalc) {
@@ -76,6 +101,8 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
           dailyOverbreak = idleOver;
         } else if (isTardinessOnlyCalc) {
           dailyOverbreak = r.tardinessMinutes || 0;
+        } else if (isEarlyLeaveOnlyCalc) {
+          dailyOverbreak = r.earlyLeaveMinutes || 0;
         } else if (isOverbreakOnly) {
           dailyOverbreak = mealOver + shortOver + wellnessOver + prayingOver;
         } else {
@@ -121,12 +148,17 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
 
   const filteredSummaries = dashboardSummaries;
 
-  const totalEmployees = allSummaries.length; // Raw summaries length for agent count
+  // Use periodSummaries size if it has elements (meaning filters applied)
+  // or fall back to allSummaries length
+  const totalEmployees = basePeriodCount !== undefined ? (basePeriodCount > 0 ? basePeriodCount : allSummaries.length) : (periodSummaries.length > 0 ? periodSummaries.length : allSummaries.length); 
   
   let affectedCount = 0;
   let affectedText = '';
 
-  if (isNonModOnly) {
+  if (isCheckOnly) {
+      affectedCount = filteredSummaries.length;
+      affectedText = "Fora do Horário Programado";
+  } else if (isNonModOnly) {
       affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => r.breaks.some(b => b.type === 'non_moderating'))).length;
       affectedText = "Em Non-Moderating";
   } else if (isWcOnly) {
@@ -138,20 +170,40 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
   } else if (isTardinessOnly) {
       affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0)).length;
       affectedText = "Chegaram Atrasados";
+  } else if (isShort30MinOnly) {
+      affectedCount = filteredSummaries.filter(s => (s.totalShort30MinRecords || 0) > 0).length;
+      affectedText = "Com apenas 1 break diário";
+  } else if (isEarlyLeaveOnly) {
+      affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0)).length;
+      affectedText = "Pausaram Cedo (Early Leave)";
   } else if (globalTypeFilter === 'idle_overbreak_wc') {
-      affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || (globalIncludeWc && s.wcAlerts > 0) || (globalIncludeIdle && s.idleAlerts > 0) || (globalIncludeTardiness && s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0))).length;
+      affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || (globalIncludeWc && s.wcAlerts > 0) || (globalIncludeIdle && s.idleAlerts > 0) || (globalIncludeTardiness && s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0)) || (globalIncludeEarlyLeave && s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0))).length;
       affectedText = "COM OVERBREAK";
   } else {
-      affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || s.wcAlerts > 0 || s.idleAlerts > 0 || s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0)).length;
+      affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || (globalIncludeWc && s.wcAlerts > 0) || (globalIncludeIdle && s.idleAlerts > 0) || (globalIncludeTardiness && s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0)) || (globalIncludeEarlyLeave && s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0))).length;
       affectedText = "COM OVERBREAK (Geral)";
   }
 
   const isDefaultNoFilters = globalTypeFilter === 'all' && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness;
 
-  const isWcApplicable = isDefaultNoFilters || globalIncludeWc;
-  const isIdleApplicable = isDefaultNoFilters || globalIncludeIdle;
+  const isWcApplicable = (isDefaultNoFilters || globalIncludeWc) && !isCheckOnly;
+  const isIdleApplicable = (isDefaultNoFilters || globalIncludeIdle) && !isCheckOnly;
 
   const totalOverbreak = filteredSummaries.reduce((acc, curr) => acc + curr.totalOverbreakMinutes, 0);
+  const distinctDaysInPeriod = useMemo(() => {
+     const days = new Set<string>();
+     filteredSummaries.forEach(s => s.dailyRecords.forEach(r => days.add(r.date)));
+     return days.size;
+  }, [filteredSummaries]);
+
+  const avgAgentsMismatched = useMemo(() => {
+     if (distinctDaysInPeriod === 0) return 0;
+     let totalMismatches = 0;
+     filteredSummaries.forEach(s => {
+        totalMismatches += s.dailyRecords.filter(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()).length;
+     });
+     return Math.round(totalMismatches / distinctDaysInPeriod);
+  }, [filteredSummaries, distinctDaysInPeriod]);
   const totalDays = filteredSummaries.reduce((acc, curr) => acc + curr.dailyRecords.length, 0);
   const totalWcMinutes = filteredSummaries.reduce((acc, curr) => 
     acc + curr.dailyRecords.reduce((a, r) => a + r.wcDuration, 0)
@@ -164,7 +216,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
 
   const isOnlyOrganic = isWcOnly;
   const isOnlyIdle = isIdleOnly;
-  const isOnlyTardiness = isTardinessOnly;
+  const isOnlyTardiness = isTardinessOnly || isEarlyLeaveOnly;
 
   let sumDailyAverages = 0;
   let validAgentsCount = 0;
@@ -174,7 +226,9 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
     const daysWorked = s.dailyRecords.length;
     if (daysWorked > 0) {
       let metricTotal = 0;
-      if (isOnlyOrganic) {
+      if (isCheckOnly) {
+          metricTotal = s.dailyRecords.filter(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()).length;
+      } else if (isOnlyOrganic) {
           metricTotal = s.dailyRecords.reduce((acc, r) => acc + (r.wcDuration || 0), 0);
       } else if (isOnlyIdle) {
           metricTotal = s.dailyRecords.reduce((acc, r) => acc + (r.idleDuration || 0), 0);
@@ -209,13 +263,26 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
   const shiftStats = useMemo(() => {
     const stats: Record<string, { minutes: number, occurrences: number }> = {};
     filteredSummaries.forEach(s => {
+      const recordedShiftsForAgent = new Set<string>();
+      
       s.dailyRecords.forEach(r => {
-        if (!r.inferredShift) return;
-        const match = r.inferredShift.match(/\b(\d{2}:\d{2}-\d{2}:\d{2})\b/);
-        const shiftLabel = match ? match[1] : r.inferredShift;
+        if (!r.inferredShift && !r.scheduledShift) return;
+        let shiftToUse = r.inferredShift || '';
+        if (isCheckOnly) {
+           shiftToUse = r.scheduledShift || shiftToUse;
+        }
+        if (!shiftToUse) return;
+        const match = shiftToUse.match(/\b(\d{2}:\d{2}-\d{2}:\d{2})\b/);
+        const shiftLabel = match ? match[1] : shiftToUse;
         if (!stats[shiftLabel]) stats[shiftLabel] = { minutes: 0, occurrences: 0 };
         
-        if (isOnlyOrganic) {
+        if (isCheckOnly) {
+           const mismatch = r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim();
+           if (mismatch && !recordedShiftsForAgent.has(shiftLabel)) {
+             stats[shiftLabel].occurrences += 1;
+             recordedShiftsForAgent.add(shiftLabel);
+           }
+        } else if (isOnlyOrganic) {
            if (r.wcDuration > 0) {
              stats[shiftLabel].minutes += r.wcDuration;
              stats[shiftLabel].occurrences += 1;
@@ -271,12 +338,27 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
     })
     .filter(s => s.incidentCount > 0)
     .sort((a, b) => b.incidentCount - a.incidentCount)
-    .slice(0, 5);
+    .slice(0, 10);
 
   const agentsByOverbreakDuration = [...filteredSummaries]
     .filter(s => s.totalOverbreakMinutes > 0)
     .sort((a, b) => b.totalOverbreakMinutes - a.totalOverbreakMinutes)
-    .slice(0, 5);
+    .slice(0, 10);
+
+  const topReviewAndAppeal = [...filteredSummaries]
+    .filter(s => s.totalReviewAndAppealMinutes > 0)
+    .sort((a, b) => b.totalReviewAndAppealMinutes - a.totalReviewAndAppealMinutes)
+    .slice(0, 10);
+
+  const topAwaitingTasks = [...filteredSummaries]
+    .filter(s => s.totalAwaitingTasksMinutes > 0)
+    .sort((a, b) => b.totalAwaitingTasksMinutes - a.totalAwaitingTasksMinutes)
+    .slice(0, 10);
+
+  const topNonModTotal = [...filteredSummaries]
+    .filter(s => s.totalNonModMinutes > 0)
+    .sort((a, b) => b.totalNonModMinutes - a.totalNonModMinutes)
+    .slice(0, 10);
 
   const agentsBottom5Special = [...filteredSummaries]
     .filter(s => {
@@ -284,7 +366,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
       return true;
     })
     .sort((a, b) => a.totalOverbreakMinutes - b.totalOverbreakMinutes)
-    .slice(0, 5);
+    .slice(0, 10);
 
   const topProblematic = agentsByOverbreakDuration;
   const topInfrator = topProblematic[0];
@@ -297,18 +379,34 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
     })
     .filter(s => s.wcAlerts > 0 || s.totalWcOver > 0)
     .sort((a, b) => b.totalWcOver - a.totalWcOver || b.wcAlerts - a.wcAlerts)
-    .slice(0, 5);
+    .slice(0, 10);
+    
+  // Top Short 30Min
+  const topShort30Min = [...filteredSummaries]
+    .filter(s => (s.totalShort30MinRecords || 0) > 0)
+    .sort((a, b) => (b.totalShort30MinRecords || 0) - (a.totalShort30MinRecords || 0))
+    .slice(0, 10);
+
+  // Top Mismatch
+  const topCheck = [...filteredSummaries]
+    .map(s => {
+      const mismatchCount = s.dailyRecords.filter(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()).length;
+      return { ...s, mismatchCount };
+    })
+    .filter(s => s.mismatchCount > 0)
+    .sort((a, b) => b.mismatchCount - a.mismatchCount)
+    .slice(0, 10);
 
   // Top Performers
   const topPerformers = [...filteredSummaries]
     .filter(s => !s.isTraining)
     .sort((a, b) => a.totalOverbreakMinutes - b.totalOverbreakMinutes)
-    .slice(0, 5);
+    .slice(0, 10);
 
   // Top No Overbreaks
   const topNoOverbreaks = [...filteredSummaries]
     .filter(s => !s.isTraining && s.totalOverbreakMinutes === 0)
-    .slice(0, 5);
+    .slice(0, 10);
 
   const chartData = topProblematic.map(s => {
     const mealOver = s.dailyRecords.reduce((acc, r) => acc + r.mealOverbreak, 0);
@@ -386,9 +484,15 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
       <div className="flex items-center justify-between p-3.5 hover:bg-slate-50 transition-colors relative group">
         <div className="flex items-center gap-3 w-full">
           <span className={`flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-black shrink-0 ${rank === 1 ? `${colorClass.replace('text-', 'bg-').replace('-700', '-500')} text-white shadow-md` : `${colorClass.replace('text-', 'bg-').replace('-700', '-100')} ${colorClass}`}`}>{rank}</span>
-          <div className="min-w-0 pr-4 cursor-help">
+          <div className="min-w-0 pr-4 cursor-help flex flex-col">
             <p className="font-bold text-xs text-slate-800 truncate">{summary.employeeName}</p>
-            <p className="text-[10px] text-slate-400 truncate">
+            {summary.email && <p className="text-[9px] text-slate-500 truncate">{summary.email}</p>}
+            {(summary.lob || summary.language) && (
+              <p className="text-[8px] font-bold text-blue-600 uppercase mt-0.5 truncate">
+                {[summary.lob, summary.language].filter(Boolean).join(' - ')}
+              </p>
+            )}
+            <p className="text-[10px] text-slate-400 truncate mt-0.5">
               {isNonModOnly ? (
                 <>
                   Total: {Math.floor(summary.totalOverbreakMinutes / 60)}h {summary.totalOverbreakMinutes % 60}m | Média/Dia: {Math.floor((summary.totalOverbreakMinutes / summary.dailyRecords.length) / 60)}h {Math.round((summary.totalOverbreakMinutes / summary.dailyRecords.length) % 60)}m
@@ -429,30 +533,54 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
       <div className="flex flex-col md:flex-row gap-6 justify-between items-stretch">
         <Card className="rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 bg-gradient-to-br from-blue-50 to-white">
           <CardContent className="p-6 flex items-center gap-6 h-full">
-            <div className="w-14 h-14 rounded-2xl bg-blue-100/80 text-blue-600 flex items-center justify-center shrink-0 border border-blue-200/50 shadow-inner hidden sm:flex">
+            <div className={`w-14 h-14 rounded-2xl ${isCheckAndShift ? 'bg-amber-100/80 text-amber-600 border-amber-200/50' : 'bg-blue-100/80 text-blue-600 border-blue-200/50'} flex items-center justify-center shrink-0 border shadow-inner hidden sm:flex`}>
               <Users size={28} strokeWidth={2.5} />
             </div>
             <div className="flex items-center gap-6 divide-x divide-slate-200 justify-between w-full">
               <div className="flex items-center gap-6 divide-x divide-slate-200 min-w-max">
-                <div className="pr-2">
-                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">Agentes no Período</p>
-                  <div className="flex items-baseline gap-1.5">
-                     <p className="text-3xl font-black text-slate-900 tracking-tight">{totalEmployees}</p>
-                     <span className="text-xs font-bold text-slate-400 tracking-wide uppercase">Total</span>
+                {isCheckAndShift ? (
+                  <>
+                  <div className="pr-2">
+                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">Agentes do Período</p>
+                    <div className="flex items-baseline gap-1.5">
+                       <p className="text-3xl font-black text-slate-900 tracking-tight">{agentsDoPeriodoCount}</p>
+                       <span className="text-xs font-bold text-slate-400 tracking-wide uppercase">Calendário</span>
+                    </div>
                   </div>
-                </div>
-                <div className="pl-6 flex-1 min-w-max">
-                  <p className={`text-[11px] font-black uppercase tracking-widest mb-1 truncate ${isNonModOnly ? 'text-amber-500' : (affectedCount > 0 ? 'text-rose-500' : 'text-emerald-500')}`}>{affectedText}</p>
-                  <div className="flex items-baseline gap-1.5">
-                     <p className={`text-3xl font-black tracking-tight ${isNonModOnly ? 'text-amber-600' : (affectedCount > 0 ? 'text-rose-600' : 'text-emerald-600')}`}>{affectedCount}</p>
-                     <span className={`text-xs font-bold tracking-wide uppercase ${isNonModOnly ? 'text-amber-400' : (affectedCount > 0 ? 'text-rose-400' : 'text-emerald-400')}`}>
-                       {isNonModOnly ? 'AGENTES' : 'Afetados'}
-                     </span>
+                  <div className="pl-6 flex-1 min-w-max">
+                    <p className="text-[11px] font-black uppercase tracking-widest mb-1 truncate text-amber-500">Agentes no período</p>
+                    <div className="flex items-baseline gap-1.5">
+                       <p className="text-3xl font-black tracking-tight text-amber-600">{agentsNoPeriodoCount}</p>
+                       <span className="text-xs font-bold tracking-wide uppercase text-amber-500/70">
+                         {agentsDeOutroPeriodoCount > 0 ? `${agentsDeOutroPeriodoCount} de outro período` : 'Todos do período'}
+                       </span>
+                    </div>
                   </div>
-                </div>
+                  </>
+                ) : (
+                  <>
+                  <div className="pr-2">
+                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">Agentes no Período</p>
+                    <div className="flex items-baseline gap-1.5">
+                       <p className="text-3xl font-black text-slate-900 tracking-tight">{totalEmployees}</p>
+                       <span className="text-xs font-bold text-slate-400 tracking-wide uppercase">Total</span>
+                    </div>
+                  </div>
+                  <div className="pl-6 flex-1 min-w-max">
+                    <p className={`text-[11px] font-black uppercase tracking-widest mb-1 truncate ${isNonModOnly ? 'text-amber-500' : (affectedCount > 0 ? 'text-rose-500' : 'text-emerald-500')}`}>{affectedText}</p>
+                    <div className="flex items-baseline gap-1.5">
+                       <p className={`text-3xl font-black tracking-tight ${isNonModOnly ? 'text-amber-600' : (affectedCount > 0 ? 'text-rose-600' : 'text-emerald-600')}`}>{affectedCount}</p>
+                       <span className={`text-xs font-bold tracking-wide uppercase ${isNonModOnly ? 'text-amber-400' : (affectedCount > 0 ? 'text-rose-400' : 'text-emerald-400')}`}>
+                         {isNonModOnly ? 'AGENTES' : 'Afetados'}
+                       </span>
+                    </div>
+                  </div>
+                  </>
+                )}
               </div>
               <div className="pl-6 flex-1 hidden xl:flex flex-col gap-2">
                  {/* Most Minutes */}
+                 {!isCheckOnly && (
                  <div className="flex flex-col">
                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title="Shift com mais tempo neste filtro">Shift com mais minutos</p>
                    <div className="flex items-center gap-1.5">
@@ -464,9 +592,10 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                      </span>
                    </div>
                  </div>
+                 )}
                  {/* Most Occurrences */}
                  <div className="flex flex-col">
-                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title="Shift com mais ocorrências neste filtro">Shift com mais ocorrências</p>
+                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title="Shift com mais ocorrências neste filtro">{isCheckOnly ? 'Shift com mais ocorrências (Agentes)' : 'Shift com mais ocorrências'}</p>
                    <div className="flex items-center gap-1.5">
                      <span className="text-[10px] font-black text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded uppercase border border-slate-200">{shiftStats.mostOccurrences.shift}</span>
                      <span className="text-[11px] font-bold text-amber-500">{shiftStats.mostOccurrences.occurrences}x</span>
@@ -481,7 +610,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
       {(() => {
          const isOverbreaksOnly = globalTypeFilter === 'idle_overbreak_wc';
          const showIdleCard = isIdleApplicable && !isOverbreaksOnly && !isTardinessOnly;
-         const showOverbreakCard = isOverbreaksOnly || isTardinessOnly;
+         const showOverbreakCard = (isOverbreaksOnly || isTardinessOnly) && !isCheckOnly;
 
          let topCardsCount = 1; // avg
          if (isWcApplicable && !isTardinessOnly) topCardsCount++;
@@ -489,9 +618,10 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
          
          const topGridClass = topCardsCount === 3 ? "md:grid-cols-3" : topCardsCount === 2 ? "md:grid-cols-2" : "md:grid-cols-1";
 
-         const showTopPerformers = !isIdleOnly && !isTardinessOnly;
-         const botPanesCount = 1 + (isWcApplicable && !isTardinessOnly ? 1 : 0) + (showTopPerformers ? 1 : 0);
-         const paneSpan = botPanesCount === 3 ? 'lg:col-span-4' : botPanesCount === 2 ? 'lg:col-span-6' : 'lg:col-span-12';
+         const showTopPerformers = !isIdleOnly && !isTardinessOnly && !isCheckOnly && !isShort30MinOnly && !isNonModOnly;
+         const isShort30MinApplicable = !isIdleOnly && !isTardinessOnly && !isCheckOnly && !isNonModOnly && !isWcOnly && !isEarlyLeaveOnly && !isShort30MinOnly;
+         const botPanesCount = isNonModOnly ? 4 : 1 + (isWcApplicable && !isTardinessOnly ? 1 : 0) + (showTopPerformers ? 1 : 0) + (isShort30MinApplicable ? 1 : 0);
+         const paneSpan = botPanesCount === 4 ? 'lg:col-span-3' : botPanesCount === 3 ? 'lg:col-span-4' : botPanesCount === 2 ? 'lg:col-span-6' : 'lg:col-span-12';
 
          return (
             <>
@@ -499,14 +629,27 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                 <Card className="rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                   <CardContent className="p-5">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                      {isNonModOnly ? "Tempo médio de Non-Moderating/Dia" :
+                      {isCheckOnly ? "MÉDIA DE AGENTES POR PERÍODO" : 
+                       isNonModOnly ? "Tempo médio de Non-Moderating/Dia" :
                        isWcOnly ? "Média Organic Break/Dia por agente" :
                        isIdleOnly ? "Média Idle/Dia por agente" :
                        isTardinessOnly ? "Média Atraso/Dia por agente" :
+                       isEarlyLeaveOnly ? "Média Early Leave/Dia por agente" :
+                       isShort30MinOnly ? "Média 30min/dia" :
                        "MÉDIA OVERBREAK/DIA POR AGENTE"}
                     </p>
                     <div className="flex items-baseline gap-1">
-                      {isNonModOnly ? (
+                      {isCheckOnly ? (
+                        <div className="flex items-baseline gap-1">
+                           <p className="text-2xl font-black text-slate-900">{avgAgentsMismatched}</p>
+                           <span className="text-xs font-bold text-slate-400">agentes em média</span>
+                        </div>
+                      ) : isShort30MinOnly ? (
+                        <div className="flex items-baseline gap-1">
+                           <p className="text-2xl font-black text-slate-900">{validAgentsCount ? (filteredSummaries.reduce((acc, s) => acc + (s.totalShort30MinRecords || 0), 0) / validAgentsCount).toFixed(1) : 0}</p>
+                           <span className="text-xs font-bold text-slate-400">dias/ag.</span>
+                        </div>
+                      ) : isNonModOnly ? (
                         <>
                           <p className="text-2xl font-black text-slate-900">
                             {totalDays ? Math.floor((totalOverbreak / totalDays) / 60) : 0}<span className="text-sm">h</span> {totalDays ? Math.round((totalOverbreak / totalDays) % 60) : 0}
@@ -604,19 +747,44 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
               
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
                 <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
-                  <CardHeader className={`${isNonModOnly ? 'bg-emerald-50/50 border-emerald-100/50' : 'bg-rose-50/50 border-rose-100/50'} border-b py-4 shrink-0 rounded-t-2xl`}>
-                    <CardTitle className={`text-sm font-black uppercase tracking-widest ${isNonModOnly ? 'text-emerald-800' : isTardinessOnly ? 'text-orange-800' : 'text-rose-800'} flex items-center gap-2`}>
-                      <AlertCircle size={16} /> {isNonModOnly ? "BOTTOM 5" : isIdleOnly ? "Tempo em Idle" : isTardinessOnly ? "TOP 5 ATRASADOS" : "Tempo de Overbreaks"}
+                  <CardHeader className={`${isCheckOnly ? 'bg-amber-50/50 border-amber-100/50' : isNonModOnly || isShort30MinOnly ? 'bg-emerald-50/50 border-emerald-100/50' : 'bg-rose-50/50 border-rose-100/50'} border-b py-4 shrink-0 rounded-t-2xl`}>
+                    <CardTitle className={`text-sm font-black uppercase tracking-widest ${isCheckOnly ? 'text-amber-800' : isNonModOnly || isShort30MinOnly ? 'text-emerald-800' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-800' : 'text-rose-800'} flex items-center gap-2`}>
+                      <AlertCircle size={16} /> {isCheckOnly ? "AGENTES COM MAIS TURNOS UNSCHEDULED" : isNonModOnly ? "BOTTOM 10" : isShort30MinOnly ? "TOP 10" : isIdleOnly ? "Tempo em Idle" : isTardinessOnly ? "TOP 10 ATRASADOS" : isEarlyLeaveOnly ? "TOP 10 EARLY LEAVE" : "Tempo de Overbreaks"}
                     </CardTitle>
-                    <CardDescription className={`text-xs ${isNonModOnly ? 'text-emerald-600/80' : isTardinessOnly ? 'text-orange-600/80' : 'text-rose-600/80'} mt-1`}>
-                      {isNonModOnly 
+                    <CardDescription className={`text-xs ${isCheckOnly ? 'text-amber-600/80' : isNonModOnly || isShort30MinOnly ? 'text-emerald-600/80' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-600/80' : 'text-rose-600/80'} mt-1`}>
+                      {isCheckOnly 
+                         ? `Mais dias trabalhados fora do horário`
+                         : isNonModOnly 
                          ? `Menos tempo em Non-Moderating`
-                         : isIdleOnly ? "Mais tempo total em idle" : isTardinessOnly ? "Mais tempo de atrasos na jornada" : "Mais tempo total de overbreak"}
+                         : isShort30MinOnly ? "Agentes com apenas 1 break diário" : isIdleOnly ? "Mais tempo total em idle" : isTardinessOnly ? "Mais tempo de atrasos na jornada" : isEarlyLeaveOnly ? "Mais tempo de early leave na jornada" : "Mais tempo total de overbreak"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="p-0 flex-1">
                     <div className="divide-y divide-slate-50">
-                      {isNonModOnly ? (
+                      {isCheckOnly ? (
+                         topCheck.map((s, i) => (
+                            <AgentLine 
+                               key={`${s.employeeName}-${i}`} 
+                               summary={s} 
+                               rank={i+1} 
+                               metricValue={`${s.mismatchCount}`} 
+                               metricLabel={s.mismatchCount === 1 ? "dia" : "dias"} 
+                               colorClass="text-amber-700"
+                               hideTooltip={true}
+                            />
+                         ))
+                      ) : isShort30MinOnly ? (
+                         topShort30Min.slice(0, 10).map((s, i) => (
+                            <AgentLine 
+                               key={`${s.employeeName}-${i}`} 
+                               summary={s} 
+                               rank={i+1} 
+                               metricValue={`${s.totalShort30MinRecords}`} 
+                               metricLabel={s.totalShort30MinRecords === 1 ? "dia" : "dias"} 
+                               colorClass="text-emerald-700"
+                            />
+                         ))
+                      ) : isNonModOnly ? (
                          agentsBottom5Special.map((s, i) => (
                             <AgentLine 
                                key={`${s.employeeName}-${i}`} 
@@ -634,12 +802,12 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                               summary={s} 
                               rank={i+1} 
                               metricValue={`${Math.floor(s.totalOverbreakMinutes / 60)}h ${s.totalOverbreakMinutes % 60}m`} 
-                              metricLabel={isTardinessOnly ? "atraso" : "excedidos"} 
-                              colorClass={isTardinessOnly ? "text-orange-700" : "text-rose-700"}
+                              metricLabel={isTardinessOnly ? "atraso" : isEarlyLeaveOnly ? "early leave" : "excedidos"} 
+                              colorClass={isTardinessOnly || isEarlyLeaveOnly ? "text-orange-700" : "text-rose-700"}
                            />
                         ))
                       )}
-                      {((isNonModOnly ? agentsBottom5Special.length : agentsByOverbreakDuration.length) === 0) && (
+                      {((isCheckOnly ? topCheck.length : isNonModOnly ? agentsBottom5Special.length : agentsByOverbreakDuration.length) === 0) && (
                         <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
                       )}
                     </div>
@@ -650,7 +818,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                   <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                     <CardHeader className="bg-amber-50/50 border-b border-amber-100/50 py-4 shrink-0 rounded-t-2xl">
                       <CardTitle className="text-sm font-black uppercase tracking-widest text-amber-800 flex items-center gap-2">
-                        <AlertCircle size={16} /> TOP 5 ORGANIC
+                        <AlertCircle size={16} /> TOP 10 ORGANIC
                       </CardTitle>
                       <CardDescription className="text-xs text-amber-600/80 mt-1">{t('topWcDesc')}</CardDescription>
                     </CardHeader>
@@ -674,36 +842,48 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                   </Card>
                 )}
 
+                {isShort30MinApplicable && (
+                  <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
+                    <CardHeader className="bg-emerald-50/50 border-b border-emerald-100/50 py-4 shrink-0 rounded-t-2xl">
+                      <CardTitle className="text-sm font-black uppercase tracking-widest text-emerald-800 flex items-center gap-2">
+                        <AlertCircle size={16} /> SHORTBREAKS 30MIN
+                      </CardTitle>
+                      <CardDescription className="text-xs text-emerald-600/80 mt-1">Agentes com apenas 1 break diário</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-0 flex-1">
+                      <div className="divide-y divide-slate-50">
+                        {topShort30Min.map((s, i) => (
+                           <AgentLine 
+                              key={`${s.employeeName}-${i}`} 
+                              summary={s} 
+                              rank={i+1} 
+                              metricValue={`${s.totalShort30MinRecords}`} 
+                              metricLabel={s.totalShort30MinRecords === 1 ? "dia" : "dias"} 
+                              colorClass="text-emerald-700"
+                              hideTooltip={true}
+                           />
+                        ))}
+                        {topShort30Min.length === 0 && (
+                          <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 {showTopPerformers && (
                   <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
-                    <CardHeader className={`${isNonModOnly ? 'bg-amber-50/50 border-amber-100/50' : 'bg-emerald-50/50 border-emerald-100/50'} border-b py-4 shrink-0 rounded-t-2xl`}>
-                      <CardTitle className={`text-sm font-black uppercase tracking-widest ${isNonModOnly ? 'text-amber-800' : 'text-emerald-800'} flex items-center gap-2`}>
-                        {isNonModOnly ? (
-                           <><AlertCircle size={16} /> TOP 5 NON-MOD</>
-                        ) : (
-                           <><CheckCircle2 size={16} /> {t('topPerformers')}</>
-                        )}
+                    <CardHeader className={`bg-emerald-50/50 border-emerald-100/50 border-b py-4 shrink-0 rounded-t-2xl`}>
+                      <CardTitle className={`text-sm font-black uppercase tracking-widest text-emerald-800 flex items-center gap-2`}>
+                        <CheckCircle2 size={16} /> {t('topPerformers')}
                       </CardTitle>
-                      <CardDescription className={`text-xs ${isNonModOnly ? 'text-amber-600/80' : 'text-emerald-600/80'} mt-1`}>
-                        {isNonModOnly ? "Mais tempo em Non-Moderating" : t('topPerformersDesc')}
+                      <CardDescription className={`text-xs text-emerald-600/80 mt-1`}>
+                        {t('topPerformersDesc')}
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="p-0 flex-1">
                       <div className="divide-y divide-slate-50">
-                        {isNonModOnly ? (
-                          agentsByOverbreakDuration.map((s, i) => (
-                             <AgentLine 
-                                key={`${s.employeeName}-${i}`} 
-                                summary={s} 
-                                rank={i+1} 
-                                metricValue={`${Math.floor(s.totalOverbreakMinutes / 60)}h ${s.totalOverbreakMinutes % 60}m`} 
-                                metricLabel="tempo" 
-                                colorClass="text-amber-700"
-                                hideTooltip={true}
-                             />
-                          ))
-                        ) : (
-                          topPerformers.map((s, i) => (
+                        {topPerformers.map((s, i) => (
                              <AgentLine 
                                 key={`${s.employeeName}-${i}`} 
                                 summary={s} 
@@ -713,14 +893,98 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                                 colorClass="text-emerald-700"
                                 hideTooltip={true}
                              />
-                          ))
-                        )}
-                        {((isNonModOnly ? agentsByOverbreakDuration.length : topPerformers.length) === 0) && (
+                        ))}
+                        {topPerformers.length === 0 && (
                           <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
                         )}
                       </div>
                     </CardContent>
                   </Card>
+                )}
+
+                {isNonModOnly && (
+                  <>
+                  <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
+                    <CardHeader className="bg-purple-50/50 border-b border-purple-100/50 py-4 shrink-0 rounded-t-2xl">
+                      <CardTitle className="text-sm font-black uppercase tracking-widest text-purple-800 flex items-center gap-2">
+                        <AlertCircle size={16} /> TOP 10 R&A
+                      </CardTitle>
+                      <CardDescription className="text-xs text-purple-600/80 mt-1">Mais tempo em Review and Appeal</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-0 flex-1">
+                      <div className="divide-y divide-slate-50">
+                        {topReviewAndAppeal.map((s, i) => (
+                           <AgentLine 
+                              key={`${s.employeeName}-${i}`} 
+                              summary={s} 
+                              rank={i+1} 
+                              metricValue={`${Math.floor(s.totalReviewAndAppealMinutes / 60)}h ${s.totalReviewAndAppealMinutes % 60}m`} 
+                              metricLabel="tempo" 
+                              colorClass="text-purple-700"
+                              hideTooltip={true}
+                           />
+                        ))}
+                        {topReviewAndAppeal.length === 0 && (
+                          <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
+                    <CardHeader className="bg-indigo-50/50 border-b border-indigo-100/50 py-4 shrink-0 rounded-t-2xl">
+                      <CardTitle className="text-sm font-black uppercase tracking-widest text-indigo-800 flex items-center gap-2">
+                        <AlertCircle size={16} /> TOP 10 AWAITING
+                      </CardTitle>
+                      <CardDescription className="text-xs text-indigo-600/80 mt-1">Mais tempo em Awaiting Tasks</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-0 flex-1">
+                      <div className="divide-y divide-slate-50">
+                        {topAwaitingTasks.map((s, i) => (
+                           <AgentLine 
+                              key={`${s.employeeName}-${i}`} 
+                              summary={s} 
+                              rank={i+1} 
+                              metricValue={`${Math.floor(s.totalAwaitingTasksMinutes / 60)}h ${s.totalAwaitingTasksMinutes % 60}m`} 
+                              metricLabel="tempo" 
+                              colorClass="text-indigo-700"
+                              hideTooltip={true}
+                           />
+                        ))}
+                        {topAwaitingTasks.length === 0 && (
+                          <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
+                    <CardHeader className="bg-teal-50/50 border-b border-teal-100/50 py-4 shrink-0 rounded-t-2xl">
+                      <CardTitle className="text-sm font-black uppercase tracking-widest text-teal-800 flex items-center gap-2">
+                        <AlertCircle size={16} /> TOP 10 NON-MOD
+                      </CardTitle>
+                      <CardDescription className="text-xs text-teal-600/80 mt-1">Mais tempo TOTAL em Non-Moderating</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-0 flex-1">
+                      <div className="divide-y divide-slate-50">
+                        {topNonModTotal.map((s, i) => (
+                           <AgentLine 
+                              key={`${s.employeeName}-${i}`} 
+                              summary={s} 
+                              rank={i+1} 
+                              metricValue={`${Math.floor(s.totalNonModMinutes / 60)}h ${s.totalNonModMinutes % 60}m`} 
+                              metricLabel="tempo" 
+                              colorClass="text-teal-700"
+                              hideTooltip={true}
+                           />
+                        ))}
+                        {topNonModTotal.length === 0 && (
+                          <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  </>
                 )}
               </div>
             </>
@@ -729,38 +993,44 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
 
         <Card className="lg:col-span-12 rounded-2xl shadow-sm border border-slate-200 overflow-hidden bg-white">
           <CardHeader className="bg-slate-50/50 border-b border-slate-100 py-4">
-            <CardTitle className="text-sm font-black uppercase tracking-widest text-slate-700">
-               {isNonModOnly ? `Alertas Non-Moderating` : 
+                    <CardTitle className="text-sm font-black uppercase tracking-widest text-slate-700">
+               {isCheckOnly ? 'DETALHES DE DIVERGÊNCIA DE HORÁRIO' :
+               isNonModOnly ? `Alertas Non-Moderating` : 
                isWcOnly ? 'Alertas Organic' : 
                isIdleOnly ? 'Alertas Idle' : 
                isTardinessOnly ? 'Alertas de Atraso' :
+               isEarlyLeaveOnly ? 'Alertas de Early Leave' :
                t('auditLogOverbreak')}
             </CardTitle>
             <CardDescription className="text-xs text-slate-500 mt-1">
-              {isNonModOnly ? `Detalhamento dos colaboradores em Non-Moderating` : 
+              {isCheckOnly ? 'Agentes que trabalharam em turnos diferentes dos programados' :
+               isNonModOnly ? `Detalhamento dos colaboradores em Non-Moderating` : 
                isWcOnly ? 'Detalhamento dos colaboradores em uso de Organic' : 
                isIdleOnly ? 'Detalhamento dos colaboradores em status Idle' : 
                isTardinessOnly ? 'Detalhamento dos colaboradores com atrasos na jornada' :
+               isEarlyLeaveOnly ? 'Detalhamento dos colaboradores que saíram cedo da jornada' :
                t('needAttentionDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y divide-slate-100">
-              {topProblematic.map((s, i) => (
+              {(isCheckOnly ? topCheck : topProblematic).map((s, i) => (
                 <div key={`${s.employeeName}-${i}`} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-slate-50 transition-colors gap-3">
                   <div className="flex items-center gap-3">
                     <span className={`flex items-center justify-center w-6 h-6 rounded-lg text-[10px] font-black shrink-0 ${i === 0 ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-600'}`}>{i+1}</span>
                     <div>
                       <span className="font-bold text-sm text-slate-800">{s.employeeName}</span>
                       <p className="text-[10px] text-slate-500 mt-0.5">
-                        {isWcOnly ? "Uso de Organic contabilizado." : isIdleOnly ? "Apresentou ociosidade crítica." : isTardinessOnly ? "Registrou atraso na jornada." : s.idleAlerts > 0 ? "Apresentou ociosidade crítica." : s.wcAlerts > 0 ? "Uso excessivo de status (Organic)." : "Excedeu tempo de pausas."}
+                        {isCheckOnly ? "Trabalhou fora do horário programado." : isWcOnly ? "Uso de Organic contabilizado." : isIdleOnly ? "Apresentou ociosidade crítica." : isTardinessOnly ? "Registrou atraso na jornada." : isEarlyLeaveOnly ? "Registrou early leave na jornada." : s.idleAlerts > 0 ? "Apresentou ociosidade crítica." : s.wcAlerts > 0 ? "Uso excessivo de status (Organic)." : "Excedeu tempo de pausas."}
                       </p>
                     </div>
                   </div>
                   <div className="flex gap-2 items-center">
                     <Dialog>
-                      <DialogTrigger className={`px-3 py-1.5 text-xs font-black rounded-lg uppercase shadow-sm flex items-center gap-1 group transition-colors ${isWcOnly ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : isIdleOnly ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : isTardinessOnly ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-rose-100 text-rose-700 hover:bg-rose-200'}`}>
-                           {isWcOnly ? (
+                      <DialogTrigger className={`px-3 py-1.5 text-xs font-black rounded-lg uppercase shadow-sm flex items-center gap-1 group transition-colors ${isCheckOnly ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : isWcOnly ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : isIdleOnly ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : isTardinessOnly || isEarlyLeaveOnly ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-rose-100 text-rose-700 hover:bg-rose-200'}`}>
+                           {isCheckOnly ? (
+                             <span>{s.mismatchCount} {s.mismatchCount === 1 ? 'DIA' : 'DIAS'} DIFERENTES</span>
+                           ) : isWcOnly ? (
                              <span className="flex items-center gap-1.5">
                                <span>TOT: <span className="font-bold">{Math.floor((s.wcTotalMinutes || 0) / 60)}h {(s.wcTotalMinutes || 0) % 60}m</span></span>
                                <span className="opacity-40 font-normal">|</span>
@@ -768,10 +1038,12 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                              </span>
                            ) : isTardinessOnly ? (
                              <span>{Math.floor(s.totalOverbreakMinutes / 60)}h {s.totalOverbreakMinutes % 60}m ATRASO</span>
+                           ) : isEarlyLeaveOnly ? (
+                             <span>{Math.floor(s.totalOverbreakMinutes / 60)}h {s.totalOverbreakMinutes % 60}m EARLY LEAVE</span>
                            ) : (
                              <span>{Math.floor(s.totalOverbreakMinutes / 60)}h {s.totalOverbreakMinutes % 60}m {isIdleOnly ? 'IDLE' : 'OVER'}</span>
                            )}
-                           <span className={`rounded px-1 group-hover:bg-opacity-80 ml-1 ${isWcOnly ? 'bg-amber-200 text-amber-800' : isIdleOnly ? 'bg-rose-200 text-rose-800' : isTardinessOnly ? 'bg-orange-200 text-orange-800' : 'bg-rose-200 text-rose-800'}`}>Detalhes</span>
+                           <span className={`rounded px-1 group-hover:bg-opacity-80 ml-1 ${isCheckOnly ? 'bg-amber-200 text-amber-800' : isWcOnly ? 'bg-amber-200 text-amber-800' : isIdleOnly ? 'bg-rose-200 text-rose-800' : isTardinessOnly || isEarlyLeaveOnly ? 'bg-orange-200 text-orange-800' : 'bg-rose-200 text-rose-800'}`}>Detalhes</span>
                       </DialogTrigger>
                       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col rounded-3xl border-slate-200 p-0 overflow-hidden shadow-2xl">
                          <div className="bg-slate-900 text-white p-6 shrink-0 flex flex-col gap-4">
@@ -794,6 +1066,32 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                               <button onClick={() => setDetailsSortMode('date')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${detailsSortMode === 'date' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}>Cronológico</button>
                             </div>
                          </div>
+                         {isCheckOnly ? (
+                          <div className="flex-1 overflow-y-auto w-full bg-slate-50">
+                             <div className="space-y-3 p-6 min-h-max">
+                                {s.dailyRecords
+                                   .filter(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim())
+                                   .map((r, idx) => (
+                                      <div key={idx} className="flex justify-between items-center bg-white p-4 rounded-xl border border-amber-200 shadow-sm">
+                                        <div>
+                                          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{format(new Date(r.date), 'dd/MM/yyyy')}</p>
+                                          <div className="flex items-center gap-3 mt-1.5">
+                                            <div className="flex flex-col">
+                                              <span className="text-[9px] uppercase font-bold text-slate-400">Schedule</span>
+                                              <span className="text-sm font-black text-slate-700">{r.scheduledShift}</span>
+                                            </div>
+                                            <span className="text-slate-300 font-bold">→</span>
+                                            <div className="flex flex-col">
+                                              <span className="text-[9px] uppercase font-black text-amber-500">Realizado</span>
+                                              <span className="text-sm font-black text-amber-600">{r.inferredShift}</span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                   ))}
+                             </div>
+                          </div>
+                         ) : (
                          <div className="flex-1 overflow-y-auto w-full bg-slate-50">
                             <div className="space-y-3 p-6 min-h-max">
                                {s.dailyRecords
@@ -889,6 +1187,7 @@ export function StatsDashboard({ summaries, allSummaries, latestDate, globalType
                                )}
                             </div>
                          </div>
+                         )}
                       </DialogContent>
                     </Dialog>
                   </div>

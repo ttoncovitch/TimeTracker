@@ -103,6 +103,16 @@ export function CustomCalendar({ summaries, selectedDates, onSelectDates }: Cust
   if (view === 'day' && selectedYear && selectedMonth) {
     const days = structure[selectedYear]?.[selectedMonth] || [];
     
+    // To draw a proper calendar, find the first and last day of the month
+    const yearNum = parseInt(selectedYear, 10);
+    const monthNum = parseInt(selectedMonth.split('-')[1], 10) - 1; // 0-based
+    
+    const firstDayOfMonth = new Date(yearNum, monthNum, 1);
+    const lastDayOfMonth = new Date(yearNum, monthNum + 1, 0);
+    
+    const startOffset = firstDayOfMonth.getDay(); // 0 (Sun) to 6 (Sat)
+    const totalDaysInMonth = lastDayOfMonth.getDate();
+    
     const handleSelectAll = () => {
       const newDates = days.map(d => new Date(d + 'T12:00:00'));
       onSelectDates(newDates);
@@ -116,16 +126,49 @@ export function CustomCalendar({ summaries, selectedDates, onSelectDates }: Cust
     const handleSelectDay = (dayStr: string) => {
       const current = selectedDates ? [...selectedDates] : [];
       const matchIdx = current.findIndex(d => format(d, 'yyyy-MM-dd') === dayStr);
-      if (matchIdx >= 0) {
-        current.splice(matchIdx, 1);
+      
+      if (current.length === 1 && matchIdx < 0) {
+          // Range selection
+          const prevDateStr = format(current[0], 'yyyy-MM-dd');
+          const [prevYear, prevMonth, prevDay] = prevDateStr.split('-').map(Number);
+          const [currYear, currMonth, currDay] = dayStr.split('-').map(Number);
+          
+          const start = new Date(prevYear, prevMonth - 1, prevDay);
+          const end = new Date(currYear, currMonth - 1, currDay);
+          
+          const minDate = start < end ? start : end;
+          const maxDate = start > end ? start : end;
+          
+          const newSelection: Date[] = [];
+          for (let d = new Date(minDate); d <= maxDate; d.setDate(d.getDate() + 1)) {
+              // Only add if it's in `availableDates` or we just blindly select?
+              // The user just said "selecione a semana toda", let's select the days within the range.
+              const dStr = format(d, 'yyyy-MM-dd');
+              newSelection.push(new Date(dStr + 'T12:00:00'));
+          }
+          // Merge avoiding duplicates
+          const merged = [...current];
+          newSelection.forEach(nd => {
+              if (!merged.some(md => format(md, 'yyyy-MM-dd') === format(nd, 'yyyy-MM-dd'))) {
+                  merged.push(nd);
+              }
+          });
+          onSelectDates(merged);
       } else {
-        current.push(new Date(dayStr + 'T12:00:00'));
+          // Regular toggle
+          if (matchIdx >= 0) {
+            current.splice(matchIdx, 1);
+          } else {
+            current.push(new Date(dayStr + 'T12:00:00'));
+          }
+          onSelectDates(current.length > 0 ? current : undefined);
       }
-      onSelectDates(current.length > 0 ? current : undefined);
     };
 
+    const weekDays = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+
     return (
-      <div className="p-4 w-[280px]">
+      <div className="p-4 w-[320px]">
         <div className="flex items-center mb-3">
           <button onClick={() => setView('month')} className="p-1 hover:bg-slate-100 rounded text-slate-500">
             <ChevronLeft size={16} />
@@ -139,27 +182,42 @@ export function CustomCalendar({ summaries, selectedDates, onSelectDates }: Cust
         <Button 
           variant="secondary" 
           size="sm" 
-          className="w-full mb-3 text-xs font-bold"
+          className="w-full mb-4 text-xs font-bold bg-slate-100/50 hover:bg-slate-200/50"
           onClick={handleSelectAll}
         >
           SELECIONAR MÊS TODO
         </Button>
 
-        <div className="grid grid-cols-4 gap-1">
-          {days.map(dayStr => {
-            const dayNum = parseInt(dayStr.split('-')[2], 10);
-            const selected = isSelected(dayStr);
-            return (
-              <Button
-                key={dayStr}
-                variant={selected ? "default" : "outline"}
-                size="sm"
-                className={`h-8 font-black ${selected ? 'bg-blue-600 text-white' : 'text-slate-600'}`}
-                onClick={() => handleSelectDay(dayStr)}
-              >
-                {dayNum}
-              </Button>
-            );
+        <div className="grid grid-cols-7 gap-1 mb-2">
+           {weekDays.map((wd, i) => (
+               <div key={`wd-${i}`} className="text-[10px] font-black text-center text-slate-400">
+                   {wd}
+               </div>
+           ))}
+        </div>
+
+        <div className="grid grid-cols-7 gap-1">
+          {Array.from({ length: startOffset }).map((_, i) => (
+             <div key={`empty-${i}`} className="h-8" />
+          ))}
+          {Array.from({ length: totalDaysInMonth }).map((_, i) => {
+             const dayNum = i + 1;
+             const dayStr = `${selectedMonth}-${String(dayNum).padStart(2, '0')}`;
+             const isAvailable = days.includes(dayStr);
+             const selected = isSelected(dayStr);
+             
+             return (
+               <Button
+                 key={dayStr}
+                 variant={selected ? "default" : "outline"}
+                 size="sm"
+                 className={`h-8 font-black p-0 ${selected ? 'bg-blue-600 text-white border-blue-600' : isAvailable ? 'text-slate-700 hover:border-slate-300' : 'text-slate-300 border-slate-100 opacity-50'}`}
+                 disabled={!isAvailable}
+                 onClick={() => handleSelectDay(dayStr)}
+               >
+                 {dayNum}
+               </Button>
+             );
           })}
         </div>
       </div>

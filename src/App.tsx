@@ -17,6 +17,7 @@ import { useLanguage } from './contexts/LanguageContext';
 import { EmployeeSummary } from './types';
 import { parseExcelFile } from './lib/excel-parser';
 import { exportToPDF } from './lib/pdf-exporter';
+import { parseCalendarFile } from './lib/calendar-parser';
 import { StatsDashboard } from './components/StatsDashboard';
 import { EmployeeList } from './components/EmployeeList';
 import { motion, AnimatePresence } from 'motion/react';
@@ -25,8 +26,44 @@ import { CustomCalendar } from './components/CustomCalendar';
 
 export default function App() {
   const { lang, setLang, t } = useLanguage();
+
+  const getFullMonthName = (text: string, language: string) => {
+    if (!text) return '';
+    const upperText = text.toUpperCase();
+    
+    const pMonths = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+    const eMonths = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+    let foundIndex = -1;
+    for (let i = 0; i < 12; i++) {
+       // Search for English or Portuguese month string in the uppercase text
+       // Using word boundary or simple includes. Since it's often like 2604.APR or ABRIL,
+       // .includes is fine, but we should make sure we don't accidentally match substrings.
+       // Actually includes is fine because months are usually clearly separated.
+       if (upperText.includes(eMonths[i]) || upperText.includes(pMonths[i])) {
+          foundIndex = i;
+          break;
+       }
+    }
+
+    if (foundIndex === -1) return text.toUpperCase();
+
+    const en = [
+      'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST',
+      'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'
+    ];
+    const pt = [
+      'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO',
+      'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'
+    ];
+    
+    return language === 'en' ? en[foundIndex] : pt[foundIndex];
+  };
   const [summaries, setSummaries] = useState<EmployeeSummary[]>([]);
+  const [calendarData, setCalendarData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCalendarLoading, setIsCalendarLoading] = useState(false);
+  const [calendarNote, setCalendarNote] = useState<string>('');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'week' | 'day'>('month');
   const [typeFilter, setTypeFilter] = useState<'all' | 'idle_overbreak_wc'>('all');
@@ -35,6 +72,9 @@ export default function App() {
   const [includeIdleGlobal, setIncludeIdleGlobal] = useState(false);
   const [includeNonModGlobal, setIncludeNonModGlobal] = useState(false);
   const [includeTardinessGlobal, setIncludeTardinessGlobal] = useState(false);
+  const [includeEarlyLeaveGlobal, setIncludeEarlyLeaveGlobal] = useState(false);
+  const [includeShort30MinGlobal, setIncludeShort30MinGlobal] = useState(false);
+  const [includeCheckGlobal, setIncludeCheckGlobal] = useState(false);
   const [filterMinorOverbreaks, setFilterMinorOverbreaks] = useState(false);
   const [selectedDates, setSelectedDates] = useState<Date[] | undefined>();
 
@@ -77,12 +117,115 @@ export default function App() {
     return latest > 0 ? new Date(latest) : new Date();
   }, [summaries]);
 
+  const mergedSummaries = useMemo(() => {
+    if (calendarData.length === 0) return summaries;
+
+    return summaries.map(s => {
+       let calEntry = calendarData.find(c => c.email && c.email.toLowerCase() === s.email?.toLowerCase());
+
+       if (!calEntry) {
+           const summaryNameLower = s.employeeName.toLowerCase().trim().replace(/\./g, ' ');
+           calEntry = calendarData.find(c => c.name.toLowerCase().trim() === summaryNameLower);
+           
+           if (!calEntry) {
+             calEntry = calendarData.find(c => {
+               const calNameParts = c.name.toLowerCase().trim().split(/\s+/);
+               const sumNameParts = summaryNameLower.split(/\s+/);
+               
+               if (calNameParts.length > 0 && sumNameParts.length > 0) {
+                  if (calNameParts[0] === sumNameParts[0]) {
+                     if (calNameParts.length === 1 || sumNameParts.length === 1) return true;
+                     const overlap = calNameParts.filter(p => sumNameParts.includes(p));
+                     if (overlap.length > 1) return true;
+                  }
+               }
+               return false;
+             });
+           }
+       }
+       
+       if (calEntry) {
+          return {
+             ...s,
+             shift: calEntry.shift,
+             dailyRecords: s.dailyRecords.map(r => {
+                const dateKey = format(new Date(r.date + 'T12:00:00'), 'dd/MM/yyyy');
+                const dateKeyAlt = format(new Date(r.date + 'T12:00:00'), 'MM/dd/yyyy');
+                let specificShift = undefined;
+                if (calEntry.schedule) {
+                   specificShift = calEntry.schedule[r.date] || calEntry.schedule[dateKey] || calEntry.schedule[dateKeyAlt];
+                }
+                const scheduledShift = specificShift || calEntry?.shift;
+                return {
+                   ...r,
+                   scheduledShift: scheduledShift,
+                   inferredShift: r.inferredShift || scheduledShift
+                };
+             })
+          };
+       }
+       return s;
+    });
+  }, [summaries, calendarData]);
+
+  const periodSummaries = useMemo(() => {
+    return mergedSummaries.map(s => {
+      const records = s.dailyRecords.filter(r => {
+        if (selectedDates && selectedDates.length > 0) {
+           const selectedDateStrings = selectedDates.map(d => format(d, 'yyyy-MM-dd'));
+           if (!selectedDateStrings.includes(r.date)) return false;
+        }
+        
+        if (timeFilter !== 'all') {
+           const d = new Date(r.date + 'T12:00:00');
+           const today = new Date();
+           
+           if (timeFilter === 'week') {
+              const dow = today.getDay();
+              const diffToMon = dow === 0 ? -6 : 1 - dow;
+              
+              const startOfWeek = new Date(today);
+              startOfWeek.setDate(today.getDate() + diffToMon);
+              startOfWeek.setHours(0, 0, 0, 0);
+              
+              const endOfWeek = new Date(startOfWeek);
+              endOfWeek.setDate(startOfWeek.getDate() + 6);
+              endOfWeek.setHours(23, 59, 59, 999);
+
+              if (d < startOfWeek || d > endOfWeek) return false;
+           }
+           if (timeFilter === 'day' && !(d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear())) return false;
+        }
+
+        if (shiftFilter.length > 0 || includeCheckGlobal) {
+            const hasCheck = shiftFilter.includes('CHECK') || includeCheckGlobal;
+            const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
+            
+            const isCheckMatch = r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim();
+            const activeShift = r.scheduledShift ? cleanShift(r.scheduledShift) : (r.inferredShift ? cleanShift(r.inferredShift) : null);
+            const isShiftMatch = activeShift ? otherShifts.includes(activeShift) : false;
+
+            if (hasCheck && otherShifts.length > 0) {
+                if (!isShiftMatch) return false;
+            } else if (hasCheck) {
+                if (!isCheckMatch) return false;
+            } else {
+                if (!isShiftMatch) return false;
+            }
+        }
+
+        return true;
+      });
+      return records.length > 0 ? { ...s, dailyRecords: records } : null;
+    }).filter(Boolean) as EmployeeSummary[];
+  }, [mergedSummaries, timeFilter, shiftFilter, selectedDates, includeCheckGlobal]);
+
   const filteredSummaries = useMemo(() => {
     const today = new Date();
     const currentMonth = today.getMonth();
     const currentYear = today.getFullYear();
 
-    let filtered = summaries.map(s => {
+    let filtered = mergedSummaries.map(s => {
       const records = s.dailyRecords.map(r => {
         let wcDur = 0, mealDur = 0, shortDur = 0, wellnessDur = 0, prayingDur = 0, idleDur = 0;
 
@@ -98,15 +241,19 @@ export default function App() {
         let wcOverbreak = Math.max(0, wcDur - 10);
         let mealOverbreak = Math.max(0, mealDur - 60);
         let shortOverbreak = Math.max(0, shortDur - 30);
+        if (r.hasSingleShort30m && shortOverbreak <= 2) {
+            shortOverbreak = 0;
+        }
         let wellnessOverbreak = Math.max(0, wellnessDur - 15);
         let prayingOverbreak = Math.max(0, prayingDur - 15);
         let idleOverbreak = idleDur;
 
-        const isWcOnly = includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
-        const isIdleOnly = includeIdleGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
-        const isNonModOnly = includeNonModGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && typeFilter === 'all';
-        const isTardinessOnly = includeTardinessGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && typeFilter === 'all';
-        const isOverbreakOnly = typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal;
+        const isWcOnly = includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isIdleOnly = includeIdleGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isNonModOnly = includeNonModGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isTardinessOnly = includeTardinessGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
+        const isOverbreakOnly = typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal;
 
         let dailyOverbreak = 0;
         if (isWcOnly) {
@@ -155,12 +302,29 @@ export default function App() {
            if (timeFilter === 'day' && !(d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear())) return false;
         }
 
-        if (shiftFilter.length > 0 && r.inferredShift && !shiftFilter.includes(cleanShift(r.inferredShift))) return false;
+        if (shiftFilter.length > 0 || includeCheckGlobal) {
+            const hasCheck = shiftFilter.includes('CHECK') || includeCheckGlobal;
+            const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
+            
+            const isCheckMatch = r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim();
+            const activeShift = r.scheduledShift ? cleanShift(r.scheduledShift) : (r.inferredShift ? cleanShift(r.inferredShift) : null);
+            const isShiftMatch = activeShift ? otherShifts.includes(activeShift) : false;
 
-        const isWcOnly = includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
-        const isIdleOnly = includeIdleGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
-        const isNonModOnly = includeNonModGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && typeFilter === 'all';
-        const isTardinessOnly = includeTardinessGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && typeFilter === 'all';
+            if (hasCheck && otherShifts.length > 0) {
+                if (!isShiftMatch) return false;
+            } else if (hasCheck) {
+                if (!isCheckMatch) return false;
+            } else {
+                if (!isShiftMatch) return false;
+            }
+        }
+
+        const isWcOnly = includeWcGlobal && !includeShort30MinGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isIdleOnly = includeIdleGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isNonModOnly = includeNonModGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isTardinessOnly = includeTardinessGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
+        const isShort30MinOnly = includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
 
         if (isWcOnly) {
            if (r.wcDuration <= 0) return false;
@@ -170,11 +334,24 @@ export default function App() {
            if (!r.breaks.some(b => b.type === 'non_moderating')) return false;
         } else if (isTardinessOnly) {
            if ((r.tardinessMinutes || 0) <= 0) return false;
-        } else if (typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal) {
+        } else if (isEarlyLeaveOnly) {
+           if ((r.earlyLeaveMinutes || 0) <= 0) return false;
+        } else if (isShort30MinOnly) {
+           // Agent took exactly one shortbreak in the day, > 20min (hasSingleShort30m is already true if it was)
+           if (!r.hasSingleShort30m) return false;
+        } else if (typeFilter === 'idle_overbreak_wc' && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal) {
            if (r.totalOverbreak <= 0) return false;
-        } else if (includeWcGlobal || includeIdleGlobal || includeNonModGlobal || includeTardinessGlobal || typeFilter === 'idle_overbreak_wc') {
-           // If multiple are on, or just one that isn't in exclusive mode (though currently toggles are simple)
-           if (r.totalOverbreak <= 0 && r.wcDuration <= 0 && r.idleDuration <= 0 && !r.breaks.some(b => b.type === 'non_moderating') && (r.tardinessMinutes || 0) <= 0) return false;
+        } else if (includeWcGlobal || includeIdleGlobal || includeNonModGlobal || includeTardinessGlobal || includeEarlyLeaveGlobal || includeShort30MinGlobal || typeFilter === 'idle_overbreak_wc') {
+           // Mixed filters logic
+           let keep = false;
+           if (includeWcGlobal && r.wcDuration > 0) keep = true;
+           if (includeIdleGlobal && r.idleDuration > 0) keep = true;
+           if (includeNonModGlobal && r.breaks.some(b => b.type === 'non_moderating')) keep = true;
+           if (includeTardinessGlobal && (r.tardinessMinutes || 0) > 0) keep = true;
+           if (includeEarlyLeaveGlobal && (r.earlyLeaveMinutes || 0) > 0) keep = true;
+           if (includeShort30MinGlobal && r.hasSingleShort30m) keep = true;
+           if (typeFilter === 'idle_overbreak_wc' && r.totalOverbreak > 0) keep = true;
+           if (!keep) return false;
         }
 
         return true;
@@ -189,6 +366,10 @@ export default function App() {
       const idleTotalMinutes = records.reduce((acc, r) => acc + r.idleDuration, 0);
       const totalTardinessMinutes = records.reduce((acc, r) => acc + (r.tardinessMinutes || 0), 0);
       const totalEarlyLeaveMinutes = records.reduce((acc, r) => acc + (r.earlyLeaveMinutes || 0), 0);
+      const totalShort30MinRecords = records.reduce((acc, r) => acc + (r.hasSingleShort30m ? 1 : 0), 0);
+      const totalNonModMinutes = records.reduce((acc, r) => acc + (r.nonModDuration || 0), 0);
+      const totalReviewAndAppealMinutes = records.reduce((acc, r) => acc + (r.reviewAndAppealDuration || 0), 0);
+      const totalAwaitingTasksMinutes = records.reduce((acc, r) => acc + (r.awaitingTasksDuration || 0), 0);
       const totalWorkMinutes = records.reduce((acc, r) => acc + (r.totalWorkTimeMillis / 60000), 0);
       const totalBreakMinutes = records.reduce((acc, r) => {
         const breakMins = r.breaks.reduce((bAcc, b) => bAcc + b.durationMinutes, 0);
@@ -205,6 +386,10 @@ export default function App() {
         totalOverbreakMinutes: Math.round(totalOverbreak),
         totalTardinessMinutes: Math.round(totalTardinessMinutes),
         totalEarlyLeaveMinutes: Math.round(totalEarlyLeaveMinutes),
+        totalShort30MinRecords,
+        totalNonModMinutes: Math.round(totalNonModMinutes),
+        totalReviewAndAppealMinutes: Math.round(totalReviewAndAppealMinutes),
+        totalAwaitingTasksMinutes: Math.round(totalAwaitingTasksMinutes),
         wcAlerts,
         idleAlerts,
         wcTotalMinutes,
@@ -213,7 +398,51 @@ export default function App() {
     }).filter(Boolean) as EmployeeSummary[];
 
     return filtered;
-  }, [summaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, includeTardinessGlobal, filterMinorOverbreaks]);
+  }, [mergedSummaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, includeTardinessGlobal, includeEarlyLeaveGlobal, filterMinorOverbreaks, includeShort30MinGlobal, includeCheckGlobal]);
+
+  const handleCalendarUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls') && !file.name.endsWith('.csv')) {
+      toast.error(t('invalidFormat'));
+      return;
+    }
+
+    setIsCalendarLoading(true);
+
+    const delay = Math.floor(Math.random() * (4000 - 2000 + 1) + 2000);
+    const delayPromise = new Promise(resolve => setTimeout(resolve, delay));
+    
+    const promise = Promise.all([parseCalendarFile(file), delayPromise]).then(([result]) => result);
+    
+    toast.promise(promise, {
+      loading: 'Processando calendário...',
+      success: ({ data, note }) => {
+        setCalendarData(data);
+        setIsCalendarLoading(false);
+        let finalNote = getFullMonthName(note, lang);
+        if (finalNote === note.toUpperCase() || finalNote === "SHEET1") {
+           const fileMonth = getFullMonthName(file.name, lang);
+           if (fileMonth !== file.name.toUpperCase()) {
+              finalNote = fileMonth;
+           } else {
+              finalNote = "OK";
+           }
+        }
+        setCalendarNote(finalNote);
+        return `${data.length} agentes mapeados.`;
+      },
+      error: (err) => {
+        console.error(err);
+        setIsCalendarLoading(false);
+        return 'Erro ao processar calendário.';
+      }
+    });
+
+    // Reset input
+    event.target.value = '';
+  }, []);
 
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -318,6 +547,39 @@ export default function App() {
             </motion.p>
           </motion.div>
         )}
+        
+        {isCalendarLoading && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center"
+          >
+            <div className="relative">
+              <div className="w-24 h-24 border-4 border-indigo-500/20 rounded-full"></div>
+              <div className="w-24 h-24 border-4 border-indigo-500 rounded-full border-t-transparent animate-spin absolute top-0 left-0"></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <CalendarIcon className="text-indigo-500 animate-pulse" size={32} />
+              </div>
+            </div>
+            <motion.h2 
+              initial={{ y: 10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="mt-6 text-xl font-black text-white tracking-widest uppercase"
+            >
+              Processando Calendário
+            </motion.h2>
+            <motion.p 
+              initial={{ y: 10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              className="mt-2 text-sm text-slate-400 font-medium max-w-sm text-center"
+            >
+              Mapeando horários de turnos e idiomas...
+            </motion.p>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* Sidebar - Geometric Theme */}
@@ -388,8 +650,20 @@ export default function App() {
 
           <div className="flex items-center gap-3">
             {summaries.length > 0 && (
+              <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-bold flex items-center gap-2 h-10 px-4 shadow-sm cursor-pointer transition-colors relative">
+                 <CalendarIcon size={18} className="text-blue-600" /> 
+                 <span className="hidden sm:inline">{calendarData.length > 0 ? "Upload/Update Calendar" : "Add Calendário"}</span>
+                 {calendarData.length > 0 && calendarNote && (
+                    <span className="absolute -top-2.5 -right-2 bg-indigo-500 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full shadow-sm border border-indigo-600">
+                       {calendarNote}
+                    </span>
+                 )}
+                 <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleCalendarUpload} />
+              </label>
+            )}
+            {summaries.length > 0 && (
               <Button onClick={handleExport} className="bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-sm font-bold flex items-center gap-2 h-10 px-5 shadow-lg shadow-slate-200">
-                <FileDown size={18} /> <span>{t('exportPdf')}</span>
+                <FileDown size={18} /> <span className="hidden sm:inline">{t('exportPdf')}</span>
               </Button>
             )}
             <div className="flex lg:hidden gap-1 bg-white border border-slate-200 rounded-lg p-1">
@@ -425,18 +699,31 @@ export default function App() {
                   </p>
                 </div>
 
-                <div className="w-full">
-                  <label className="relative group flex flex-col items-center justify-center w-full h-80 border-2 border-dashed border-slate-300 rounded-[2.5rem] bg-white hover:bg-slate-50 hover:border-blue-400 transition-all cursor-pointer overflow-hidden shadow-2xl shadow-slate-200/50">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6 gap-6 z-10">
+                <div className="w-full flex flex-col sm:flex-row gap-6">
+                  <label className="relative group flex flex-col items-center justify-center w-full sm:w-1/2 h-80 border-2 border-dashed border-slate-300 rounded-[2.5rem] bg-white hover:bg-slate-50 hover:border-blue-400 transition-all cursor-pointer overflow-hidden shadow-2xl shadow-slate-200/50">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6 gap-6 z-10 text-center px-4">
                       <div className="p-5 bg-slate-900 text-white rounded-2xl group-hover:bg-blue-600 transition-colors shadow-lg">
                         <Upload size={32} />
                       </div>
                       <div>
                         <p className="mb-1 text-2xl font-bold text-slate-800">{t('homeSelectReport')}</p>
-                        <p className="text-slate-400 font-medium">{t('homeLimitsInfo')}</p>
+                        <p className="text-slate-400 font-medium text-sm">{t('homeLimitsInfo')}</p>
                       </div>
                     </div>
                     <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
+                  </label>
+
+                  <label className="relative group flex flex-col items-center justify-center w-full sm:w-1/2 h-80 border-2 border-dashed border-slate-300 rounded-[2.5rem] bg-white hover:bg-slate-50 hover:border-green-400 transition-all cursor-pointer overflow-hidden shadow-xl shadow-slate-200/50">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6 gap-6 z-10 text-center px-4">
+                      <div className="p-5 bg-slate-900 text-white rounded-2xl group-hover:bg-green-600 transition-colors shadow-lg">
+                        <CalendarIcon size={32} />
+                      </div>
+                      <div>
+                        <p className="mb-1 text-2xl font-bold text-slate-800">1. Opcional: Calendário</p>
+                        <p className="text-slate-400 font-medium text-sm">Carregue o calendário (.csv ou ext) primeiro ou depois para o mapping de LOB e Language.</p>
+                      </div>
+                    </div>
+                    <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleCalendarUpload} />
                   </label>
                 </div>
               </motion.div>
@@ -478,6 +765,18 @@ export default function App() {
                                {shift}
                              </button>
                           ))}
+                          <button 
+                             onClick={() => {
+                               if (shiftFilter.includes('CHECK')) {
+                                 setShiftFilter(shiftFilter.filter(s => s !== 'CHECK'));
+                               } else {
+                                 setShiftFilter([...shiftFilter, 'CHECK']);
+                               }
+                             }}
+                             className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${shiftFilter.includes('CHECK') ? 'bg-amber-500 text-white border-amber-500 shadow-md' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'}`}
+                           >
+                             CHECK
+                          </button>
                         </div>
 
                         {/* Bottom Filter Row: Calendars and Options */}
@@ -557,6 +856,12 @@ export default function App() {
                                OVERBREAKS
                              </button>
                              <button
+                               onClick={() => setIncludeShort30MinGlobal(!includeShort30MinGlobal)}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${includeShort30MinGlobal ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}
+                             >
+                               30MIN
+                             </button>
+                             <button
                                onClick={() => setIncludeWcGlobal(!includeWcGlobal)}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeWcGlobal ? 'bg-amber-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
@@ -581,6 +886,18 @@ export default function App() {
                                TARDINESS
                              </button>
                              <button
+                               onClick={() => setIncludeEarlyLeaveGlobal(!includeEarlyLeaveGlobal)}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeEarlyLeaveGlobal ? 'bg-orange-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               EARLY LEAVE
+                             </button>
+                             <button
+                               onClick={() => setIncludeCheckGlobal(!includeCheckGlobal)}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeCheckGlobal ? 'bg-amber-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               CHECK
+                             </button>
+                             <button
                                onClick={() => setFilterMinorOverbreaks(!filterMinorOverbreaks)}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${filterMinorOverbreaks ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                                title="Mostra apenas agentes com total de 2 minutos ou menos"
@@ -596,9 +913,9 @@ export default function App() {
 
                 <div className="min-h-[600px]">
                   {activeTab === 'dashboard' ? (
-                    <StatsDashboard summaries={filteredSummaries} allSummaries={summaries} latestDate={latestDate} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalFilterMajorOverbreaks={false} />
+                    <StatsDashboard summaries={filteredSummaries} allSummaries={summaries} periodSummaries={periodSummaries} basePeriodCount={periodSummaries.length} latestDate={latestDate} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalFilterMajorOverbreaks={false} globalShiftFilter={shiftFilter} />
                   ) : (
-                    <EmployeeList summaries={filteredSummaries} allSummaries={summaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalFilterMajorOverbreaks={false} />
+                    <EmployeeList summaries={filteredSummaries} allSummaries={summaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalFilterMajorOverbreaks={false} />
                   )}
                 </div>
               </motion.div>
