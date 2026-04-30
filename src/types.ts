@@ -28,6 +28,7 @@ export interface EmployeeDayRecord {
   nonModDuration: number;
   reviewAndAppealDuration: number;
   awaitingTasksDuration: number;
+  forgotStatusDuration: number;
   
   // Overbreaks in minutes
   mealOverbreak: number;
@@ -78,6 +79,7 @@ export interface EmployeeSummary {
   totalNonModMinutes: number;
   totalReviewAndAppealMinutes: number;
   totalAwaitingTasksMinutes: number;
+  totalForgotStatusMinutes: number;
   totalShort30MinRecords?: number;
   wcAlerts: number;
   idleAlerts: number;

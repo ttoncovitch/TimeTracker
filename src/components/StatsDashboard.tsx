@@ -360,6 +360,11 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
     .sort((a, b) => b.totalNonModMinutes - a.totalNonModMinutes)
     .slice(0, 10);
 
+  const topForgotStatus = [...filteredSummaries]
+    .filter(s => (s.totalForgotStatusMinutes || 0) > 0)
+    .sort((a, b) => (b.totalForgotStatusMinutes || 0) - (a.totalForgotStatusMinutes || 0))
+    .slice(0, 10);
+
   const agentsBottom5Special = [...filteredSummaries]
     .filter(s => {
       if (s.isTraining || s.totalOverbreakMinutes === 0) return false;
@@ -904,6 +909,33 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
 
                 {isNonModOnly && (
                   <>
+                  <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
+                    <CardHeader className="bg-slate-50/50 border-b border-slate-100/50 py-4 shrink-0 rounded-t-2xl">
+                      <CardTitle className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2">
+                        <AlertCircle size={16} /> FORGOT STATUS
+                      </CardTitle>
+                      <CardDescription className="text-xs text-slate-600/80 mt-1">Status longo após fim de turno</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-0 flex-1">
+                      <div className="divide-y divide-slate-50">
+                        {topForgotStatus.map((s, i) => (
+                           <AgentLine 
+                              key={`${s.employeeName}-${i}`} 
+                              summary={s} 
+                              rank={i+1} 
+                              metricValue={`${Math.floor(s.totalForgotStatusMinutes / 60)}h ${s.totalForgotStatusMinutes % 60}m`} 
+                              metricLabel="tempo" 
+                              colorClass="text-slate-700"
+                              hideTooltip={true}
+                           />
+                        ))}
+                        {topForgotStatus.length === 0 && (
+                          <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
                   <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                     <CardHeader className="bg-purple-50/50 border-b border-purple-100/50 py-4 shrink-0 rounded-t-2xl">
                       <CardTitle className="text-sm font-black uppercase tracking-widest text-purple-800 flex items-center gap-2">

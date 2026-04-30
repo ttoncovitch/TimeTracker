@@ -361,6 +361,24 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
     });
   }
 
+  const anyLocalFilterActive = onlyExceptions || includeWc || includeIdle || filterNm || includeTardiness || includeEarlyLeave || includeShort30Min;
+  if (anyLocalFilterActive) {
+    records = records.filter(r => {
+      let keep = false;
+      const hasAnyOverbreak = r.mealOverbreak > 0 || r.shortOverbreak > 0 || r.wellnessOverbreak > 0 || r.prayingOverbreak > 0 || r.wcDuration > 10 || r.idleOverbreak > 0 || (r.tardinessMinutes || 0) > 0 || (r.earlyLeaveMinutes || 0) > 0;
+      
+      if (onlyExceptions && hasAnyOverbreak) keep = true;
+      if (includeWc && r.wcDuration > 0) keep = true;
+      if (includeIdle && r.idleDuration > 0) keep = true;
+      if (filterNm && r.breaks.some(b => b.type === 'non_moderating' || b.type === 'forgot_status')) keep = true;
+      if (includeTardiness && (r.tardinessMinutes || 0) > 0) keep = true;
+      if (includeEarlyLeave && (r.earlyLeaveMinutes || 0) > 0) keep = true;
+      if (includeShort30Min && r.hasSingleShort30m) keep = true;
+      
+      return keep;
+    });
+  }
+
   // Se SOMENTE o WC estiver selecionado GLOBALMENTE
   const isWcOnly = globalIncludeWc && !globalIncludeShort30Min && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
   const isIdleOnly = globalIncludeIdle && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
@@ -528,7 +546,7 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
         <div className="p-6 md:p-8">
           <div className="space-y-6">
             {records.length > 0 ? records.map((day, idx) => (
-              <DayRecordCard key={`${day.date}-${idx}`} record={day} isWcOnly={isWcOnly} isIdleOnly={isIdleOnly} isTardinessOnly={isTardinessOnly} filterNm={filterNm} includeWc={includeWc} includeIdle={includeIdle} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} onlyExceptions={onlyExceptions} />
+              <DayRecordCard key={`${day.date}-${idx}`} record={day} isWcOnly={isWcOnly} isIdleOnly={isIdleOnly} isTardinessOnly={isTardinessOnly} filterNm={filterNm} includeWc={includeWc} includeIdle={includeIdle} includeTardiness={includeTardiness} includeEarlyLeave={includeEarlyLeave} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} onlyExceptions={onlyExceptions} />
             )) : (
               <div className="text-center py-12">
                  <p className="text-slate-400 font-bold uppercase tracking-widest text-xs italic">Nenhum registro para o período.</p>
@@ -541,11 +559,30 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
   );
 }
 
-const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; isIdleOnly?: boolean; isTardinessOnly?: boolean; filterNm?: boolean; includeWc?: boolean; includeIdle?: boolean; globalFilterMajorOverbreaks: boolean; onlyExceptions?: boolean }> = ({ record, isWcOnly, isIdleOnly, isTardinessOnly, filterNm, includeWc, includeIdle, globalFilterMajorOverbreaks, onlyExceptions }) => {
+const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; isIdleOnly?: boolean; isTardinessOnly?: boolean; filterNm?: boolean; includeWc?: boolean; includeIdle?: boolean; includeTardiness?: boolean; includeEarlyLeave?: boolean; globalFilterMajorOverbreaks: boolean; onlyExceptions?: boolean }> = ({ record, isWcOnly, isIdleOnly, isTardinessOnly, filterNm, includeWc, includeIdle, includeTardiness, includeEarlyLeave, globalFilterMajorOverbreaks, onlyExceptions }) => {
     const isWcAlert = record.wcDuration > 10;
     const hasAnyOverbreak = record.mealOverbreak > 0 || record.shortOverbreak > 0 || record.wellnessOverbreak > 0 || record.prayingOverbreak > 0 || isWcAlert || record.idleOverbreak > 0 || (record.tardinessMinutes || 0) > 0 || (record.earlyLeaveMinutes || 0) > 0;
     
-    const isHighlighted = filterNm ? record.breaks.some(b => b.type === 'non_moderating') : isWcOnly ? record.wcDuration > 0 : isIdleOnly ? record.idleDuration > 0 : isTardinessOnly ? ((record.tardinessMinutes || 0) > 0 || (record.earlyLeaveMinutes || 0) > 0) : hasAnyOverbreak;
+    // Check if any local filter is active
+    const anyLocalFilterActive = onlyExceptions || includeWc || includeIdle || filterNm || includeTardiness || includeEarlyLeave;
+    
+    let isHighlighted = false;
+    let borderColor = 'border-slate-100';
+    
+    if (anyLocalFilterActive) {
+        if (onlyExceptions && hasAnyOverbreak) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-4'; }
+        else if (filterNm && record.breaks.some(b => b.type === 'non_moderating' || b.type === 'forgot_status')) { isHighlighted = true; borderColor = 'border-teal-200 ring-teal-50/50 ring-4'; }
+        else if (includeWc && record.wcDuration > 0) { isHighlighted = true; borderColor = 'border-amber-200 ring-amber-50/50 ring-4'; }
+        else if (includeIdle && record.idleDuration > 0) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-4'; }
+        else if (includeTardiness && (record.tardinessMinutes || 0) > 0) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-4'; }
+        else if (includeEarlyLeave && (record.earlyLeaveMinutes || 0) > 0) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-4'; }
+    } else {
+        // Fallback for global or no filters
+        if (isWcOnly && record.wcDuration > 0) { isHighlighted = true; borderColor = 'border-amber-200 ring-amber-50/50 ring-4'; }
+        else if (isIdleOnly && record.idleDuration > 0) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-4'; }
+        else if (isTardinessOnly && ((record.tardinessMinutes || 0) > 0 || (record.earlyLeaveMinutes || 0) > 0)) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-4'; }
+        else if (hasAnyOverbreak) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-4'; }
+    }
 
     // Calculate cumulative sums to correctly identify which breaks contribute to overbreaks
     const typeSums: Record<string, number> = {};
@@ -590,7 +627,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
         }
 
         // Otherwise, show if it matches ANY selected filter
-        if (filterNm && b.type === 'non_moderating') return true;
+        if (filterNm && (b.type === 'non_moderating' || b.type === 'forgot_status')) return true;
         if (includeWc && b.type === 'wc') return true;
         if (includeIdle && b.type === 'idle') return true;
         if (onlyExceptions && b.isOverbreak) return true;
@@ -600,12 +637,20 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
     });
 
     const nmTotalDuration = typeSums['non_moderating'] || 0;
+    
+    let textColor = 'text-slate-900';
+    if (isHighlighted) {
+        if (borderColor.includes('teal')) textColor = 'text-teal-900';
+        else if (borderColor.includes('amber')) textColor = 'text-amber-900';
+        else if (borderColor.includes('rose')) textColor = 'text-rose-900';
+        else if (borderColor.includes('orange')) textColor = 'text-orange-900';
+    }
 
     return (
-        <div className={`flex flex-col p-5 border rounded-2xl shadow-sm transition-all relative overflow-hidden bg-white ${isHighlighted ? (filterNm ? 'border-teal-200 ring-teal-50/50 ring-4' : isWcOnly ? 'border-amber-200 ring-amber-50/50 ring-4' : isIdleOnly ? 'border-rose-200 ring-rose-50/50 ring-4' : isTardinessOnly ? 'border-orange-200 ring-orange-50/50 ring-4' : 'border-rose-200 ring-rose-50/50 ring-4') : 'border-slate-100'}`}>
+        <div className={`flex flex-col p-5 border rounded-2xl shadow-sm transition-all relative overflow-hidden bg-white ${borderColor}`}>
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
                 <div className="flex items-center gap-3">
-                    <span className={`text-base font-black tracking-tight ${isHighlighted ? (filterNm ? 'text-teal-900' : isWcOnly ? 'text-amber-900' : isIdleOnly ? 'text-rose-900' : isTardinessOnly ? 'text-orange-900' : 'text-rose-900') : 'text-slate-900'}`}>{format(new Date(record.date), 'dd/MM/yyyy')}</span>
+                    <span className={`text-base font-black tracking-tight ${textColor}`}>{format(new Date(record.date), 'dd/MM/yyyy')}</span>
                     {(record.scheduledShift || record.inferredShift) && (
                        <div className="flex flex-col">
                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${

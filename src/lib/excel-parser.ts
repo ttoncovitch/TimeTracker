@@ -109,6 +109,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           let totalNonModMinutes = 0;
           let totalReviewAndAppealMinutes = 0;
           let totalAwaitingTasksMinutes = 0;
+          let totalForgotStatusMinutes = 0;
           
           let finalName = '';
           let finalDepartment = '';
@@ -173,13 +174,13 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           const shifts: { records: any[][], firstEventTime: Date }[] = [];
           let currentShift: any[] = [];
           let currentShiftStart: Date | null = null;
+          let previousEndTime: Date | null = null;
 
           allEvents.forEach(e => {
-              // A new shift starts if there's a gap of more than 14 hours (840 minutes) 
-              // from the START of the current shift.
-              if (currentShiftStart) {
-                  const hoursFromStart = (e.startTime.getTime() - currentShiftStart.getTime()) / 3600000;
-                  if (hoursFromStart > 14) {
+              // Split if gap between events is > 5 hours
+              if (currentShiftStart && previousEndTime) {
+                  const gapMinutes = (e.startTime.getTime() - previousEndTime.getTime()) / 60000;
+                  if (gapMinutes > 300) {
                       shifts.push({ records: currentShift, firstEventTime: currentShiftStart });
                       currentShift = [];
                       currentShiftStart = null;
@@ -190,6 +191,15 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
                   currentShiftStart = e.startTime;
               }
               currentShift.push(e.row);
+              previousEndTime = e.endTime;
+              
+              // Split if we encounter a long offline period > 4 hours
+              if ((e.status === 'offline' || (e.status === 'rest' && e.subStatus === 'fim de turno')) && e.durationMinutes >= 240) {
+                  shifts.push({ records: currentShift, firstEventTime: currentShiftStart });
+                  currentShift = [];
+                  currentShiftStart = null;
+                  previousEndTime = null;
+              }
           });
           if (currentShift.length > 0 && currentShiftStart) {
              shifts.push({ records: currentShift, firstEventTime: currentShiftStart });
@@ -201,7 +211,9 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              const firstRowDate = format(shiftInfo.firstEventTime, 'yyyy-MM-dd'); 
              const record = processDailyRowsFromColumns(firstRowDate, shiftRows);
              
-             if (record.breaks.length > 0 || record.totalWorkTimeMillis > 0) {
+             const hasSignificantActivity = record.totalWorkTimeMillis > 0 || record.breaks.some(b => b.type !== 'offline');
+             
+             if (hasSignificantActivity) {
               dailyRecords.push(record);
               totalWorkMinutes += record.totalWorkTimeMillis / (1000 * 60);
               totalBreakMinutes += (record.mealDuration + record.shortDuration + record.wellnessDuration + record.wcDuration + record.prayingDuration + record.idleDuration);
@@ -214,6 +226,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               totalNonModMinutes += record.nonModDuration;
               totalReviewAndAppealMinutes += record.reviewAndAppealDuration;
               totalAwaitingTasksMinutes += record.awaitingTasksDuration;
+              totalForgotStatusMinutes += record.forgotStatusDuration;
              }
           });
 
@@ -231,6 +244,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               totalNonModMinutes: Math.round(totalNonModMinutes),
               totalReviewAndAppealMinutes: Math.round(totalReviewAndAppealMinutes),
               totalAwaitingTasksMinutes: Math.round(totalAwaitingTasksMinutes),
+              totalForgotStatusMinutes: Math.round(totalForgotStatusMinutes),
               totalShort30MinRecords,
               wcAlerts: wcAlertsCount,
               idleAlerts: idleAlertsCount,
@@ -314,7 +328,7 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
       return {
         date, employeeName: employeeName || 'Unknown', totalWorkTimeMillis: 0, breaks: [],
         mealDuration: 0, shortDuration: 0, wellnessDuration: 0, wcDuration: 0, prayingDuration: 0, idleDuration: 0,
-        nonModDuration: 0, reviewAndAppealDuration: 0, awaitingTasksDuration: 0,
+        nonModDuration: 0, reviewAndAppealDuration: 0, awaitingTasksDuration: 0, forgotStatusDuration: 0,
         mealOverbreak: 0, shortOverbreak: 0, wellnessOverbreak: 0, prayingOverbreak: 0, wcOverbreak: 0, idleOverbreak: 0, totalOverbreak: 0,
         tardinessMinutes: 0, earlyLeaveMinutes: 0
       };
@@ -389,10 +403,6 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
                  combinedInfo.includes('meeting') ||
                  combinedInfo.includes('reuni');
 
-    if (isWork) {
-       totalWorkTimeMillis += e.durationMinutes * 60 * 1000;
-    }
-
     let currentBreakType: BreakSession['type'] = 'other';
     
     if (combinedInfo.includes('non moderation') || combinedInfo.includes('non-moderation') || combinedInfo.includes('non_moderating') || combinedInfo.includes('non moderation task') || combinedInfo.includes('non moderating task')) {
@@ -431,13 +441,69 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
      
      let finalEndTime = e.endTime;
      let finalDuration = e.durationMinutes;
-     if (currentBreakType === 'offline' && e.endTime > shiftEndLimit) {
-         finalEndTime = new Date(Math.min(e.endTime.getTime(), shiftEndLimit.getTime()));
+     
+     const isOvertimeAllowed = currentBreakType === 'moderating' || currentBreakType === 'training' || currentBreakType === 'meeting';
+     const minutesPastShiftLimit = Math.round((e.endTime.getTime() - shiftEndLimit.getTime()) / 60000);
+     
+     if (!isOvertimeAllowed && e.endTime > shiftEndLimit) {
+         if (e.startTime >= shiftEndLimit) {
+             currentBreakType = currentBreakType === 'offline' ? 'offline' : 'forgot_status';
+         } else {
+             finalEndTime = new Date(shiftEndLimit);
+             finalDuration = Math.round((finalEndTime.getTime() - e.startTime.getTime()) / 60000);
+             
+             const remainderDuration = Math.round((e.endTime.getTime() - shiftEndLimit.getTime()) / 60000);
+             if (remainderDuration > 0) {
+                 breaks.push({
+                     type: currentBreakType === 'offline' ? 'offline' : 'forgot_status',
+                     rawStatus: e.rawStatus || e.rawInfo?.trim() || '',
+                     subType: currentBreakType === 'offline' ? e.subStatus : `(Esqueceu status: ${e.subStatus || currentBreakType})`,
+                     remarks: e.originalRemark,
+                     originalStatus: e.originalStatus,
+                     originalSubStatus: e.originalSubStatus,
+                     originalRemark: e.originalRemark,
+                     startTime: new Date(shiftEndLimit),
+                     endTime: e.endTime,
+                     durationMinutes: remainderDuration
+                 });
+             }
+         }
+     } else if (isOvertimeAllowed && minutesPastShiftLimit > 240) {
+         if (e.startTime >= shiftEndLimit) {
+             currentBreakType = 'forgot_status';
+         } else {
+             finalEndTime = new Date(Math.min(e.endTime.getTime(), shiftEndLimit.getTime() + 60 * 60000));
+             finalDuration = Math.round((finalEndTime.getTime() - e.startTime.getTime()) / 60000);
+             
+             const remainderDuration = Math.round((e.endTime.getTime() - finalEndTime.getTime()) / 60000);
+             if (remainderDuration > 0) {
+                 breaks.push({
+                     type: 'forgot_status',
+                     rawStatus: e.rawStatus || e.rawInfo?.trim() || '',
+                     subType: `(Esqueceu status: ${e.subStatus || currentBreakType})`,
+                     remarks: e.originalRemark,
+                     originalStatus: e.originalStatus,
+                     originalSubStatus: e.originalSubStatus,
+                     originalRemark: e.originalRemark,
+                     startTime: new Date(finalEndTime),
+                     endTime: e.endTime,
+                     durationMinutes: remainderDuration
+                 });
+             }
+         }
+     }
+     
+     if (currentBreakType === 'offline' && finalEndTime > shiftEndLimit) {
+         finalEndTime = new Date(Math.min(finalEndTime.getTime(), shiftEndLimit.getTime()));
          finalDuration = Math.round((finalEndTime.getTime() - e.startTime.getTime()) / 60000);
          if (finalDuration < 0) {
              finalDuration = 0;
              finalEndTime = e.startTime;
          }
+     }
+
+     if (isWork && currentBreakType !== 'forgot_status' && currentBreakType !== 'offline') {
+         totalWorkTimeMillis += finalDuration * 60 * 1000;
      }
 
      if (finalDuration > 0 || currentBreakType === 'offline') {
@@ -542,6 +608,7 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
   const nonModDuration = breaks.filter(b => b.type === 'non_moderating').reduce((sum, b) => sum + b.durationMinutes, 0);
   const reviewAndAppealDuration = breaks.filter(b => b.type === 'non_moderating' && (b.subType?.toLowerCase().includes('review') || b.subType?.toLowerCase().includes('appeal'))).reduce((sum, b) => sum + b.durationMinutes, 0);
   const awaitingTasksDuration = breaks.filter(b => b.type === 'non_moderating' && b.subType?.toLowerCase().includes('awaiting tasks')).reduce((sum, b) => sum + b.durationMinutes, 0);
+  const forgotStatusDuration = breaks.filter(b => b.type === 'forgot_status').reduce((sum, b) => sum + b.durationMinutes, 0);
 
   let mealOver = Math.max(0, mealDuration - LIMITS.MEAL);
   let shortOver = Math.max(0, shortDuration - LIMITS.SHORT);
@@ -588,6 +655,7 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
     nonModDuration,
     reviewAndAppealDuration,
     awaitingTasksDuration,
+    forgotStatusDuration,
     mealOverbreak: mealOver,
     shortOverbreak: shortOver,
     wellnessOverbreak: wellnessOver,

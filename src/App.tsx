@@ -370,6 +370,7 @@ export default function App() {
       const totalNonModMinutes = records.reduce((acc, r) => acc + (r.nonModDuration || 0), 0);
       const totalReviewAndAppealMinutes = records.reduce((acc, r) => acc + (r.reviewAndAppealDuration || 0), 0);
       const totalAwaitingTasksMinutes = records.reduce((acc, r) => acc + (r.awaitingTasksDuration || 0), 0);
+      const totalForgotStatusMinutes = records.reduce((acc, r) => acc + (r.forgotStatusDuration || 0), 0);
       const totalWorkMinutes = records.reduce((acc, r) => acc + (r.totalWorkTimeMillis / 60000), 0);
       const totalBreakMinutes = records.reduce((acc, r) => {
         const breakMins = r.breaks.reduce((bAcc, b) => bAcc + b.durationMinutes, 0);
@@ -390,6 +391,7 @@ export default function App() {
         totalNonModMinutes: Math.round(totalNonModMinutes),
         totalReviewAndAppealMinutes: Math.round(totalReviewAndAppealMinutes),
         totalAwaitingTasksMinutes: Math.round(totalAwaitingTasksMinutes),
+        totalForgotStatusMinutes: Math.round(totalForgotStatusMinutes),
         wcAlerts,
         idleAlerts,
         wcTotalMinutes,
