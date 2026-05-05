@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { EmployeeSummary, EmployeeDayRecord } from '../types';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon, Search, ChevronRight, AlertTriangle, Info, ArrowUpDown } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, ChevronRight, AlertTriangle, Info, ArrowUpDown, Clock } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -18,9 +18,11 @@ interface EmployeeListProps {
   globalIncludeIdle: boolean;
   globalIncludeNonMod: boolean;
   globalIncludeTardiness: boolean;
+  globalIncludeMinorTardiness?: boolean;
   globalIncludeEarlyLeave: boolean;
   globalIncludeShort30Min?: boolean;
   globalIncludeCheck?: boolean;
+  globalShiftFilter?: string[];
   globalFilterMajorOverbreaks: boolean;
 }
 
@@ -126,7 +128,7 @@ function isLeaveShift(sh: string) {
   return upper === 'PTO' || upper.includes('VAC') || upper.includes('FÉRIAS') || upper === 'SL' || upper.includes('SICK') || upper.includes('MEDICO') || upper.includes('ATESTADO') || upper === 'LOA' || upper.includes('LICENÇA');
 }
 
-export function EmployeeList({ summaries, allSummaries, latestDate, initialFilter = 'all', globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalFilterMajorOverbreaks }: EmployeeListProps) {
+export function EmployeeList({ summaries, allSummaries, latestDate, initialFilter = 'all', globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeMinorTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalShiftFilter, globalFilterMajorOverbreaks }: EmployeeListProps) {
   const { t } = useLanguage();
   const isWcOnly = globalTypeFilter === 'all' && globalIncludeWc && !globalIncludeShort30Min && !globalIncludeNonMod && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave;
   const isShort30MinOnly = globalTypeFilter === 'all' && globalIncludeShort30Min && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave;
@@ -233,7 +235,9 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                   const hasPrayingOver = s.dailyRecords.some(r => r.prayingOverbreak > 0);
                   const hasWcExc = s.wcAlerts > 0;
                   const hasIdleExc = s.idleAlerts > 0;
-                  const hasTardiness = s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0);
+                  const hasTardiness = globalIncludeMinorTardiness 
+                    ? s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15)
+                    : s.dailyRecords.some(r => (r.tardinessMinutes || 0) >= 15);
                   const hasEarlyLeave = s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0);
                   const isAlertRow = hasMealOver || hasShortOver || hasWellnessOver || hasPrayingOver || hasWcExc || hasIdleExc || hasTardiness || hasEarlyLeave;
 
@@ -246,6 +250,10 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                   const idleTotal = s.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0);
                   const tardinessTotal = s.dailyRecords.reduce((acc, r) => acc + (r.tardinessMinutes || 0), 0);
                   const earlyLeaveTotal = s.dailyRecords.reduce((acc, r) => acc + (r.earlyLeaveMinutes || 0), 0);
+                  
+                  const hasShiftMismatch = (!globalShiftFilter || globalShiftFilter.length === 0) 
+                    ? s.dailyRecords.some(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) 
+                    : false;
 
                   return (
                     <tr 
@@ -255,9 +263,16 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                     >
                       <td className="py-4 pl-8 pr-4 relative">
                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${hasIdleExc ? 'bg-red-500' : hasWcExc ? 'bg-amber-500' : 'bg-transparent'}`} />
-                        <p className={`font-bold text-sm text-slate-800 group-hover:text-blue-600 transition-colors ${hasIdleExc ? 'underline decoration-red-500/50 decoration-2 underline-offset-4' : hasWcExc ? 'underline decoration-amber-500/50 decoration-2 underline-offset-4' : ''} truncate max-w-[200px]`}>
-                          {s.employeeName}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className={`font-bold text-sm text-slate-800 group-hover:text-blue-600 transition-colors ${hasIdleExc ? 'underline decoration-red-500/50 decoration-2 underline-offset-4' : hasWcExc ? 'underline decoration-amber-500/50 decoration-2 underline-offset-4' : ''} truncate max-w-[200px]`}>
+                            {s.employeeName}
+                          </p>
+                          {hasShiftMismatch && (
+                            <div title="Este agente tem trabalhado num turno diferente do programado." className="flex items-center justify-center p-0.5 rounded-md bg-amber-100 text-amber-600 border border-amber-200 shadow-sm shrink-0">
+                              <Clock size={12} strokeWidth={3} />
+                            </div>
+                          )}
+                        </div>
                         {s.email && (
                           <div className="flex flex-col gap-0.5 mt-0.5">
                             <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{s.email}</p>
@@ -464,15 +479,15 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
 
       <Dialog open={!!selectedEmp} onOpenChange={(open) => !open && setSelectedEmp(null)}>
         <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] flex flex-col rounded-[2rem] border-slate-200 p-0 overflow-hidden shadow-2xl">
-           {selectedEmp && <EmployeeDetail summary={selectedEmp} allSummaries={allSummaries} latestDate={latestDate || new Date()} initialFilter={initialFilter} t={t} globalTypeFilter={globalTypeFilter} globalIncludeWc={globalIncludeWc} globalIncludeIdle={globalIncludeIdle} globalIncludeNonMod={globalIncludeNonMod} globalIncludeTardiness={globalIncludeTardiness} globalIncludeEarlyLeave={globalIncludeEarlyLeave} globalIncludeShort30Min={globalIncludeShort30Min} globalIncludeCheck={globalIncludeCheck} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} />}
+           {selectedEmp && <EmployeeDetail summary={selectedEmp} allSummaries={allSummaries} latestDate={latestDate || new Date()} initialFilter={initialFilter} t={t} globalTypeFilter={globalTypeFilter} globalIncludeWc={globalIncludeWc} globalIncludeIdle={globalIncludeIdle} globalIncludeNonMod={globalIncludeNonMod} globalIncludeTardiness={globalIncludeTardiness} globalIncludeMinorTardiness={globalIncludeMinorTardiness} globalIncludeEarlyLeave={globalIncludeEarlyLeave} globalIncludeShort30Min={globalIncludeShort30Min} globalIncludeCheck={globalIncludeCheck} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} />}
         </DialogContent>
       </Dialog>
     </div>
   );
 }
 
-function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalFilterMajorOverbreaks }: { summary: EmployeeSummary; allSummaries: EmployeeSummary[]; latestDate: Date, initialFilter: string, t: any, globalTypeFilter: 'all' | 'idle_overbreak_wc', globalIncludeWc: boolean, globalIncludeIdle: boolean, globalIncludeNonMod: boolean, globalIncludeTardiness: boolean, globalIncludeEarlyLeave: boolean, globalIncludeShort30Min?: boolean, globalIncludeCheck?: boolean, globalFilterMajorOverbreaks: boolean }) {
-  const today = new Date();
+function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeMinorTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalFilterMajorOverbreaks }: { summary: EmployeeSummary; allSummaries: EmployeeSummary[]; latestDate: Date, initialFilter: string, t: any, globalTypeFilter: 'all' | 'idle_overbreak_wc', globalIncludeWc: boolean, globalIncludeIdle: boolean, globalIncludeNonMod: boolean, globalIncludeTardiness: boolean, globalIncludeMinorTardiness?: boolean, globalIncludeEarlyLeave: boolean, globalIncludeShort30Min?: boolean, globalIncludeCheck?: boolean, globalFilterMajorOverbreaks: boolean }) {
+  const today = latestDate;
   
   // Start with the initialFilter mapped to 'today', 'week', or 'month'
   // If initialFilter is 'all' or 'day', we'll default it smartly
@@ -491,6 +506,7 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t
   const [includeIdle, setIncludeIdle] = useState(globalIncludeIdle);
   const [filterNm, setFilterNm] = useState(globalIncludeNonMod);
   const [includeTardiness, setIncludeTardiness] = useState(globalIncludeTardiness);
+  const [includeMinorTardiness, setIncludeMinorTardiness] = useState(globalIncludeMinorTardiness || false);
   const [includeEarlyLeave, setIncludeEarlyLeave] = useState(globalIncludeEarlyLeave);
   const [includeShort30Min, setIncludeShort30Min] = useState(globalIncludeShort30Min || false);
   const [includeCheck, setIncludeCheck] = useState(globalIncludeCheck || false);
@@ -500,12 +516,24 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t
   if (view === 'month') {
     records = s.dailyRecords.filter(r => {
       const d = new Date(r.date + 'T12:00:00');
-      return (today.getTime() - d.getTime()) <= 30 * 24 * 60 * 60 * 1000;
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      return d.getMonth() === lastMonthDate.getMonth() && d.getFullYear() === lastMonthDate.getFullYear();
     });
   } else if (view === 'week') {
     records = s.dailyRecords.filter(r => {
       const d = new Date(r.date + 'T12:00:00');
-      return (today.getTime() - d.getTime()) <= 7 * 24 * 60 * 60 * 1000;
+      const dNormalized = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      
+      const referenceDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const dayOfWeek = referenceDate.getDay();
+      
+      const lastSaturday = new Date(referenceDate);
+      lastSaturday.setDate(referenceDate.getDate() - dayOfWeek - 1);
+      
+      const lastSunday = new Date(lastSaturday);
+      lastSunday.setDate(lastSaturday.getDate() - 6);
+      
+      return dNormalized >= lastSunday.getTime() && dNormalized <= lastSaturday.getTime();
     });
   } else if (view === 'today') {
     records = s.dailyRecords.filter(r => {
@@ -525,13 +553,19 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t
   if (anyLocalFilterActive) {
     records = records.filter(r => {
       let keep = false;
-      const hasAnyOverbreak = r.mealOverbreak > 0 || r.shortOverbreak > 0 || r.wellnessOverbreak > 0 || r.prayingOverbreak > 0 || r.wcDuration > 10 || r.idleOverbreak > 0 || (r.tardinessMinutes || 0) > 0 || (r.earlyLeaveMinutes || 0) > 0;
+      const hasAnyOverbreak = r.mealOverbreak > 0 || r.shortOverbreak > 0 || r.wellnessOverbreak > 0 || r.prayingOverbreak > 0 || r.wcDuration > 10 || r.idleOverbreak > 0 || (includeMinorTardiness ? ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15) : (r.tardinessMinutes || 0) >= 15) || (r.earlyLeaveMinutes || 0) > 0;
       
       if (onlyExceptions && hasAnyOverbreak) keep = true;
       if (includeWc && r.wcDuration > 0) keep = true;
       if (includeIdle && r.idleDuration > 0) keep = true;
       if (filterNm && r.breaks.some(b => b.type === 'non_moderating' || b.type === 'forgot_status')) keep = true;
-      if (includeTardiness && (r.tardinessMinutes || 0) > 0) keep = true;
+      if (includeTardiness) {
+          if (includeMinorTardiness) {
+              if ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15) keep = true;
+          } else {
+              if ((r.tardinessMinutes || 0) >= 15) keep = true;
+          }
+      }
       if (includeEarlyLeave && (r.earlyLeaveMinutes || 0) > 0) keep = true;
       if (includeShort30Min && r.hasSingleShort30m) keep = true;
       if (includeCheck && r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) keep = true;
@@ -543,7 +577,8 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t
   // Se SOMENTE o respectivo filtro estiver selecionado localmente em relacao as outras opcoes de overbreaks/excecoes
   const isWcOnly = includeWc && !includeShort30Min && !includeIdle && !filterNm && !includeTardiness && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
   const isIdleOnly = includeIdle && !includeShort30Min && !includeWc && !filterNm && !includeTardiness && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
-  const isTardinessOnly = includeTardiness && !includeShort30Min && !includeIdle && !includeWc && !filterNm && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
+  const isTardinessOnly = includeTardiness && !includeMinorTardiness && !includeShort30Min && !includeIdle && !includeWc && !filterNm && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
+  const isMinorTardinessOnly = includeTardiness && includeMinorTardiness && !includeShort30Min && !includeIdle && !includeWc && !filterNm && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
   const isEarlyLeaveOnly = includeEarlyLeave && !includeShort30Min && !includeIdle && !includeWc && !filterNm && !includeTardiness && !includeCheck && globalTypeFilter === 'all';
   const isShort30MinOnly = includeShort30Min && !includeEarlyLeave && !includeIdle && !includeWc && !filterNm && !includeTardiness && !includeCheck && globalTypeFilter === 'all';
   const isCheckOnly = includeCheck && !includeShort30Min && !includeEarlyLeave && !includeIdle && !includeWc && !filterNm && !includeTardiness && globalTypeFilter === 'all';
@@ -616,73 +651,67 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t
              </div>
                  
              <div className="flex flex-wrap flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-3 border-t border-slate-800">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex bg-slate-800 rounded-md p-1 border border-slate-700 w-full sm:w-auto overflow-x-auto custom-scrollbar gap-1">
+                <div className="flex flex-col w-full gap-2">
+                  <div className="flex flex-wrap bg-slate-800 rounded-md p-1 border border-slate-700 w-full gap-1">
                     {(['today', 'yesterday', 'week', 'month'] as const).map(v => (
                       <button
                         key={v}
                         onClick={() => setView(v)}
-                        className={`px-2 py-1 shrink-0 rounded text-[10px] font-black uppercase tracking-wider transition-colors flex items-center gap-1.5 ${view === v ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+                        className={`flex-1 min-w-[70px] px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider transition-colors flex justify-center items-center gap-1.5 ${view === v ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
                       >
-                        {v === 'today' ? t('filterDay') : v === 'yesterday' ? t('filterYesterday') : v === 'week' ? t('days7') : t('days30')}
+                        {v === 'today' ? t('filterDay') : v === 'yesterday' ? t('filterYesterday') : v === 'week' ? "SEMANA PASSADA" : "MÊS PASSADO"}
                       </button>
                     ))}
                   </div>
   
                   {!isWcOnly && (
-                    <div className="flex flex-col bg-slate-800 rounded-md p-2 border border-slate-700 w-full gap-2">
-                       <div className="grid grid-cols-3 gap-1">
-                         <button
-                           onClick={() => setOnlyExceptions(!onlyExceptions)}
-                           className={`px-2 py-1.5 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${onlyExceptions ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                         >
-                           {t('exceptions')}
-                         </button>
-                         <button
-                           onClick={() => setIncludeWc(!includeWc)}
-                           className={`px-2 py-1.5 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeWc ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                         >
-                           Organic
-                         </button>
-                         <button
-                           onClick={() => setFilterNm(!filterNm)}
-                           className={`px-2 py-1.5 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${filterNm ? 'bg-teal-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                         >
-                           NON-MOD
-                         </button>
-                       </div>
-                       <div className="grid grid-cols-2 gap-1">
-                         <button
-                           onClick={() => setIncludeTardiness(!includeTardiness)}
-                           className={`px-2 py-1.5 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeTardiness ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                         >
-                           TARDINESS
-                         </button>
-                         <button
-                           onClick={() => setIncludeEarlyLeave(!includeEarlyLeave)}
-                           className={`px-2 py-1.5 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeEarlyLeave ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                         >
-                           EARLY LEAVE
-                         </button>
-                       </div>
-                       <div className="grid grid-cols-3 gap-1">
-                         <button
-                           onClick={() => setIncludeIdle(!includeIdle)}
-                           className={`px-2 py-1.5 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeIdle ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                         >
-                           IDLE
-                         </button>
-                         <button
-                           onClick={() => setIncludeCheck(!includeCheck)}
-                           className={`px-2 py-1.5 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeCheck ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                         >
-                           CHECK
-                         </button>
-                         <div className="flex items-center justify-center gap-1 bg-slate-700/50 px-2 py-1.5 rounded border border-slate-600/50">
-                            <span className="text-[9.5px] font-bold tracking-widest text-slate-400 uppercase">TOTAL</span>
-                            <span className="text-[10px] font-black text-rose-400">+{totalPeriodOverbreak}m</span>
-                         </div>
-                       </div>
+                    <div className="flex flex-wrap bg-slate-800 rounded-md p-1.5 border border-slate-700 w-full gap-1 justify-center">
+                          <button
+                            onClick={() => setOnlyExceptions(!onlyExceptions)}
+                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${onlyExceptions ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                          >
+                            {t('exceptions')}
+                          </button>
+                          <button
+                            onClick={() => setIncludeWc(!includeWc)}
+                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeWc ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                          >
+                            Organic
+                          </button>
+                          <button
+                            onClick={() => setFilterNm(!filterNm)}
+                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${filterNm ? 'bg-teal-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                          >
+                            NON-MOD
+                          </button>
+                          <button
+                            onClick={() => setIncludeTardiness(!includeTardiness)}
+                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeTardiness ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                          >
+                            TARDINESS
+                          </button>
+                          <button
+                            onClick={() => setIncludeEarlyLeave(!includeEarlyLeave)}
+                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeEarlyLeave ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                          >
+                            EARLY LEAVE
+                          </button>
+                          <button
+                            onClick={() => setIncludeIdle(!includeIdle)}
+                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeIdle ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                          >
+                            IDLE
+                          </button>
+                          <button
+                            onClick={() => setIncludeCheck(!includeCheck)}
+                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeCheck ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                          >
+                            CHECK
+                          </button>
+                          <div className="flex-1 min-w-[30%] flex items-center justify-center gap-1 bg-slate-700/50 px-2 py-1 rounded border border-slate-600/50">
+                             <span className="text-[9.5px] font-bold tracking-widest text-slate-400 uppercase">TOTAL</span>
+                             <span className="text-[10px] font-black text-rose-400">+{totalPeriodOverbreak}m</span>
+                          </div>
                     </div>
                   )}
                   {isWcOnly && (
@@ -706,7 +735,7 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t
         <div className="p-6 md:p-8">
           <div className="space-y-6">
             {records.length > 0 ? records.map((day, idx) => (
-              <DayRecordCard key={`${day.date}-${idx}`} record={day} isWcOnly={isWcOnly} isIdleOnly={isIdleOnly} isTardinessOnly={isTardinessOnly} filterNm={filterNm} includeWc={includeWc} includeIdle={includeIdle} includeTardiness={includeTardiness} includeEarlyLeave={includeEarlyLeave} includeCheck={includeCheck} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} onlyExceptions={onlyExceptions} />
+              <DayRecordCard key={`${day.date}-${idx}`} record={day} isWcOnly={isWcOnly} isIdleOnly={isIdleOnly} isTardinessOnly={isTardinessOnly} isMinorTardinessOnly={isMinorTardinessOnly} filterNm={filterNm} includeWc={includeWc} includeIdle={includeIdle} includeTardiness={includeTardiness} includeMinorTardiness={includeMinorTardiness} includeEarlyLeave={includeEarlyLeave} includeCheck={includeCheck} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} onlyExceptions={onlyExceptions} />
             )) : (
               <div className="text-center py-12">
                  <p className="text-slate-400 font-bold uppercase tracking-widest text-xs italic">Nenhum registro para o período.</p>
@@ -719,7 +748,7 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t
   );
 }
 
-const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; isIdleOnly?: boolean; isTardinessOnly?: boolean; filterNm?: boolean; includeWc?: boolean; includeIdle?: boolean; includeTardiness?: boolean; includeEarlyLeave?: boolean; includeCheck?: boolean; globalFilterMajorOverbreaks: boolean; onlyExceptions?: boolean }> = ({ record, isWcOnly, isIdleOnly, isTardinessOnly, filterNm, includeWc, includeIdle, includeTardiness, includeEarlyLeave, includeCheck, globalFilterMajorOverbreaks, onlyExceptions }) => {
+const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; isIdleOnly?: boolean; isTardinessOnly?: boolean; isMinorTardinessOnly?: boolean; filterNm?: boolean; includeWc?: boolean; includeIdle?: boolean; includeTardiness?: boolean; includeMinorTardiness?: boolean; includeEarlyLeave?: boolean; includeCheck?: boolean; globalFilterMajorOverbreaks: boolean; onlyExceptions?: boolean }> = ({ record, isWcOnly, isIdleOnly, isTardinessOnly, isMinorTardinessOnly, filterNm, includeWc, includeIdle, includeTardiness, includeMinorTardiness, includeEarlyLeave, includeCheck, globalFilterMajorOverbreaks, onlyExceptions }) => {
     if (record.isAbsence) {
         return (
             <div className="bg-red-50/50 border-2 border-red-200 rounded-2xl p-6 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
@@ -740,8 +769,22 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
         );
     }
 
+    if ((record.isOFF || record.isLOA || record.isPTO || record.isSL || record.isSUSPP || record.isATT) && record.actualStartTime == null && record.totalWorkTimeMillis < 60000) {
+        const typeLabel = record.isATT ? 'ATT / SAÍDA' : record.isLOA ? 'LICENÇA' : record.isPTO ? 'FÉRIAS' : record.isSL ? 'ATESTADO' : record.isSUSPP ? 'SUSPENSÃO' : 'OFF';
+        return (
+             <div className="flex flex-col p-4 border rounded-xl shadow-sm bg-white border-slate-100">
+                <div className="flex items-center gap-3">
+                    <span className="text-base font-black tracking-tight text-slate-900">{format(new Date(record.date + 'T12:00:00'), 'dd/MM/yyyy')}</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-blue-50 text-blue-700 border-blue-100">
+                        {typeLabel}
+                    </span>
+                </div>
+            </div>
+        );
+    }
+    
     const isWcAlert = record.wcDuration > 10;
-    const hasAnyOverbreak = record.mealOverbreak > 0 || record.shortOverbreak > 0 || record.wellnessOverbreak > 0 || record.prayingOverbreak > 0 || isWcAlert || record.idleOverbreak > 0 || (record.tardinessMinutes || 0) > 0 || (record.earlyLeaveMinutes || 0) > 0;
+    const hasAnyOverbreak = record.mealOverbreak > 0 || record.shortOverbreak > 0 || record.wellnessOverbreak > 0 || record.prayingOverbreak > 0 || isWcAlert || record.idleOverbreak > 0 || (includeMinorTardiness ? ((record.tardinessMinutes || 0) > 0 && (record.tardinessMinutes || 0) < 15) : (record.tardinessMinutes || 0) >= 15) || (record.earlyLeaveMinutes || 0) > 0;
     
     // Check if any local filter is active
     const anyLocalFilterActive = onlyExceptions || includeWc || includeIdle || filterNm || includeTardiness || includeEarlyLeave || includeCheck;
@@ -750,19 +793,23 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
     let borderColor = 'border-slate-100';
     
     if (anyLocalFilterActive) {
-        if (onlyExceptions && hasAnyOverbreak) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-4'; }
-        else if (filterNm && record.breaks.some(b => b.type === 'non_moderating' || b.type === 'forgot_status')) { isHighlighted = true; borderColor = 'border-teal-200 ring-teal-50/50 ring-4'; }
-        else if (includeWc && record.wcDuration > 0) { isHighlighted = true; borderColor = 'border-amber-200 ring-amber-50/50 ring-4'; }
-        else if (includeIdle && record.idleDuration > 0) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-4'; }
-        else if (includeTardiness && (record.tardinessMinutes || 0) > 0) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-4'; }
-        else if (includeCheck && record.scheduledShift && record.inferredShift && record.scheduledShift.trim() !== record.inferredShift.trim()) { isHighlighted = true; borderColor = 'border-amber-200 ring-amber-50/50 ring-4'; }
-        else if (includeEarlyLeave && (record.earlyLeaveMinutes || 0) > 0) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-4'; }
+        if (onlyExceptions && hasAnyOverbreak) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-2'; }
+        else if (filterNm && record.breaks.some(b => b.type === 'non_moderating' || b.type === 'forgot_status')) { isHighlighted = true; borderColor = 'border-teal-200 ring-teal-50/50 ring-2'; }
+        else if (includeWc && record.wcDuration > 0) { isHighlighted = true; borderColor = 'border-amber-200 ring-amber-50/50 ring-2'; }
+        else if (includeIdle && record.idleDuration > 0) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-2'; }
+        else if (includeTardiness) { 
+            if (includeMinorTardiness && (record.tardinessMinutes || 0) > 0 && (record.tardinessMinutes || 0) < 15) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-2'; }
+            else if (!includeMinorTardiness && (record.tardinessMinutes || 0) >= 15) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-2'; }
+        }
+        else if (includeCheck && record.scheduledShift && record.inferredShift && record.scheduledShift.trim() !== record.inferredShift.trim()) { isHighlighted = true; borderColor = 'border-amber-200 ring-amber-50/50 ring-2'; }
+        else if (includeEarlyLeave && (record.earlyLeaveMinutes || 0) > 0) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-2'; }
     } else {
         // Fallback for global or no filters
-        if (isWcOnly && record.wcDuration > 0) { isHighlighted = true; borderColor = 'border-amber-200 ring-amber-50/50 ring-4'; }
-        else if (isIdleOnly && record.idleDuration > 0) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-4'; }
-        else if (isTardinessOnly && ((record.tardinessMinutes || 0) > 0 || (record.earlyLeaveMinutes || 0) > 0)) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-4'; }
-        else if (hasAnyOverbreak) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-4'; }
+        if (isWcOnly && record.wcDuration > 0) { isHighlighted = true; borderColor = 'border-amber-200 ring-amber-50/50 ring-2'; }
+        else if (isIdleOnly && record.idleDuration > 0) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-2'; }
+        else if (isMinorTardinessOnly && ((record.tardinessMinutes || 0) > 0 && (record.tardinessMinutes || 0) < 15 || (record.earlyLeaveMinutes || 0) > 0)) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-2'; }
+        else if (isTardinessOnly && ((record.tardinessMinutes || 0) >= 15 || (record.earlyLeaveMinutes || 0) > 0)) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-2'; }
+        else if (hasAnyOverbreak) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-2'; }
     }
 
     // Calculate cumulative sums to correctly identify which breaks contribute to overbreaks
@@ -828,10 +875,10 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
     }
 
     return (
-        <div className={`flex flex-col p-5 border rounded-2xl shadow-sm transition-all relative overflow-hidden bg-white ${borderColor}`}>
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+        <div className={`flex flex-col p-4 border rounded-xl shadow-sm transition-all relative overflow-hidden bg-white ${borderColor}`}>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
                 <div className="flex items-center gap-3">
-                    <span className={`text-base font-black tracking-tight ${textColor}`}>{format(new Date(record.date), 'dd/MM/yyyy')}</span>
+                    <span className={`text-base font-black tracking-tight ${textColor}`}>{format(new Date(record.date + 'T12:00:00'), 'dd/MM/yyyy')}</span>
                     {(record.scheduledShift || record.inferredShift) && (
                        <div className="flex gap-2 items-center">
                            {record.scheduledShift && record.inferredShift && record.scheduledShift.trim() !== record.inferredShift.trim() ? (
@@ -868,10 +915,10 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                 </div>
             )}
 
-            <div className="flex flex-wrap gap-x-6 gap-y-4 relative z-10 w-full mb-5 border-b border-slate-100 pb-5">
+            <div className="flex flex-wrap gap-x-6 gap-y-1.5 relative z-10 w-full mb-2 border-b border-slate-100 pb-2">
                 {filterNm ? (
                     <div title={`Total: ${Math.floor(nmTotalDuration/60)}h ${nmTotalDuration%60}m`}>
-                        <p className="text-[10px] text-teal-600 uppercase font-bold tracking-widest mb-1">Non-Moderating</p>
+                        <p className="text-[10px] text-teal-600 uppercase font-bold tracking-widest leading-none mb-0.5">Non-Moderating</p>
                         <div className="flex items-center gap-2">
                             <span className="text-base font-black text-teal-700">{Math.floor(nmTotalDuration/60)}h {nmTotalDuration%60}m</span>
                         </div>
@@ -881,7 +928,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                         {!isWcOnly && (
                             <>
                                 <div title={`Total: ${Math.floor(record.mealDuration/60)}h ${record.mealDuration%60}m`}>
-                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1">Meal (1h)</p>
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Meal (1h)</p>
                                     <div className="flex items-center gap-2">
                                         {record.mealOverbreak > 0 ? (
                                             <span className="text-base font-black text-rose-600">+{record.mealOverbreak}m</span>
@@ -891,7 +938,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                                     </div>
                                 </div>
                                 <div title={`Total: ${Math.floor(record.shortDuration/60)}h ${record.shortDuration%60}m`}>
-                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1">Short (30m)</p>
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Short (30m)</p>
                                     <div className="flex items-center gap-2">
                                         {record.shortOverbreak > 0 ? (
                                             <span className="text-base font-black text-rose-600">+{record.shortOverbreak}m</span>
@@ -901,7 +948,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                                     </div>
                                 </div>
                                 <div title={`Total: ${Math.floor(record.wellnessDuration/60)}h ${record.wellnessDuration%60}m`}>
-                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1">Well. (15m)</p>
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Well. (15m)</p>
                                     <div className="flex items-center gap-2">
                                         {record.wellnessOverbreak > 0 ? (
                                             <span className="text-base font-black text-rose-600">+{record.wellnessOverbreak}m</span>
@@ -911,7 +958,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                                     </div>
                                 </div>
                                 <div title={`Total: ${Math.floor(record.prayingDuration/60)}h ${record.prayingDuration%60}m`}>
-                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1">Pray. (15m)</p>
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Pray. (15m)</p>
                                     <div className="flex items-center gap-2">
                                         {record.prayingOverbreak > 0 ? (
                                             <span className="text-base font-black text-rose-600">+{record.prayingOverbreak}m</span>
@@ -924,7 +971,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                         )}
                         
                         <div title={`Total: ${Math.floor(record.wcDuration/60)}h ${record.wcDuration%60}m`}>
-                            <p className="text-[10px] text-amber-500 uppercase font-bold tracking-widest mb-1">Organic {isWcOnly ? '' : '(10m)'}</p>
+                            <p className="text-[10px] text-amber-500 uppercase font-bold tracking-widest leading-none mb-0.5">Organic {isWcOnly ? '' : '(10m)'}</p>
                             <div className="flex items-center gap-2">
                                 {isWcOnly ? (
                                     <span className="text-base font-black text-amber-600">{Math.floor(record.wcDuration/60)}h {record.wcDuration%60}m</span>
@@ -938,7 +985,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                         
                         {!isWcOnly && (
                             <div title={`Total: ${Math.floor(record.idleDuration/60)}h ${record.idleDuration%60}m`}>
-                                <p className="text-[10px] text-red-400 uppercase font-bold tracking-widest mb-1">IDLE</p>
+                                <p className="text-[10px] text-red-400 uppercase font-bold tracking-widest leading-none mb-0.5">IDLE</p>
                                 <div className="flex items-center gap-2">
                                     {record.idleDuration > 0 ? (
                                         <span className="text-base font-black text-red-600">+{record.idleDuration}m</span>
@@ -951,7 +998,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
 
                         {!isWcOnly && (
                             <div title={`Tardiness: ${record.tardinessMinutes || 0}m`}>
-                                <p className="text-[10px] text-orange-400 uppercase font-bold tracking-widest mb-1">TARDINESS</p>
+                                <p className="text-[10px] text-orange-400 uppercase font-bold tracking-widest leading-none mb-0.5">TARDINESS</p>
                                 <div className="flex flex-col">
                                     {(record.tardinessMinutes || 0) > 0 ? (
                                         <>
@@ -967,7 +1014,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
 
                         {!isWcOnly && (
                             <div title={`Early Leave: ${record.earlyLeaveMinutes || 0}m`}>
-                                <p className="text-[10px] text-orange-400 uppercase font-bold tracking-widest mb-1">EARLY LEAVE</p>
+                                <p className="text-[10px] text-orange-400 uppercase font-bold tracking-widest leading-none mb-0.5">EARLY LEAVE</p>
                                 <div className="flex flex-col">
                                     {(record.earlyLeaveMinutes || 0) > 0 ? (
                                         <>

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
-import { Calendar as CalendarIcon, Upload, FileDown, LogOut, FileSpreadsheet, LayoutDashboard, ListFilter, Trash2, Target } from 'lucide-react';
+import { Calendar as CalendarIcon, Upload, FileDown, LogOut, FileSpreadsheet, LayoutDashboard, ListFilter, Trash2, Target, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -24,6 +24,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 import { CustomCalendar } from './components/CustomCalendar';
 import { LOBAnalytics, isSupportRole } from './components/LOBAnalytics';
+import { HowTo } from './components/HowTo';
 
 // LOB exclusion removed per user request
 
@@ -75,6 +76,7 @@ export default function App() {
   const [includeIdleGlobal, setIncludeIdleGlobal] = useState(false);
   const [includeNonModGlobal, setIncludeNonModGlobal] = useState(false);
   const [includeTardinessGlobal, setIncludeTardinessGlobal] = useState(false);
+  const [includeMinorTardinessGlobal, setIncludeMinorTardinessGlobal] = useState(false);
   const [includeEarlyLeaveGlobal, setIncludeEarlyLeaveGlobal] = useState(false);
   const [includeShort30MinGlobal, setIncludeShort30MinGlobal] = useState(false);
   const [includeAbsencesGlobal, setIncludeAbsencesGlobal] = useState(false);
@@ -98,6 +100,7 @@ export default function App() {
   const availableShifts = useMemo(() => {
     const shifts = new Set<string>();
     summaries.forEach(s => s.dailyRecords.forEach(r => {
+      if (r.scheduledShift) shifts.add(cleanShift(r.scheduledShift));
       if (r.inferredShift) shifts.add(cleanShift(r.inferredShift));
     }));
     return Array.from(shifts).sort((a, b) => {
@@ -519,7 +522,8 @@ export default function App() {
         const isWcOnly = includeWcGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
         const isIdleOnly = includeIdleGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
         const isNonModOnly = includeNonModGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isTardinessOnly = includeTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isTardinessOnly = includeTardinessGlobal && !includeMinorTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isMinorTardinessOnly = includeTardinessGlobal && includeMinorTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
         const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
         const isShort30MinOnly = includeShort30MinGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
         const isAbsencesOnly = includeAbsencesGlobal && !includeOffboardedGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
@@ -615,7 +619,8 @@ export default function App() {
         const isWcOnly = includeWcGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
         const isIdleOnly = includeIdleGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
         const isNonModOnly = includeNonModGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isTardinessOnly = includeTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isTardinessOnly = includeTardinessGlobal && !includeMinorTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isMinorTardinessOnly = includeTardinessGlobal && includeMinorTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
         const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
         const isShort30MinOnly = includeShort30MinGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
         const isAbsencesOnly = includeAbsencesGlobal && !includeOffboardedGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
@@ -628,7 +633,9 @@ export default function App() {
         } else if (isNonModOnly) {
            if (!r.breaks.some(b => b.type === 'non_moderating')) return false;
         } else if (isTardinessOnly) {
-           if ((r.tardinessMinutes || 0) <= 0) return false;
+           if ((r.tardinessMinutes || 0) < 15) return false;
+        } else if (isMinorTardinessOnly) {
+           if ((r.tardinessMinutes || 0) <= 0 || (r.tardinessMinutes || 0) >= 15) return false;
         } else if (isEarlyLeaveOnly) {
            if ((r.earlyLeaveMinutes || 0) <= 0) return false;
         } else if (isShort30MinOnly) {
@@ -644,7 +651,13 @@ export default function App() {
            if (includeWcGlobal && r.wcDuration > 0) keep = true;
            if (includeIdleGlobal && r.idleDuration > 0) keep = true;
            if (includeNonModGlobal && r.breaks.some(b => b.type === 'non_moderating')) keep = true;
-           if (includeTardinessGlobal && (r.tardinessMinutes || 0) > 0) keep = true;
+           if (includeTardinessGlobal) {
+               if (includeMinorTardinessGlobal) {
+                   if ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15) keep = true;
+               } else {
+                   if ((r.tardinessMinutes || 0) >= 15) keep = true;
+               }
+           }
            if (includeEarlyLeaveGlobal && (r.earlyLeaveMinutes || 0) > 0) keep = true;
            if (includeShort30MinGlobal && r.hasSingleShort30m) keep = true;
            if (includeAbsencesGlobal && r.isAbsence) keep = true;
@@ -703,7 +716,7 @@ export default function App() {
     }).filter(Boolean) as EmployeeSummary[];
 
     return filtered;
-  }, [periodSummaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, includeTardinessGlobal, includeEarlyLeaveGlobal, filterMinorOverbreaks, includeShort30MinGlobal, includeAbsencesGlobal, includeOffboardedGlobal, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeCheckGlobal]);
+  }, [periodSummaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, includeTardinessGlobal, includeMinorTardinessGlobal, includeEarlyLeaveGlobal, filterMinorOverbreaks, includeShort30MinGlobal, includeAbsencesGlobal, includeOffboardedGlobal, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeCheckGlobal]);
 
   const activeAnyStatus = includeATTGlobal || includeLOAGlobal || includePTOGlobal || includeSLGlobal || includeSUSPPGlobal || includeOFFGlobal || includeOffboardedGlobal || includeAbsencesGlobal;
 
@@ -838,6 +851,7 @@ export default function App() {
     setIncludeSLGlobal(false);
     setIncludeSUSPPGlobal(false);
     setIncludeOFFGlobal(false);
+    setIncludeMinorTardinessGlobal(false);
     setIncludeSupportStaff(false);
   };
 
@@ -945,20 +959,76 @@ export default function App() {
       return a.employeeName.localeCompare(b.employeeName);
     });
 
+    const isWcOnly = includeWcGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isIdleOnly = includeIdleGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isNonModOnly = includeNonModGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isTardinessOnly = includeTardinessGlobal && !includeMinorTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isMinorTardinessOnly = includeTardinessGlobal && includeMinorTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
+    const isShort30MinOnly = includeShort30MinGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isAbsencesOnly = includeAbsencesGlobal && !includeOffboardedGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isCheckOnly = includeCheckGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+
+    const baseNoFilters = !includeShort30MinGlobal && !includeAbsencesGlobal && !includeOffboardedGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && !includeCheckGlobal && typeFilter === 'all';
+    const isATTOnly = includeATTGlobal && baseNoFilters && !includeLOAGlobal && !includePTOGlobal && !includeSLGlobal && !includeSUSPPGlobal && !includeOFFGlobal;
+    const isLOAOnly = includeLOAGlobal && baseNoFilters && !includeATTGlobal && !includePTOGlobal && !includeSLGlobal && !includeSUSPPGlobal && !includeOFFGlobal;
+    const isPTOOnly = includePTOGlobal && baseNoFilters && !includeATTGlobal && !includeLOAGlobal && !includeSLGlobal && !includeSUSPPGlobal && !includeOFFGlobal;
+    const isSLOnly = includeSLGlobal && baseNoFilters && !includeATTGlobal && !includeLOAGlobal && !includePTOGlobal && !includeSUSPPGlobal && !includeOFFGlobal;
+    const isSUSPPOnly = includeSUSPPGlobal && baseNoFilters && !includeATTGlobal && !includeLOAGlobal && !includePTOGlobal && !includeSLGlobal && !includeOFFGlobal;
+    const isOFFOnly = includeOFFGlobal && baseNoFilters && !includeATTGlobal && !includeLOAGlobal && !includePTOGlobal && !includeSLGlobal && !includeSUSPPGlobal;
+
+    const activeExtraStatus = isATTOnly ? 'ATT' : isLOAOnly ? 'LOA' : isPTOOnly ? 'PTO/VAC' : isSLOnly ? 'SL' : isSUSPPOnly ? 'SUSPP' : isOFFOnly ? 'OFF' : null;
+    const attrKey = isATTOnly ? 'isATT' : isLOAOnly ? 'isLOA' : isPTOOnly ? 'isPTO' : isSLOnly ? 'isSL' : isSUSPPOnly ? 'isSUSPP' : isOFFOnly ? 'isOFF' : null;
+
     let periodLabel = t('allTime');
     if (timeFilter === 'month') periodLabel = t('filterMonth');
     if (timeFilter === 'week') periodLabel = t('filterWeek');
     if (timeFilter === 'yesterday') periodLabel = t('filterYesterday');
     if (timeFilter === 'day') periodLabel = t('filterDay');
 
-    const titleStr = typeFilter === 'idle_overbreak_wc' ? `Overbreaks & Violators Report - ${periodLabel}` : `General Report - ${periodLabel}`;
+    let specificFilterLabel = '';
+    if (isTardinessOnly) specificFilterLabel = 'Tardiness (> 15m)';
+    else if (isMinorTardinessOnly) specificFilterLabel = 'Minor Tardiness (< 15m)';
+    else if (isEarlyLeaveOnly) specificFilterLabel = 'Early Leave';
+    else if (isAbsencesOnly) specificFilterLabel = 'Absences';
+    else if (isWcOnly) specificFilterLabel = 'WC Overbreaks';
+    else if (isIdleOnly) specificFilterLabel = 'Idle Overbreaks';
+    else if (isNonModOnly) specificFilterLabel = 'Non Moderating';
+    else if (isShort30MinOnly) specificFilterLabel = 'Only 1 Short Break';
+    else if (isCheckOnly) specificFilterLabel = 'Schedule Check (Mismatch)';
+    else if (activeExtraStatus) specificFilterLabel = `Status ${activeExtraStatus}`;
+    else if (includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all') specificFilterLabel = 'Offboarded (Saíram)';
+
+    const titleStr = specificFilterLabel 
+        ? `${specificFilterLabel} Report - ${periodLabel}`
+        : typeFilter === 'idle_overbreak_wc' 
+            ? `Overbreaks & Violators Report - ${periodLabel}` 
+            : `General Report - ${periodLabel}`;
     
-    let fileSuffix = periodLabel.toLowerCase().replace(' ', '_');
+    let fileSuffix = specificFilterLabel ? specificFilterLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + periodLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_') : periodLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_');
     if (typeFilter === 'idle_overbreak_wc') {
         fileSuffix += "_only_overbreaks";
     }
 
-    exportToPDF(sortedForExport, titleStr, `report_${fileSuffix}`);
+    const nonSupportExport = sortedForExport.filter(s => !isSupportRole(s.lob || ''));
+    const totalAgentsCount = periodSummaries.filter(s => !isSupportRole(s.lob || '')).length;
+    const affectedAgentsCount = nonSupportExport.length;
+
+    exportToPDF(nonSupportExport, titleStr, `report_${fileSuffix}`, {
+      isTardiness: isTardinessOnly,
+      isMinorTardiness: isMinorTardinessOnly,
+      isEarlyLeave: isEarlyLeaveOnly,
+      isAbsences: isAbsencesOnly,
+      isShort30Min: isShort30MinOnly,
+      isWc: isWcOnly,
+      isIdle: isIdleOnly,
+      isNonMod: isNonModOnly,
+      isCheck: isCheckOnly,
+      activeExtraStatus: activeExtraStatus,
+      attrKey: attrKey,
+      totalAgentsCount,
+      affectedAgentsCount
+    });
     toast.success('PDF gerado com sucesso!');
   };
 
@@ -1057,15 +1127,6 @@ export default function App() {
         </div>
 
         <nav className="flex-1 space-y-6">
-          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-            <label className="text-[10px] uppercase font-bold text-slate-500 block mb-3">{t('importData')}</label>
-            <label className="border-2 border-dashed border-slate-600 rounded-lg p-4 text-center cursor-pointer hover:bg-slate-700 transition-colors block">
-              <Upload size={20} className="mx-auto mb-2 text-slate-400" />
-              <span className="text-xs text-slate-300 font-medium">{t('dragExcel')}</span>
-              <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
-            </label>
-          </div>
-
           <div className="space-y-1">
             <label className="text-[10px] uppercase font-bold text-slate-500 block px-2 mb-2">{t('viewMode')}</label>
             <button 
@@ -1086,6 +1147,15 @@ export default function App() {
             >
               <Target size={16} /> {t('lobsPerformance')}
             </button>
+            
+            <div className="my-3 border-t border-slate-800/80 mx-2"></div>
+            
+            <button 
+              onClick={() => setActiveTab('howto')}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 mt-2 ${activeTab === 'howto' ? 'bg-indigo-600/90 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}
+            >
+              <HelpCircle size={16} className={activeTab === 'howto' ? "text-indigo-200" : ""} /> How To / Ajuda
+            </button>
           </div>
         </nav>
 
@@ -1104,7 +1174,7 @@ export default function App() {
         <header className="sticky top-0 z-[60] flex justify-between items-center py-4 px-8 bg-white/95 backdrop-blur-md border-b border-slate-200">
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold text-slate-900 hidden sm:block">
-              {summaries.length > 0 ? (activeTab === 'dashboard' ? t('overview') : activeTab === 'lobs' ? t('lobsPerformance') : t('agents')) : ''}
+              {summaries.length > 0 ? (activeTab === 'howto' ? 'How To / Ajuda' : activeTab === 'dashboard' ? t('overview') : activeTab === 'lobs' ? t('lobsPerformance') : t('agents')) : ''}
             </h2>
             <div className="lg:hidden flex items-center gap-2">
               <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white">SC</div>
@@ -1137,14 +1207,18 @@ export default function App() {
               </Button>
             )}
                 <div className="flex lg:hidden gap-1 bg-white border border-slate-200 rounded-lg p-1">
-                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('dashboard')} className={activeTab === 'dashboard' ? 'bg-slate-100' : ''}>
-                    <LayoutDashboard size={16} />
+                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('dashboard')} className={`h-8 w-8 p-0 ${activeTab === 'dashboard' ? 'bg-slate-100' : ''}`}>
+                    <LayoutDashboard size={14} />
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('list')} className={activeTab === 'list' ? 'bg-slate-100' : ''}>
-                    <ListFilter size={16} />
+                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('list')} className={`h-8 w-8 p-0 ${activeTab === 'list' ? 'bg-slate-100' : ''}`}>
+                    <ListFilter size={14} />
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('lobs')} className={activeTab === 'lobs' ? 'bg-slate-100' : ''}>
-                    <Target size={16} />
+                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('lobs')} className={`h-8 w-8 p-0 ${activeTab === 'lobs' ? 'bg-slate-100' : ''}`}>
+                    <Target size={14} />
+                  </Button>
+                  <div className="w-px bg-slate-200 mx-0.5"></div>
+                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('howto')} className={`h-8 w-8 p-0 ${activeTab === 'howto' ? 'bg-indigo-50 text-indigo-600' : ''}`}>
+                    <HelpCircle size={14} />
                   </Button>
                 </div>
           </div>
@@ -1153,6 +1227,9 @@ export default function App() {
         <div className="p-8">
           <AnimatePresence mode="wait">
             {summaries.length === 0 ? (
+              activeTab === 'howto' ? (
+                <HowTo />
+              ) : (
               <motion.div 
                 key="uploader"
                 initial={{ opacity: 0, scale: 0.98 }}
@@ -1173,33 +1250,34 @@ export default function App() {
                 </div>
 
                 <div className="w-full flex flex-col sm:flex-row gap-6">
-                  <label className="relative group flex flex-col items-center justify-center w-full sm:w-1/2 h-80 border-2 border-dashed border-slate-300 rounded-[2.5rem] bg-white hover:bg-slate-50 hover:border-blue-400 transition-all cursor-pointer overflow-hidden shadow-2xl shadow-slate-200/50">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6 gap-6 z-10 text-center px-4">
+                  <label className="relative group flex flex-col items-center justify-center w-full sm:w-1/2 h-80 border-2 border-dashed border-slate-300 rounded-[2.5rem] bg-white hover:bg-slate-50 hover:border-blue-400 transition-all cursor-pointer overflow-hidden shadow-2xl shadow-slate-200/50 p-6">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6 gap-6 z-10 text-center">
                       <div className="p-5 bg-slate-900 text-white rounded-2xl group-hover:bg-blue-600 transition-colors shadow-lg">
                         <Upload size={32} />
                       </div>
                       <div>
-                        <p className="mb-1 text-2xl font-bold text-slate-800">{t('homeSelectReport')}</p>
-                        <p className="text-slate-400 font-medium text-sm">{t('homeLimitsInfo')}</p>
+                        <p className="mb-1 text-2xl font-bold text-slate-800">2. Byteworks Extract</p>
+                        <p className="text-slate-500 font-medium text-[13px] leading-tight">Na aba <b>Calibration</b>, selecione os departamentos (exceto Management). A data deve iniciar em <b>00:00</b>. Exporte e faça o download em "My Export".</p>
                       </div>
                     </div>
                     <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
                   </label>
 
-                  <label className="relative group flex flex-col items-center justify-center w-full sm:w-1/2 h-80 border-2 border-dashed border-slate-300 rounded-[2.5rem] bg-white hover:bg-slate-50 hover:border-green-400 transition-all cursor-pointer overflow-hidden shadow-xl shadow-slate-200/50">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6 gap-6 z-10 text-center px-4">
+                  <label className="relative group flex flex-col items-center justify-center w-full sm:w-1/2 h-80 border-2 border-dashed border-slate-300 rounded-[2.5rem] bg-white hover:bg-slate-50 hover:border-green-400 transition-all cursor-pointer overflow-hidden shadow-xl shadow-slate-200/50 p-6">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6 gap-6 z-10 text-center">
                       <div className="p-5 bg-slate-900 text-white rounded-2xl group-hover:bg-green-600 transition-colors shadow-lg">
                         <CalendarIcon size={32} />
                       </div>
                       <div>
                         <p className="mb-1 text-2xl font-bold text-slate-800">1. Opcional: Calendário</p>
-                        <p className="text-slate-400 font-medium text-sm">Carregue o calendário (.csv ou ext) primeiro ou depois para o mapping de LOB e Language.</p>
+                        <p className="text-slate-500 font-medium text-[13px] leading-tight">Faça o upload do <b>Bytedance Schedules</b> (.csv, .xls, .xlsx). A ferramenta irá atualizar a LOB, Language, Turnos e as Faltas dos agentes.</p>
                       </div>
                     </div>
                     <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleCalendarUpload} />
                   </label>
                 </div>
               </motion.div>
+              )
             ) : (
               <motion.div 
                 key="content"
@@ -1424,6 +1502,19 @@ export default function App() {
                            
                            <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto mt-1">
                              <span className="text-[10px] font-black uppercase text-slate-400 px-2 shrink-0">Status Extras:</span>
+                             <AnimatePresence>
+                               {includeTardinessGlobal && (
+                                 <motion.button
+                                   initial={{ opacity: 0, scale: 0.8 }}
+                                   animate={{ opacity: 1, scale: 1 }}
+                                   exit={{ opacity: 0, scale: 0.8 }}
+                                   onClick={() => setIncludeMinorTardinessGlobal(!includeMinorTardinessGlobal)}
+                                   className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeMinorTardinessGlobal ? 'bg-orange-600 text-white shadow-md' : 'bg-transparent animate-pulse text-orange-500 border border-orange-300 hover:bg-orange-50'}`}
+                                 >
+                                   &lt; 15min
+                                 </motion.button>
+                               )}
+                             </AnimatePresence>
                              <button
                                onClick={() => {
                                  setIncludeATTGlobal(!includeATTGlobal);
@@ -1534,8 +1625,10 @@ export default function App() {
                     />
                   ) : activeTab === 'lobs' ? (
                     <LOBAnalytics summaries={filteredSummaries} />
+                  ) : activeTab === 'howto' ? (
+                    <HowTo />
                   ) : (
-                    <EmployeeList summaries={filteredSummaries} allSummaries={mergedSummaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalIncludeCheck={includeCheckGlobal} globalFilterMajorOverbreaks={false} />
+                    <EmployeeList summaries={filteredSummaries} allSummaries={mergedSummaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalIncludeCheck={includeCheckGlobal} globalShiftFilter={shiftFilter} globalFilterMajorOverbreaks={false} />
                   )}
                 </div>
               </motion.div>

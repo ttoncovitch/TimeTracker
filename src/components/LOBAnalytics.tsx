@@ -99,7 +99,13 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
   );
 }
 
-function LOBCard({ lobName, summaries, idx }: { lobName: string; summaries: EmployeeSummary[]; idx: number }) {
+interface LOBCardProps {
+  lobName: string;
+  summaries: EmployeeSummary[];
+  idx: number;
+}
+
+const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
    const languages = useMemo(() => {
       const langs = new Set<string>();
       summaries.forEach(s => {

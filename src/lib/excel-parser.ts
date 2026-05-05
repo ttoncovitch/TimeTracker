@@ -154,6 +154,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           isOffboarded = isATT;
 
           // Process all rows into timeline events for this employee
+          let lastRawStartTime: Date | null = null;
           const allEvents = allRows.map(row => {
              const date = String(row[0] || '');
              const employeeName = row[row.length - 2];
@@ -179,6 +180,11 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
                 startTime = new Date(baseDate);
                 startTime.setHours(0,0,0,0);
              }
+             if (lastRawStartTime && startTime < lastRawStartTime && (lastRawStartTime.getTime() - startTime.getTime()) > 12 * 3600000) {
+                 startTime.setDate(startTime.getDate() + 1);
+             }
+             lastRawStartTime = new Date(startTime);
+
              let endTime = parseTime(date, row[8]);
              if (endTime && durationMinutes > 0) {
                  const diffMins = (endTime.getTime() - startTime.getTime()) / 60000;
@@ -209,7 +215,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           const isTraining = finalDepartment.toLowerCase().includes('training') || finalEmail.toLowerCase().includes('training');
 
           // Break into logical shifts
-          const shifts: { records: any[][], firstEventTime: Date }[] = [];
+          const shifts: { events: any[], firstEventTime: Date }[] = [];
           let currentShift: any[] = [];
           let currentShiftStart: Date | null = null;
           let previousEndTime: Date | null = null;
@@ -219,7 +225,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               if (currentShiftStart && previousEndTime) {
                   const gapMinutes = (e.startTime.getTime() - previousEndTime.getTime()) / 60000;
                   if (gapMinutes > 300) {
-                      shifts.push({ records: currentShift, firstEventTime: currentShiftStart });
+                      shifts.push({ events: currentShift, firstEventTime: currentShiftStart });
                       currentShift = [];
                       currentShiftStart = null;
                   }
@@ -228,26 +234,26 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               if (!currentShiftStart) {
                   currentShiftStart = e.startTime;
               }
-              currentShift.push(e.row);
+              currentShift.push(e);
               previousEndTime = e.endTime;
               
               // Split if we encounter a long offline period > 4 hours
               if ((e.status === 'offline' || (e.status === 'rest' && e.subStatus === 'fim de turno')) && e.durationMinutes >= 240) {
-                  shifts.push({ records: currentShift, firstEventTime: currentShiftStart });
+                  shifts.push({ events: currentShift, firstEventTime: currentShiftStart });
                   currentShift = [];
                   currentShiftStart = null;
                   previousEndTime = null;
               }
           });
           if (currentShift.length > 0 && currentShiftStart) {
-             shifts.push({ records: currentShift, firstEventTime: currentShiftStart });
+             shifts.push({ events: currentShift, firstEventTime: currentShiftStart });
           }
 
           shifts.forEach(shiftInfo => {
-             const shiftRows = shiftInfo.records;
+             const shiftEvents = shiftInfo.events;
              // Date of the shift is based on the first event time
              const firstRowDate = format(shiftInfo.firstEventTime, 'yyyy-MM-dd'); 
-             const record = processDailyRowsFromColumns(firstRowDate, shiftRows, resignedIndex);
+             const record = processDailyRowsFromEvents(firstRowDate, shiftEvents, resignedIndex);
              
              const hasSignificantActivity = record.totalWorkTimeMillis > 0 || record.breaks.some(b => b.type !== 'offline') || record.isOFF || record.isPTO || record.isLOA || record.isSL || record.isSUSPP || record.isATT;
              
@@ -318,13 +324,14 @@ const SHIFTS = [
   { startHour: 22, startMinute: 30, endHour: 7, endMinute: 30, label: '22:30-07:30', crossesMidnight: true }
 ];
 
-function processDailyRowsFromColumns(date: string, rows: any[][], resignedIndex: number): EmployeeDayRecord {
+function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: number): EmployeeDayRecord {
   const breaks: BreakSession[] = [];
   let totalWorkTimeMillis = 0;
   
   const checkDailyStatus = (keywords: string[]) => {
       const index = resignedIndex >= 0 ? resignedIndex : 15;
-      return rows.some(row => {
+      return events.some(e => {
+          const row = e.row;
           const val = String(row[index] || '').trim().toUpperCase();
           const shift = String(row[11] || '').trim().toUpperCase();
           const infShift = String(row[12] || '').trim().toUpperCase();
@@ -339,54 +346,8 @@ function processDailyRowsFromColumns(date: string, rows: any[][], resignedIndex:
   const isSUSPP = checkDailyStatus(['SUSPP', 'SUSPENSION', 'SUSPENSÃO']);
   const isOFF = checkDailyStatus(['OFF', 'FOLGA']);
 
-  let employeeName = '';
+  let employeeName = events.length > 0 ? events[0].employeeName : '';
   
-  // Base date parsing for fallback
-  const [year, month, day] = date.split('-').map(Number);
-  const baseDate = year && month && day ? new Date(year, month - 1, day) : new Date();
-
-  // 1. Initial Parse and extract
-  const events = rows.map(row => {
-    if (row.length === 0) return null;
-    employeeName = row[row.length - 2];
-    
-    const status = String(row[3] || '').trim().toLowerCase();
-    const subStatus = String(row[4] || '').trim().toLowerCase();
-    const remarks = String(row[5] || '').trim();
-    
-    const originalStatus = String(row[3] || '').trim();
-    const originalSubStatus = String(row[4] || '').trim();
-    const originalRemark = String(row[5] || '').trim();
-    
-    const durationHours = isNaN(Number(row[6])) ? 0 : Number(row[6]);
-    const durationMinutes = Math.round(durationHours * 60);
-    
-    let startTime = parseTime(date, row[7]);
-    if (!startTime) {
-       startTime = new Date(baseDate);
-       startTime.setHours(0,0,0,0);
-    }
-    let endTime = parseTime(date, row[8]);
-    if (endTime && durationMinutes > 0) {
-        const diffMins = (endTime.getTime() - startTime.getTime()) / 60000;
-        if (diffMins < 0 || Math.abs(diffMins - durationMinutes) > 60) {
-            endTime = new Date(startTime.getTime() + durationMinutes * 60000);
-        }
-    } else if (!endTime) {
-       endTime = new Date(startTime.getTime() + durationMinutes * 60000);
-    } else if (endTime < startTime) {
-        const wrappedDuration = (endTime.getTime() + 86400000 - startTime.getTime()) / 60000;
-        if (wrappedDuration <= 16 * 60) {
-            endTime.setDate(endTime.getDate() + 1);
-        } else {
-            // It's a typo. E.g., 13:05 to 09:11. We ignore the bad end time.
-            endTime = new Date(startTime.getTime() + durationMinutes * 60000);
-        }
-    }
-
-    return { status, subStatus, remarks, originalStatus, originalSubStatus, originalRemark, durationMinutes, startTime, endTime, rawInfo: String(row[3] || '') + ' ' + String(row[4] || ''), row };
-  }).filter(e => e !== null) as any[];
-
   if (events.length === 0) {
       return {
         date, employeeName: employeeName || 'Unknown', totalWorkTimeMillis: 0, breaks: [],
@@ -717,7 +678,7 @@ function processDailyRowsFromColumns(date: string, rows: any[][], resignedIndex:
   breaks.sort((a,b) => a.startTime.getTime() - b.startTime.getTime());
 
   return {
-    date,
+    date: format(shiftStartLimit, 'yyyy-MM-dd'),
     employeeName: employeeName || 'Unknown',
     inferredShift: closestShift.label,
     hasMealWithoutShortAnomaly,

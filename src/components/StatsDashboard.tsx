@@ -19,6 +19,7 @@ interface StatsDashboardProps {
   globalIncludeIdle: boolean;
   globalIncludeNonMod: boolean;
   globalIncludeTardiness: boolean;
+  globalIncludeMinorTardiness?: boolean;
   globalIncludeEarlyLeave: boolean;
   globalIncludeShort30Min?: boolean;
   globalIncludeAbsences?: boolean;
@@ -46,6 +47,7 @@ export function StatsDashboard({
   globalIncludeIdle, 
   globalIncludeNonMod, 
   globalIncludeTardiness, 
+  globalIncludeMinorTardiness,
   globalIncludeEarlyLeave, 
   globalIncludeShort30Min, 
   globalIncludeAbsences, 
@@ -66,7 +68,8 @@ export function StatsDashboard({
   const isWcOnly = globalIncludeWc && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
   const isIdleOnly = globalIncludeIdle && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
   const isNonModOnly = globalIncludeNonMod && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
-  const isTardinessOnly = globalIncludeTardiness && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
+  const isTardinessOnly = globalIncludeTardiness && !globalIncludeMinorTardiness && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
+  const isMinorTardinessOnly = globalIncludeTardiness && globalIncludeMinorTardiness && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
   const isEarlyLeaveOnly = globalIncludeEarlyLeave && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
   const isShort30MinOnly = globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
   const isAbsencesOnly = globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
@@ -154,7 +157,8 @@ export function StatsDashboard({
         const isIdleOnly = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
         const isOverbreakOnly = globalTypeFilter === 'idle_overbreak_wc' && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave;
         const isNonModOnlyCalc = globalIncludeNonMod && !globalIncludeWc && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
-        const isTardinessOnlyCalc = globalIncludeTardiness && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
+        const isTardinessOnlyCalc = globalIncludeTardiness && !globalIncludeMinorTardiness && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
+        const isMinorTardinessOnlyCalc = globalIncludeTardiness && globalIncludeMinorTardiness && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
         const isEarlyLeaveOnlyCalc = globalIncludeEarlyLeave && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
 
         let dailyOverbreak = 0;
@@ -165,7 +169,9 @@ export function StatsDashboard({
         } else if (isIdleOnly) {
           dailyOverbreak = idleOver;
         } else if (isTardinessOnlyCalc) {
-          dailyOverbreak = r.tardinessMinutes || 0;
+          dailyOverbreak = (r.tardinessMinutes || 0) >= 15 ? r.tardinessMinutes! : 0;
+        } else if (isMinorTardinessOnlyCalc) {
+          dailyOverbreak = (r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15 ? r.tardinessMinutes! : 0;
         } else if (isEarlyLeaveOnlyCalc) {
           dailyOverbreak = r.earlyLeaveMinutes || 0;
         } else if (isOverbreakOnly) {
@@ -174,7 +180,13 @@ export function StatsDashboard({
           // Combined or Default
           dailyOverbreak = mealOver + shortOver + wellnessOver + prayingOver;
           if (globalIncludeIdle) dailyOverbreak += idleOver;
-          if (globalIncludeTardiness) dailyOverbreak += (r.tardinessMinutes || 0);
+          if (globalIncludeTardiness) {
+              if (globalIncludeMinorTardiness) {
+                  dailyOverbreak += ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15 ? r.tardinessMinutes! : 0);
+              } else {
+                  dailyOverbreak += ((r.tardinessMinutes || 0) >= 15 ? r.tardinessMinutes! : 0);
+              }
+          }
         }
 
         return {
@@ -333,8 +345,11 @@ export function StatsDashboard({
       affectedCount = filteredSummaries.filter(s => s.idleAlerts > 0).length;
       affectedText = "Com Ociosidade";
   } else if (isTardinessOnly) {
-      affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0)).length;
+      affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => (r.tardinessMinutes || 0) >= 15)).length;
       affectedText = "Chegaram Atrasados";
+  } else if (isMinorTardinessOnly) {
+      affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15)).length;
+      affectedText = "Atrasos (< 15m)";
   } else if (isShort30MinOnly) {
       affectedCount = filteredSummaries.filter(s => (s.totalShort30MinRecords || 0) > 0).length;
       affectedText = "Com apenas 1 break diário";
@@ -348,10 +363,10 @@ export function StatsDashboard({
       affectedCount = filteredSummaries.filter(s => s.isOffboarded).length;
       affectedText = "Offboarded (Saíram)";
   } else if (globalTypeFilter === 'idle_overbreak_wc') {
-      affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || (globalIncludeWc && s.wcAlerts > 0) || (globalIncludeIdle && s.idleAlerts > 0) || (globalIncludeTardiness && s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0)) || (globalIncludeEarlyLeave && s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0))).length;
+      affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || (globalIncludeWc && s.wcAlerts > 0) || (globalIncludeIdle && s.idleAlerts > 0) || (globalIncludeTardiness && s.dailyRecords.some(r => (globalIncludeMinorTardiness ? ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15) : (r.tardinessMinutes || 0) >= 15))) || (globalIncludeEarlyLeave && s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0))).length;
       affectedText = "COM OVERBREAK";
   } else {
-      affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || (globalIncludeWc && s.wcAlerts > 0) || (globalIncludeIdle && s.idleAlerts > 0) || (globalIncludeTardiness && s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0)) || (globalIncludeEarlyLeave && s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0))).length;
+      affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || (globalIncludeWc && s.wcAlerts > 0) || (globalIncludeIdle && s.idleAlerts > 0) || (globalIncludeTardiness && s.dailyRecords.some(r => (globalIncludeMinorTardiness ? ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15) : (r.tardinessMinutes || 0) >= 15))) || (globalIncludeEarlyLeave && s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0))).length;
       affectedText = "COM OVERBREAK (Geral)";
   }
 
@@ -404,7 +419,9 @@ export function StatsDashboard({
       } else if (isOnlyIdle) {
           metricTotal = s.dailyRecords.reduce((acc, r) => acc + (r.idleDuration || 0), 0);
       } else if (isOnlyTardiness) {
-          metricTotal = s.dailyRecords.reduce((acc, r) => acc + (r.tardinessMinutes || 0), 0);
+          metricTotal = s.dailyRecords.reduce((acc, r) => acc + ((r.tardinessMinutes || 0) >= 15 ? r.tardinessMinutes! : 0), 0);
+      } else if (isMinorTardinessOnly) {
+          metricTotal = s.dailyRecords.reduce((acc, r) => acc + ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15 ? r.tardinessMinutes! : 0), 0);
       } else {
           metricTotal = s.totalOverbreakMinutes;
       }
@@ -464,7 +481,12 @@ export function StatsDashboard({
              stats[shiftLabel].occurrences += 1;
            }
         } else if (isOnlyTardiness) {
-           if ((r.tardinessMinutes || 0) > 0) {
+           if ((r.tardinessMinutes || 0) >= 15) {
+             stats[shiftLabel].minutes += r.tardinessMinutes || 0;
+             stats[shiftLabel].occurrences += 1;
+           }
+        } else if (isMinorTardinessOnly) {
+           if ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15) {
              stats[shiftLabel].minutes += r.tardinessMinutes || 0;
              stats[shiftLabel].occurrences += 1;
            }
@@ -931,7 +953,7 @@ export function StatsDashboard({
                 <Card className="rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                   <CardContent className="p-5">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                      {isCheckOnly ? "MÉDIA DE AGENTES POR PERÍODO" : 
+                      {isCheckOnly ? (globalTimeFilter === 'day' ? "TOTAL DE AGENTES" : "MÉDIA DE AGENTES POR PERÍODO") : 
                        isNonModOnly ? "Tempo médio de Non-Moderating/Dia" :
                        isWcOnly ? "Média Organic Break/Dia por agente" :
                        isIdleOnly ? "Média Idle/Dia por agente" :
@@ -944,7 +966,7 @@ export function StatsDashboard({
                       {isCheckOnly ? (
                         <div className="flex items-baseline gap-1">
                            <p className="text-2xl font-black text-slate-900">{avgAgentsMismatched}</p>
-                           <span className="text-xs font-bold text-slate-400">agentes em média</span>
+                           <span className="text-xs font-bold text-slate-400">{globalTimeFilter === 'day' ? 'agentes fora de turno' : 'agentes em média'}</span>
                         </div>
                       ) : isShort30MinOnly ? (
                         <div className="flex items-baseline gap-1">
@@ -1054,11 +1076,11 @@ export function StatsDashboard({
                 <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                   <CardHeader className={`${isCheckOnly ? 'bg-amber-50/50 border-amber-100/50' : isWcOnly ? 'bg-amber-50/50 border-amber-100/50' : isNonModOnly || isShort30MinOnly ? 'bg-emerald-50/50 border-emerald-100/50' : 'bg-rose-50/50 border-rose-100/50'} border-b py-4 shrink-0 rounded-t-2xl`}>
                     <CardTitle className={`text-sm font-black uppercase tracking-widest ${isCheckOnly ? 'text-amber-800' : isWcOnly ? 'text-amber-800' : isNonModOnly || isShort30MinOnly ? 'text-emerald-800' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-800' : 'text-rose-800'} flex items-center gap-2`}>
-                      <AlertCircle size={16} /> {isCheckOnly ? "AGENTES COM MAIS TURNOS UNSCHEDULED" : isWcOnly ? "TOP 10 ORGANIC" : isNonModOnly ? "BOTTOM 10" : isShort30MinOnly ? "TOP 10" : isIdleOnly ? "Tempo em Idle" : isTardinessOnly ? "TOP 10 ATRASADOS" : isEarlyLeaveOnly ? "TOP 10 EARLY LEAVE" : "Tempo de Overbreaks"}
+                      <AlertCircle size={16} /> {isCheckOnly ? (globalTimeFilter === 'day' ? "AGENTES FORA DE TURNO" : "AGENTES COM MAIS TURNOS UNSCHEDULED") : isWcOnly ? "TOP 10 ORGANIC" : isNonModOnly ? "BOTTOM 10" : isShort30MinOnly ? "TOP 10" : isIdleOnly ? "Tempo em Idle" : isTardinessOnly ? "TOP 10 ATRASADOS" : isEarlyLeaveOnly ? "TOP 10 EARLY LEAVE" : "Tempo de Overbreaks"}
                     </CardTitle>
                     <CardDescription className={`text-xs ${isCheckOnly ? 'text-amber-600/80' : isWcOnly ? 'text-amber-600/80' : isNonModOnly || isShort30MinOnly ? 'text-emerald-600/80' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-600/80' : 'text-rose-600/80'} mt-1`}>
                       {isCheckOnly 
-                         ? `Mais dias trabalhados fora do horário`
+                         ? (globalTimeFilter === 'day' ? `Agentes escalados para um horário mas que trabalharam em outro` : `Mais dias trabalhados fora do horário`)
                          : isWcOnly
                          ? `Maior tempo total em Organic`
                          : isNonModOnly 
@@ -1069,17 +1091,20 @@ export function StatsDashboard({
                   <CardContent className="p-0 flex-1">
                     <div className="divide-y divide-slate-50">
                       {isCheckOnly ? (
-                         topCheck.map((s, i) => (
-                            <AgentLine 
-                               key={`${s.employeeName}-${i}`} 
-                               summary={s} 
-                               rank={i+1} 
-                               metricValue={`${s.mismatchCount}`} 
-                               metricLabel={s.mismatchCount === 1 ? "dia" : "dias"} 
-                               colorClass="text-amber-700"
-                               hideTooltip={true}
-                            />
-                         ))
+                         topCheck.map((s, i) => {
+                            const mismatchRecord = s.dailyRecords.find(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim());
+                            return (
+                               <AgentLine 
+                                  key={`${s.employeeName}-${i}`} 
+                                  summary={s} 
+                                  rank={i+1} 
+                                  metricValue={globalTimeFilter === 'day' && mismatchRecord ? `${mismatchRecord.scheduledShift} ➔ ${mismatchRecord.inferredShift}` : `${s.mismatchCount}`} 
+                                  metricLabel={globalTimeFilter === 'day' ? "" : (s.mismatchCount === 1 ? "dia" : "dias")} 
+                                  colorClass="text-amber-700"
+                                  hideTooltip={true}
+                               />
+                            );
+                         })
                       ) : isShort30MinOnly ? (
                          topShort30Min.map((s, i) => (
                             <AgentLine 
@@ -1564,7 +1589,14 @@ export function StatsDashboard({
                     <Dialog>
                       <DialogTrigger className={`px-3 py-1.5 text-xs font-black rounded-lg uppercase shadow-sm flex items-center gap-1 group transition-colors ${isCheckOnly ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : isWcOnly ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : isIdleOnly ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : isTardinessOnly || isEarlyLeaveOnly ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-rose-100 text-rose-700 hover:bg-rose-200'}`}>
                            {isCheckOnly ? (
-                             <span>{s.mismatchCount} {s.mismatchCount === 1 ? 'DIA' : 'DIAS'} DIFERENTES</span>
+                             globalTimeFilter === 'day' ? (
+                                (() => {
+                                   const mmr = s.dailyRecords.find(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim());
+                                   return <span>{mmr ? `${mmr.scheduledShift} ➔ ${mmr.inferredShift}` : "VER DETALHES"}</span>;
+                                })()
+                             ) : (
+                               <span>{s.mismatchCount} {s.mismatchCount === 1 ? 'DIA' : 'DIAS'} DIFERENTES</span>
+                             )
                            ) : isWcOnly ? (
                              <span className="flex items-center gap-1.5">
                                <span>TOT: <span className="font-bold">{Math.floor((s.wcTotalMinutes || 0) / 60)}h {(s.wcTotalMinutes || 0) % 60}m</span></span>
