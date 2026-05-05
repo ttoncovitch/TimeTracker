@@ -99,8 +99,11 @@ export const translations = {
     realtimeMetrics: "Métricas em Tempo Real",
     auditResults: "Resultados da Auditoria",
     viewMode: "Visualização",
+    lobsPerformance: "LOB's Performance",
     filterMonth: "Mês Atual",
+    filterPrevMonth: "Mês Anterior",
     filterWeek: "Semana",
+    filterYesterday: "Ontem",
     filterDay: "Hoje",
     allTime: "Período Total",
     topPerformersShort: "Top Eficientes",
@@ -115,7 +118,11 @@ export const translations = {
     exceptions: "Overbreak",
     includeWc: "Incluir Organic",
     onlyOverbreaks: "Overbreaks",
-    onlyIdleWcOverbreak: "Somente IDLE/Organic/Overbreak"
+    onlyIdleWcOverbreak: "Somente IDLE/Organic/Overbreak",
+    updateExtract: "Atualizar Extract",
+    addExtract: "Add Byteworks",
+    updateCalendar: "Atualizar Calendário",
+    addCalendar: "Add Calendário"
   },
   en: {
     overview: "Overview",
@@ -215,8 +222,11 @@ export const translations = {
     realtimeMetrics: "Real Time Metrics",
     auditResults: "Audit Results",
     viewMode: "View",
-    filterMonth: "Month",
+    lobsPerformance: "LOB's Performance",
+    filterMonth: "Current Month",
+    filterPrevMonth: "Last Month",
     filterWeek: "Week",
+    filterYesterday: "Yesterday",
     filterDay: "Today",
     allTime: "All Time",
     topPerformersShort: "Top Performers",
@@ -231,6 +241,10 @@ export const translations = {
     exceptions: "Overbreak",
     includeWc: "Include Organic",
     onlyOverbreaks: "Overbreaks",
-    onlyIdleWcOverbreak: "Only IDLE/Organic/Overbreak"
+    onlyIdleWcOverbreak: "Only IDLE/Organic/Overbreak",
+    updateExtract: "Update Extract",
+    addExtract: "Add Byteworks",
+    updateCalendar: "Update Calendar",
+    addCalendar: "Add Calendar"
   }
 };

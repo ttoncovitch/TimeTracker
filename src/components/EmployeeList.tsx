@@ -20,10 +20,113 @@ interface EmployeeListProps {
   globalIncludeTardiness: boolean;
   globalIncludeEarlyLeave: boolean;
   globalIncludeShort30Min?: boolean;
+  globalIncludeCheck?: boolean;
   globalFilterMajorOverbreaks: boolean;
 }
 
-export function EmployeeList({ summaries, allSummaries, latestDate, initialFilter = 'all', globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalFilterMajorOverbreaks }: EmployeeListProps) {
+function getAbsenceStatusText(s: EmployeeSummary, allSummaries: EmployeeSummary[], filteredRecords: EmployeeDayRecord[], latestDate: Date) {
+  if (s.isOffboarded) {
+    return { text: "Offboarded", isActive: false, isOffboarded: true };
+  }
+
+  const hasSL = filteredRecords.some(r => r.isSL);
+  const hasLOA = filteredRecords.some(r => r.isLOA);
+  const hasPTO = filteredRecords.some(r => r.isPTO);
+
+  if (!hasSL && !hasLOA && !hasPTO) {
+    return null;
+  }
+
+  let statusName = "";
+  let checkProp: 'isSL' | 'isLOA' | 'isPTO' = 'isSL';
+  if (hasSL) {
+    statusName = "Sick Leave";
+    checkProp = 'isSL';
+  } else if (hasLOA) {
+    statusName = "LOA";
+    checkProp = 'isLOA';
+  } else if (hasPTO) {
+    statusName = "PTO (VAC)";
+    checkProp = 'isPTO';
+  }
+
+  const fullEmp = allSummaries.find(emp => emp.employeeName === s.employeeName) || s;
+  const sortedRecords = [...fullEmp.dailyRecords].sort((a, b) => a.date.localeCompare(b.date));
+  
+  const activeRecsInFilter = [...filteredRecords]
+    .filter(r => r[checkProp])
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (activeRecsInFilter.length === 0) {
+    return { text: statusName, isActive: false, isOffboarded: false };
+  }
+
+  const targetDate = activeRecsInFilter[activeRecsInFilter.length - 1].date;
+  const targetIndex = sortedRecords.findIndex(r => r.date === targetDate);
+  
+  if (targetIndex === -1) {
+    return { text: statusName, isActive: false, isOffboarded: false };
+  }
+
+  let startIndex = targetIndex;
+  while (startIndex > 0) {
+    const prev = sortedRecords[startIndex - 1];
+    if (prev[checkProp] || prev.isOFF) {
+      startIndex--;
+    } else {
+      break;
+    }
+  }
+
+  let endIndex = targetIndex;
+  while (endIndex < sortedRecords.length - 1) {
+    const next = sortedRecords[endIndex + 1];
+    // Stop at the last consecutive absence day. Don't include following OFF days in the range.
+    if (next[checkProp]) {
+      endIndex++;
+    } else {
+      break;
+    }
+  }
+
+  let actualStart = startIndex;
+  while (actualStart <= endIndex && !sortedRecords[actualStart][checkProp]) {
+    actualStart++;
+  }
+  if (actualStart > endIndex) actualStart = startIndex;
+
+  const startDateStr = sortedRecords[actualStart].date;
+  const lastAbsenceDateStr = sortedRecords[endIndex].date;
+  let returnDateStr = null;
+  if (endIndex + 1 < sortedRecords.length) {
+    returnDateStr = sortedRecords[endIndex + 1].date;
+  }
+
+  const formatDate = (dStr: string) => {
+    const [y, m, d] = dStr.split('-');
+    return `${d}/${m}`;
+  };
+
+  const todayStr = latestDate.toLocaleDateString("en-CA");
+  const isActive = todayStr >= startDateStr && (!returnDateStr || todayStr < returnDateStr);
+
+  let text = statusName;
+  if (lastAbsenceDateStr) {
+     text = `${statusName} ${formatDate(startDateStr)} until ${formatDate(lastAbsenceDateStr)}`;
+  } else {
+     text = `${statusName} since ${formatDate(startDateStr)}`;
+  }
+
+  return { text, isActive, isOffboarded: false };
+}
+
+function isLeaveShift(sh: string) {
+  if (!sh) return false;
+  const upper = sh.toUpperCase();
+  return upper === 'PTO' || upper.includes('VAC') || upper.includes('FÉRIAS') || upper === 'SL' || upper.includes('SICK') || upper.includes('MEDICO') || upper.includes('ATESTADO') || upper === 'LOA' || upper.includes('LICENÇA');
+}
+
+export function EmployeeList({ summaries, allSummaries, latestDate, initialFilter = 'all', globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalFilterMajorOverbreaks }: EmployeeListProps) {
   const { t } = useLanguage();
   const isWcOnly = globalTypeFilter === 'all' && globalIncludeWc && !globalIncludeShort30Min && !globalIncludeNonMod && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave;
   const isShort30MinOnly = globalTypeFilter === 'all' && globalIncludeShort30Min && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave;
@@ -51,6 +154,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
     if (sortBy === 'idle') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0); }
     if (sortBy === 'tardiness') { aVal = a.totalTardinessMinutes; bVal = b.totalTardinessMinutes; }
     if (sortBy === 'earlyLeave') { aVal = a.totalEarlyLeaveMinutes; bVal = b.totalEarlyLeaveMinutes; }
+    if (sortBy === 'absences') { aVal = a.totalAbsences || 0; bVal = b.totalAbsences || 0; }
     if (sortBy === 'short30Min') { aVal = a.totalShort30MinRecords || 0; bVal = b.totalShort30MinRecords || 0; }
     if (sortBy === 'nonMod') { 
         aVal = a.dailyRecords.reduce((acc, r) => acc + r.breaks.filter(b => b.type === 'non_moderating').reduce((s, b) => s + b.durationMinutes, 0), 0); 
@@ -103,7 +207,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
             <table className="w-full text-left border-collapse min-w-[800px]">
               <thead className="bg-slate-50/95 backdrop-blur border-b border-slate-200 text-[10px] uppercase font-black text-slate-500 tracking-widest sticky top-0 z-20">
                 <tr>
-                  <th className="py-4 pl-8 pr-4 font-black whitespace-nowrap">Agente</th>
+                  <th className="py-4 pl-8 pr-4 font-black whitespace-nowrap">Agente ({filtered.length})</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('meal')}>Meal {sortBy === 'meal' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('short')}>Short {sortBy === 'short' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('wellness')}>Well. {sortBy === 'wellness' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
@@ -115,6 +219,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('idle')}>IDLE {sortBy === 'idle' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('tardiness')}>TARDINESS {sortBy === 'tardiness' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('earlyLeave')}>EARLY LEAVE {sortBy === 'earlyLeave' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('absences')}>FALTAS {sortBy === 'absences' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('short30Min')}>Short 30min (Dias) {sortBy === 'short30Min' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('total')}>{t('total')} {sortBy === 'total' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 pl-4 pr-8 text-right font-black whitespace-nowrap">{t('status')}</th>
@@ -164,33 +269,59 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                           </div>
                         )}
                         {(() => {
+                          const overrideStatus = getAbsenceStatusText(s, allSummaries, s.dailyRecords, latestDate);
+
                           const schedShifts = Array.from(new Set(s.dailyRecords.map(r => r.scheduledShift || r.inferredShift).filter(Boolean)));
                           const realSchedShifts = schedShifts.filter(sh => sh.toLowerCase() !== 'off');
                           let dispShift = s.shift;
                           let shiftDiffers = false;
+                          
                           if (realSchedShifts.length === 1) {
                               dispShift = realSchedShifts[0];
                           } else if (realSchedShifts.length > 1) {
                               dispShift = "Vários Horários";
-                          } else if (schedShifts.length > 0) {
+                          } else if (schedShifts.length > 0 && !isLeaveShift(schedShifts[0])) {
                               dispShift = schedShifts[0];
+                          } else {
+                              dispShift = s.shift;
                           }
                           
+                          let statusNote = "";
+                          if (!overrideStatus || overrideStatus.isOffboarded) {
+                            if (s.isATT) statusNote = "ATT (Attrition)";
+                            else if (s.isSUSPP) statusNote = "SUSPP (Suspended)";
+                            else if (s.isOFF) statusNote = "OFF (Day Off)";
+                          }
+
                           // Check if any specific day has a shift discrepancy
                           if (s.dailyRecords.some(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim())) {
                               shiftDiffers = true;
                           }
 
-                          return (s.lob || s.language || dispShift || s.supervisor) ? (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {s.lob && <span className="bg-blue-50 text-blue-600 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.lob}</span>}
-                            {s.language && <span className="bg-purple-50 text-purple-600 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.language}</span>}
-                            {dispShift && (
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest ${shiftDiffers ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-600'}`}>
-                                {dispShift} {shiftDiffers && '(CHECK)'}
-                              </span>
+                          return (s.lob || s.language || dispShift || s.supervisor || statusNote || overrideStatus) ? (
+                          <div className="flex flex-col gap-1 mt-1">
+                            <div className="flex flex-wrap gap-1">
+                              {s.lob && <span className="bg-blue-50 text-blue-600 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.lob}</span>}
+                              {s.language && <span className="bg-purple-50 text-purple-600 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.language}</span>}
+                              {dispShift && !isLeaveShift(dispShift) && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest ${s.isOffboarded || s.isATT ? 'bg-slate-200 text-slate-900 border border-slate-300' : shiftDiffers ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-600'}`}>
+                                  {dispShift} {!s.isOffboarded && !s.isATT && shiftDiffers && '(CHECK)'}
+                                </span>
+                              )}
+                              {s.supervisor && <span className="bg-slate-100 text-slate-500 text-[9px] px-1.5 py-0.5 rounded font-bold">TL: {s.supervisor}</span>}
+                            </div>
+                            {overrideStatus && (
+                               <div>
+                                 <span className={`text-[10px] font-black px-1.5 py-0.5 rounded tracking-widest ${overrideStatus.isOffboarded ? 'bg-slate-200 text-slate-800' : overrideStatus.isActive ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                   {overrideStatus.text}
+                                 </span>
+                               </div>
                             )}
-                            {s.supervisor && <span className="bg-slate-100 text-slate-500 text-[9px] px-1.5 py-0.5 rounded font-bold">TL: {s.supervisor}</span>}
+                            {statusNote && (
+                              <p className="text-[9px] font-black text-rose-500 uppercase italic tracking-tighter">
+                                {statusNote}
+                              </p>
+                            )}
                           </div>
                           ) : null;
                         })()}
@@ -262,6 +393,12 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                         </span>
                       </td>
 
+                      <td className="py-4 px-2 text-center" title={(s.totalAbsences || 0) > 0 ? `${s.totalAbsences} faltas no período` : 'Sem faltas'}>
+                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${(s.totalAbsences || 0) > 0 ? 'bg-red-100 text-red-700 font-black border border-red-200' : 'text-slate-300 font-bold'}`}>
+                          {(s.totalAbsences || 0) > 0 ? s.totalAbsences : '0'}
+                        </span>
+                      </td>
+
                       <td className="py-4 px-2 text-center" title={(s.totalShort30MinRecords || 0) > 0 ? `${s.totalShort30MinRecords} dias` : '0 dias'}>
                         <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${(s.totalShort30MinRecords || 0) > 0 ? 'bg-emerald-100/70 border border-emerald-200 text-emerald-800 font-black' : 'text-slate-300 font-bold'}`}>
                           {s.totalShort30MinRecords || 0}d
@@ -275,7 +412,21 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                       </td>
 
                       <td className="py-4 pl-4 pr-8 text-right">
-                        {isWcOnly && s.totalOverbreakMinutes > 0 ? (
+                        {s.isATT ? (
+                            <span className="inline-block px-2 py-1 bg-slate-900 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">ATT</span>
+                        ) : s.isOffboarded ? (
+                            <span className="inline-block px-2 py-1 bg-slate-200 text-slate-700 rounded-md text-[10px] font-black uppercase tracking-tighter">OFFBOARDED</span>
+                        ) : s.isLOA ? (
+                            <span className="inline-block px-2 py-1 bg-indigo-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">LOA</span>
+                        ) : s.isPTO ? (
+                            <span className="inline-block px-2 py-1 bg-cyan-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">PTO</span>
+                        ) : s.isSL ? (
+                            <span className="inline-block px-2 py-1 bg-rose-400 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">SL</span>
+                        ) : s.isSUSPP ? (
+                            <span className="inline-block px-2 py-1 bg-red-700 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">SUSPP</span>
+                        ) : s.isOFF ? (
+                            <span className="inline-block px-2 py-1 bg-slate-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">OFF</span>
+                        ) : isWcOnly && s.totalOverbreakMinutes > 0 ? (
                            <span className="inline-block px-2 py-1 bg-amber-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter">ORGANIC TOTAL</span>
                         ) : hasIdleExc ? (
                           <span className="inline-block px-2 py-1 bg-red-100 text-red-700 rounded-md text-[10px] font-black uppercase tracking-tighter">IDLE</span>
@@ -313,14 +464,14 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
 
       <Dialog open={!!selectedEmp} onOpenChange={(open) => !open && setSelectedEmp(null)}>
         <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] flex flex-col rounded-[2rem] border-slate-200 p-0 overflow-hidden shadow-2xl">
-           {selectedEmp && <EmployeeDetail summary={selectedEmp} latestDate={latestDate || new Date()} initialFilter={initialFilter} t={t} globalTypeFilter={globalTypeFilter} globalIncludeWc={globalIncludeWc} globalIncludeIdle={globalIncludeIdle} globalIncludeNonMod={globalIncludeNonMod} globalIncludeTardiness={globalIncludeTardiness} globalIncludeEarlyLeave={globalIncludeEarlyLeave} globalIncludeShort30Min={globalIncludeShort30Min} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} />}
+           {selectedEmp && <EmployeeDetail summary={selectedEmp} allSummaries={allSummaries} latestDate={latestDate || new Date()} initialFilter={initialFilter} t={t} globalTypeFilter={globalTypeFilter} globalIncludeWc={globalIncludeWc} globalIncludeIdle={globalIncludeIdle} globalIncludeNonMod={globalIncludeNonMod} globalIncludeTardiness={globalIncludeTardiness} globalIncludeEarlyLeave={globalIncludeEarlyLeave} globalIncludeShort30Min={globalIncludeShort30Min} globalIncludeCheck={globalIncludeCheck} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} />}
         </DialogContent>
       </Dialog>
     </div>
   );
 }
 
-function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalFilterMajorOverbreaks }: { summary: EmployeeSummary; latestDate: Date, initialFilter: string, t: any, globalTypeFilter: 'all' | 'idle_overbreak_wc', globalIncludeWc: boolean, globalIncludeIdle: boolean, globalIncludeNonMod: boolean, globalIncludeTardiness: boolean, globalIncludeEarlyLeave: boolean, globalIncludeShort30Min?: boolean, globalFilterMajorOverbreaks: boolean }) {
+function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalFilterMajorOverbreaks }: { summary: EmployeeSummary; allSummaries: EmployeeSummary[]; latestDate: Date, initialFilter: string, t: any, globalTypeFilter: 'all' | 'idle_overbreak_wc', globalIncludeWc: boolean, globalIncludeIdle: boolean, globalIncludeNonMod: boolean, globalIncludeTardiness: boolean, globalIncludeEarlyLeave: boolean, globalIncludeShort30Min?: boolean, globalIncludeCheck?: boolean, globalFilterMajorOverbreaks: boolean }) {
   const today = new Date();
   
   // Start with the initialFilter mapped to 'today', 'week', or 'month'
@@ -328,10 +479,11 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
   const getInitialView = () => {
     if (initialFilter === 'month') return 'month';
     if (initialFilter === 'week') return 'week';
+    if (initialFilter === 'yesterday') return 'yesterday';
     return 'today';
   };
 
-  const [view, setView] = useState<'today' | 'week' | 'month'>(getInitialView());
+  const [view, setView] = useState<'today' | 'yesterday' | 'week' | 'month'>(getInitialView());
   const [onlyExceptions, setOnlyExceptions] = useState(
     globalTypeFilter === 'idle_overbreak_wc' ? true : false
   );
@@ -341,6 +493,7 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
   const [includeTardiness, setIncludeTardiness] = useState(globalIncludeTardiness);
   const [includeEarlyLeave, setIncludeEarlyLeave] = useState(globalIncludeEarlyLeave);
   const [includeShort30Min, setIncludeShort30Min] = useState(globalIncludeShort30Min || false);
+  const [includeCheck, setIncludeCheck] = useState(globalIncludeCheck || false);
 
   let records = s.dailyRecords;
   
@@ -359,9 +512,16 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
       const d = new Date(r.date + 'T12:00:00');
       return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
     });
+  } else if (view === 'yesterday') {
+    records = s.dailyRecords.filter(r => {
+      const d = new Date(r.date + 'T12:00:00');
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear();
+    });
   }
 
-  const anyLocalFilterActive = onlyExceptions || includeWc || includeIdle || filterNm || includeTardiness || includeEarlyLeave || includeShort30Min;
+  const anyLocalFilterActive = onlyExceptions || includeWc || includeIdle || filterNm || includeTardiness || includeEarlyLeave || includeShort30Min || includeCheck;
   if (anyLocalFilterActive) {
     records = records.filter(r => {
       let keep = false;
@@ -374,35 +534,19 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
       if (includeTardiness && (r.tardinessMinutes || 0) > 0) keep = true;
       if (includeEarlyLeave && (r.earlyLeaveMinutes || 0) > 0) keep = true;
       if (includeShort30Min && r.hasSingleShort30m) keep = true;
+      if (includeCheck && r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) keep = true;
       
       return keep;
     });
   }
 
-  // Se SOMENTE o WC estiver selecionado GLOBALMENTE
-  const isWcOnly = globalIncludeWc && !globalIncludeShort30Min && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
-  const isIdleOnly = globalIncludeIdle && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
-  const isTardinessOnly = globalIncludeTardiness && !globalIncludeShort30Min && !globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeEarlyLeave && globalTypeFilter === 'all';
-  const isEarlyLeaveOnly = globalIncludeEarlyLeave && !globalIncludeShort30Min && !globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
-  const isShort30MinOnly = globalIncludeShort30Min && !globalIncludeEarlyLeave && !globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && globalTypeFilter === 'all';
-
-  if (filterNm) {
-    records = records.filter(r => r.breaks.some(b => b.type === 'non_moderating'));
-  } else if (onlyExceptions && !isWcOnly && !isIdleOnly && !isTardinessOnly && !isEarlyLeaveOnly && !isShort30MinOnly) {
-    records = records.filter(r => 
-      r.mealOverbreak > 0 || r.shortOverbreak > 0 || r.wellnessOverbreak > 0 || r.prayingOverbreak > 0 || (includeIdle && r.idleDuration > 0) || (includeWc && r.wcDuration > 10) || (includeTardiness && ((r.tardinessMinutes || 0) > 0)) || (includeEarlyLeave && ((r.earlyLeaveMinutes || 0) > 0)) || (includeShort30Min && r.hasSingleShort30m)
-    );
-  } else if (isWcOnly) {
-    records = records.filter(r => r.wcDuration > 0);
-  } else if (isIdleOnly) {
-    records = records.filter(r => r.idleDuration > 0);
-  } else if (isTardinessOnly) {
-    records = records.filter(r => (r.tardinessMinutes || 0) > 0);
-  } else if (isEarlyLeaveOnly) {
-    records = records.filter(r => (r.earlyLeaveMinutes || 0) > 0);
-  } else if (isShort30MinOnly) {
-    records = records.filter(r => r.hasSingleShort30m);
-  }
+  // Se SOMENTE o respectivo filtro estiver selecionado localmente em relacao as outras opcoes de overbreaks/excecoes
+  const isWcOnly = includeWc && !includeShort30Min && !includeIdle && !filterNm && !includeTardiness && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
+  const isIdleOnly = includeIdle && !includeShort30Min && !includeWc && !filterNm && !includeTardiness && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
+  const isTardinessOnly = includeTardiness && !includeShort30Min && !includeIdle && !includeWc && !filterNm && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
+  const isEarlyLeaveOnly = includeEarlyLeave && !includeShort30Min && !includeIdle && !includeWc && !filterNm && !includeTardiness && !includeCheck && globalTypeFilter === 'all';
+  const isShort30MinOnly = includeShort30Min && !includeEarlyLeave && !includeIdle && !includeWc && !filterNm && !includeTardiness && !includeCheck && globalTypeFilter === 'all';
+  const isCheckOnly = includeCheck && !includeShort30Min && !includeEarlyLeave && !includeIdle && !includeWc && !filterNm && !includeTardiness && globalTypeFilter === 'all';
 
   const totalPeriodOverbreak = records.reduce((acc, r) => {
     if (isWcOnly) return acc + r.wcDuration;
@@ -433,6 +577,7 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
                       </p>
                    )}
                    {(() => {
+                       const overrideStatus = getAbsenceStatusText(s, allSummaries, records, latestDate);
                        const schedShifts = Array.from(new Set(records.map(r => r.scheduledShift || r.inferredShift).filter(Boolean)));
                        const realSchedShifts = schedShifts.filter(sh => sh.toLowerCase() !== 'off');
                        let dispShift = s.shift;
@@ -440,15 +585,26 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
                            dispShift = realSchedShifts[0];
                        } else if (realSchedShifts.length > 1) {
                            dispShift = "Vários Horários";
-                       } else if (schedShifts.length > 0) {
+                       } else if (schedShifts.length > 0 && !isLeaveShift(schedShifts[0])) {
                            dispShift = schedShifts[0];
+                       } else {
+                           dispShift = s.shift;
                        }
-                       return (s.lob || s.language || dispShift || s.supervisor) ? (
-                     <div className="flex flex-wrap gap-1 mt-2">
-                       {s.lob && <span className="bg-blue-50/10 text-blue-300 border border-blue-500/30 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.lob}</span>}
-                       {s.language && <span className="bg-purple-50/10 text-purple-300 border border-purple-500/30 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.language}</span>}
-                       {dispShift && <span className={`border text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest ${s.dailyRecords.some(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) ? 'bg-amber-500/20 text-amber-300 border-amber-500/50' : 'bg-emerald-50/10 text-emerald-300 border-emerald-500/30'}`}>{dispShift} {s.dailyRecords.some(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) && '(CHECK)'}</span>}
-                       {s.supervisor && <span className="bg-slate-800 text-slate-300 border border-slate-600 text-[9px] px-1.5 py-0.5 rounded font-bold">TL: {s.supervisor}</span>}
+                       return (s.lob || s.language || dispShift || s.supervisor || overrideStatus) ? (
+                     <div className="flex flex-col gap-1 mt-2">
+                       <div className="flex flex-wrap gap-1">
+                         {s.lob && <span className="bg-blue-50/10 text-blue-300 border border-blue-500/30 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.lob}</span>}
+                         {s.language && <span className="bg-purple-50/10 text-purple-300 border border-purple-500/30 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.language}</span>}
+                         {dispShift && !isLeaveShift(dispShift) && <span className={`border text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest ${s.dailyRecords.some(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) ? 'bg-amber-500/20 text-amber-300 border-amber-500/50' : 'bg-emerald-50/10 text-emerald-300 border-emerald-500/30'}`}>{dispShift} {s.dailyRecords.some(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) && '(CHECK)'}</span>}
+                         {s.supervisor && <span className="bg-slate-800 text-slate-300 border border-slate-600 text-[9px] px-1.5 py-0.5 rounded font-bold">TL: {s.supervisor}</span>}
+                       </div>
+                       {overrideStatus && (
+                          <div className="mt-0.5">
+                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded tracking-widest ${overrideStatus.isOffboarded ? 'bg-slate-800 text-slate-200 border-slate-600 border' : overrideStatus.isActive ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 border' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 border'}`}>
+                              {overrideStatus.text}
+                            </span>
+                          </div>
+                       )}
                      </div>
                    ) : null;
                    })()}
@@ -462,15 +618,13 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
              <div className="flex flex-wrap flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-3 border-t border-slate-800">
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex bg-slate-800 rounded-md p-1 border border-slate-700 w-full sm:w-auto overflow-x-auto custom-scrollbar gap-1">
-                    {(['today', 'week', 'month'] as const).map(v => (
+                    {(['today', 'yesterday', 'week', 'month'] as const).map(v => (
                       <button
                         key={v}
-                        onClick={() => {
-                            setView(v);
-                        }}
-                        className={`px-2 py-1 shrink-0 rounded text-[10px] font-black uppercase tracking-wider transition-colors ${view === v ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+                        onClick={() => setView(v)}
+                        className={`px-2 py-1 shrink-0 rounded text-[10px] font-black uppercase tracking-wider transition-colors flex items-center gap-1.5 ${view === v ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
                       >
-                        {v === 'today' ? t('filterDay') : v === 'week' ? t('days7') : t('days30')}
+                        {v === 'today' ? t('filterDay') : v === 'yesterday' ? t('filterYesterday') : v === 'week' ? t('days7') : t('days30')}
                       </button>
                     ))}
                   </div>
@@ -511,12 +665,18 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
                            EARLY LEAVE
                          </button>
                        </div>
-                       <div className="grid grid-cols-2 gap-1">
+                       <div className="grid grid-cols-3 gap-1">
                          <button
                            onClick={() => setIncludeIdle(!includeIdle)}
                            className={`px-2 py-1.5 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeIdle ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
                          >
                            IDLE
+                         </button>
+                         <button
+                           onClick={() => setIncludeCheck(!includeCheck)}
+                           className={`px-2 py-1.5 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeCheck ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                         >
+                           CHECK
                          </button>
                          <div className="flex items-center justify-center gap-1 bg-slate-700/50 px-2 py-1.5 rounded border border-slate-600/50">
                             <span className="text-[9.5px] font-bold tracking-widest text-slate-400 uppercase">TOTAL</span>
@@ -546,7 +706,7 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
         <div className="p-6 md:p-8">
           <div className="space-y-6">
             {records.length > 0 ? records.map((day, idx) => (
-              <DayRecordCard key={`${day.date}-${idx}`} record={day} isWcOnly={isWcOnly} isIdleOnly={isIdleOnly} isTardinessOnly={isTardinessOnly} filterNm={filterNm} includeWc={includeWc} includeIdle={includeIdle} includeTardiness={includeTardiness} includeEarlyLeave={includeEarlyLeave} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} onlyExceptions={onlyExceptions} />
+              <DayRecordCard key={`${day.date}-${idx}`} record={day} isWcOnly={isWcOnly} isIdleOnly={isIdleOnly} isTardinessOnly={isTardinessOnly} filterNm={filterNm} includeWc={includeWc} includeIdle={includeIdle} includeTardiness={includeTardiness} includeEarlyLeave={includeEarlyLeave} includeCheck={includeCheck} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} onlyExceptions={onlyExceptions} />
             )) : (
               <div className="text-center py-12">
                  <p className="text-slate-400 font-bold uppercase tracking-widest text-xs italic">Nenhum registro para o período.</p>
@@ -559,12 +719,32 @@ function EmployeeDetail({ summary: s, latestDate, initialFilter, t, globalTypeFi
   );
 }
 
-const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; isIdleOnly?: boolean; isTardinessOnly?: boolean; filterNm?: boolean; includeWc?: boolean; includeIdle?: boolean; includeTardiness?: boolean; includeEarlyLeave?: boolean; globalFilterMajorOverbreaks: boolean; onlyExceptions?: boolean }> = ({ record, isWcOnly, isIdleOnly, isTardinessOnly, filterNm, includeWc, includeIdle, includeTardiness, includeEarlyLeave, globalFilterMajorOverbreaks, onlyExceptions }) => {
+const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; isIdleOnly?: boolean; isTardinessOnly?: boolean; filterNm?: boolean; includeWc?: boolean; includeIdle?: boolean; includeTardiness?: boolean; includeEarlyLeave?: boolean; includeCheck?: boolean; globalFilterMajorOverbreaks: boolean; onlyExceptions?: boolean }> = ({ record, isWcOnly, isIdleOnly, isTardinessOnly, filterNm, includeWc, includeIdle, includeTardiness, includeEarlyLeave, includeCheck, globalFilterMajorOverbreaks, onlyExceptions }) => {
+    if (record.isAbsence) {
+        return (
+            <div className="bg-red-50/50 border-2 border-red-200 rounded-2xl p-6 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <div className="bg-red-600 text-white px-3 py-1.5 rounded-lg font-black text-xs uppercase tracking-widest shadow-md">
+                            FALTA
+                        </div>
+                        <div>
+                            <p className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                                {format(new Date(record.date + 'T12:00:00'), 'EEEE, dd/MM/yyyy')}
+                            </p>
+                            <p className="text-[10px] text-red-600 font-bold uppercase tracking-wider">Ausência não justificada (Escalado: {record.scheduledShift})</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     const isWcAlert = record.wcDuration > 10;
     const hasAnyOverbreak = record.mealOverbreak > 0 || record.shortOverbreak > 0 || record.wellnessOverbreak > 0 || record.prayingOverbreak > 0 || isWcAlert || record.idleOverbreak > 0 || (record.tardinessMinutes || 0) > 0 || (record.earlyLeaveMinutes || 0) > 0;
     
     // Check if any local filter is active
-    const anyLocalFilterActive = onlyExceptions || includeWc || includeIdle || filterNm || includeTardiness || includeEarlyLeave;
+    const anyLocalFilterActive = onlyExceptions || includeWc || includeIdle || filterNm || includeTardiness || includeEarlyLeave || includeCheck;
     
     let isHighlighted = false;
     let borderColor = 'border-slate-100';
@@ -575,6 +755,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
         else if (includeWc && record.wcDuration > 0) { isHighlighted = true; borderColor = 'border-amber-200 ring-amber-50/50 ring-4'; }
         else if (includeIdle && record.idleDuration > 0) { isHighlighted = true; borderColor = 'border-rose-200 ring-rose-50/50 ring-4'; }
         else if (includeTardiness && (record.tardinessMinutes || 0) > 0) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-4'; }
+        else if (includeCheck && record.scheduledShift && record.inferredShift && record.scheduledShift.trim() !== record.inferredShift.trim()) { isHighlighted = true; borderColor = 'border-amber-200 ring-amber-50/50 ring-4'; }
         else if (includeEarlyLeave && (record.earlyLeaveMinutes || 0) > 0) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-4'; }
     } else {
         // Fallback for global or no filters
@@ -652,17 +833,21 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                 <div className="flex items-center gap-3">
                     <span className={`text-base font-black tracking-tight ${textColor}`}>{format(new Date(record.date), 'dd/MM/yyyy')}</span>
                     {(record.scheduledShift || record.inferredShift) && (
-                       <div className="flex flex-col">
-                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
-                               record.scheduledShift && record.inferredShift && record.scheduledShift.trim() !== record.inferredShift.trim() 
-                               ? 'bg-amber-100 text-amber-800 border-amber-300' 
-                               : 'bg-blue-50 text-blue-700 border-blue-100'
-                           }`}>
-                              Shift: {record.inferredShift || record.scheduledShift}
-                              {record.scheduledShift && record.inferredShift && record.scheduledShift.trim() !== record.inferredShift.trim() && (
-                                  <span className="font-black ml-1">(CHECK)</span>
-                              )}
-                           </span>
+                       <div className="flex gap-2 items-center">
+                           {record.scheduledShift && record.inferredShift && record.scheduledShift.trim() !== record.inferredShift.trim() ? (
+                              <>
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-blue-50 text-blue-700 border-blue-100">
+                                   {record.scheduledShift}
+                                </span>
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-amber-100 text-amber-800 border-amber-300">
+                                   {record.inferredShift}
+                                </span>
+                              </>
+                           ) : (
+                               <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-blue-50 text-blue-700 border-blue-100">
+                                  {record.scheduledShift || record.inferredShift}
+                               </span>
+                           )}
                        </div>
                     )}
                     {(record.mealOverbreak > 0 || record.shortOverbreak > 0 || record.wellnessOverbreak > 0 || record.prayingOverbreak > 0 || record.idleOverbreak > 0 || isWcAlert) && !filterNm && (

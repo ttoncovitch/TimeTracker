@@ -13,9 +13,11 @@ const LIMITS = {
 // Keywords for WC mapping
 const WC_KEYWORDS = [
   'bath', 'bathrom', 'bathroom', 'bathroom break', 'bathroom emegency', 
-  'bathroom emergency', 'bathroom quick', 'batroom', 'o b', 'ob', 
+  'bathroom emergency', 'bathroom quick', 'batroom', 'o b', 'ob',
   'organic', 'organic break', 'emergency bathroom break', 'emergency wc break', 
-  'ewc', 'restroom', 'toilet', 'toilet break', 'toillet', 'wc'
+  'ewc', 'restroom', 'toilet', 'toilet break', 'toillet', 'wc',
+  'banheiro', 'ida ao banheiro', 'wc emergência', 'emergencia banheiro', 'organico', 'orgânico', 'orgânica', 'organica',
+  'personal break', 'personal'
 ];
 
 export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
@@ -96,6 +98,12 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
 
         const summaries: EmployeeSummary[] = [];
 
+        const headerRow = rawData[0];
+        const resignedIndex = headerRow.findIndex(h => {
+           const s = String(h || '').toLowerCase();
+           return s.includes('resigned') || s.includes('离职') || s.includes('offboarded') || s.includes('saída');
+        });
+
         employeeMap.forEach((allRows, _email) => {
           const dailyRecords: EmployeeDayRecord[] = [];
           let totalWorkMinutes = 0;
@@ -110,10 +118,40 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           let totalReviewAndAppealMinutes = 0;
           let totalAwaitingTasksMinutes = 0;
           let totalForgotStatusMinutes = 0;
+          let isOffboarded = false;
           
           let finalName = '';
           let finalDepartment = '';
           let finalEmail = _email;
+
+          // Check for statuses
+          const checkStatus = (keywords: string[]) => {
+              if (resignedIndex >= 0 && allRows.length > 0) {
+                  return allRows.some(row => {
+                      const val = String(row[resignedIndex] || '').trim().toUpperCase();
+                      const shift = String(row[11] || '').trim().toUpperCase();
+                      const infShift = String(row[12] || '').trim().toUpperCase();
+                      return keywords.some(k => val.includes(k.toUpperCase()) || shift.includes(k.toUpperCase()) || infShift.includes(k.toUpperCase()));
+                  });
+              } else if (allRows.length > 0) {
+                  return allRows.some(row => {
+                      const val = String(row[15] || '').trim().toUpperCase();
+                      const shift = String(row[11] || '').trim().toUpperCase();
+                      const infShift = String(row[12] || '').trim().toUpperCase();
+                      return keywords.some(k => val.includes(k.toUpperCase()) || shift.includes(k.toUpperCase()) || infShift.includes(k.toUpperCase()));
+                  });
+              }
+              return false;
+          };
+
+          const isATT = checkStatus(['ATT', 'ATTRITION', 'OFFBOARDED', 'RESIGNED', 'RESIGNATION', 'SAÍDA']);
+          const isLOA = checkStatus(['LOA', 'LICENÇA']);
+          const isPTO = checkStatus(['PTO', 'VAC', 'FÉRIAS']);
+          const isSL = checkStatus(['SL', 'SICK', 'SAÚDE', 'MEDICO', 'ATESTADO']);
+          const isSUSPP = checkStatus(['SUSPP', 'SUSPENSION', 'SUSPENSÃO']);
+          const isOFF = checkStatus(['OFF', 'FOLGA']);
+
+          isOffboarded = isATT;
 
           // Process all rows into timeline events for this employee
           const allEvents = allRows.map(row => {
@@ -209,9 +247,9 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              const shiftRows = shiftInfo.records;
              // Date of the shift is based on the first event time
              const firstRowDate = format(shiftInfo.firstEventTime, 'yyyy-MM-dd'); 
-             const record = processDailyRowsFromColumns(firstRowDate, shiftRows);
+             const record = processDailyRowsFromColumns(firstRowDate, shiftRows, resignedIndex);
              
-             const hasSignificantActivity = record.totalWorkTimeMillis > 0 || record.breaks.some(b => b.type !== 'offline');
+             const hasSignificantActivity = record.totalWorkTimeMillis > 0 || record.breaks.some(b => b.type !== 'offline') || record.isOFF || record.isPTO || record.isLOA || record.isSL || record.isSUSPP || record.isATT;
              
              if (hasSignificantActivity) {
               dailyRecords.push(record);
@@ -230,7 +268,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              }
           });
 
-          if (dailyRecords.length > 0) {
+          if (dailyRecords.length > 0 || isOffboarded) {
             summaries.push({
               employeeName: finalName || 'Unknown',
               email: finalEmail,
@@ -246,6 +284,14 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               totalAwaitingTasksMinutes: Math.round(totalAwaitingTasksMinutes),
               totalForgotStatusMinutes: Math.round(totalForgotStatusMinutes),
               totalShort30MinRecords,
+              totalAbsences: 0,
+              isOffboarded,
+              isATT,
+              isLOA,
+              isPTO,
+              isSL,
+              isSUSPP,
+              isOFF,
               wcAlerts: wcAlertsCount,
               idleAlerts: idleAlertsCount,
               dailyRecords: dailyRecords.sort((a,b) => a.date.localeCompare(b.date))
@@ -272,10 +318,27 @@ const SHIFTS = [
   { startHour: 22, startMinute: 30, endHour: 7, endMinute: 30, label: '22:30-07:30', crossesMidnight: true }
 ];
 
-function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRecord {
+function processDailyRowsFromColumns(date: string, rows: any[][], resignedIndex: number): EmployeeDayRecord {
   const breaks: BreakSession[] = [];
   let totalWorkTimeMillis = 0;
   
+  const checkDailyStatus = (keywords: string[]) => {
+      const index = resignedIndex >= 0 ? resignedIndex : 15;
+      return rows.some(row => {
+          const val = String(row[index] || '').trim().toUpperCase();
+          const shift = String(row[11] || '').trim().toUpperCase();
+          const infShift = String(row[12] || '').trim().toUpperCase();
+          return keywords.some(k => val.includes(k.toUpperCase()) || shift.includes(k.toUpperCase()) || infShift.includes(k.toUpperCase()));
+      });
+  };
+
+  const isATT = checkDailyStatus(['ATT', 'ATTRITION', 'OFFBOARDED', 'RESIGNED', 'RESIGNATION', 'SAÍDA']);
+  const isLOA = checkDailyStatus(['LOA', 'LICENÇA']);
+  const isPTO = checkDailyStatus(['PTO', 'VAC', 'FÉRIAS']);
+  const isSL = checkDailyStatus(['SL', 'SICK', 'SAÚDE', 'MEDICO', 'ATESTADO']);
+  const isSUSPP = checkDailyStatus(['SUSPP', 'SUSPENSION', 'SUSPENSÃO']);
+  const isOFF = checkDailyStatus(['OFF', 'FOLGA']);
+
   let employeeName = '';
   
   // Base date parsing for fallback
@@ -415,7 +478,12 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
            currentBreakType = 'training';
        } else if (combinedInfo.includes('meal') || combinedInfo.includes('almoço')) {
            currentBreakType = 'meal';
-       } else if (WC_KEYWORDS.some(k => combinedInfo.includes(k) || combinedInfo === k)) {
+       } else if (WC_KEYWORDS.some(k => {
+           if (k === 'wc' || k === 'ob' || k === 'o b' || k === 'ewc') {
+               return new RegExp(`(?:^|[^a-z])${k.replace(/ /g, '\\s+')}(?:[^a-z]|$)`, 'i').test(combinedInfo);
+           }
+           return combinedInfo.includes(k);
+       })) {
            currentBreakType = 'wc';
        } else if (combinedInfo.includes('praying') || combinedInfo.includes('oracao') || combinedInfo.includes('oração') || combinedInfo.includes('reza') || combinedInfo.includes('rezar')) {
            currentBreakType = 'praying';
@@ -453,11 +521,11 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
              finalDuration = Math.round((finalEndTime.getTime() - e.startTime.getTime()) / 60000);
              
              const remainderDuration = Math.round((e.endTime.getTime() - shiftEndLimit.getTime()) / 60000);
-             if (remainderDuration > 0) {
+             if (remainderDuration > 0 && currentBreakType !== 'offline') {
                  breaks.push({
-                     type: currentBreakType === 'offline' ? 'offline' : 'forgot_status',
+                     type: 'forgot_status',
                      rawStatus: e.rawStatus || e.rawInfo?.trim() || '',
-                     subType: currentBreakType === 'offline' ? e.subStatus : `(Esqueceu status: ${e.subStatus || currentBreakType})`,
+                     subType: `(Esqueceu status: ${e.subStatus || currentBreakType})`,
                      remarks: e.originalRemark,
                      originalStatus: e.originalStatus,
                      originalSubStatus: e.originalSubStatus,
@@ -545,19 +613,29 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
           const diff = Math.round((shiftEndLimit.getTime() - actualEndTime.getTime()) / 60000);
           if (diff > 0 && diff < 8 * 60) {
               earlyLeaveMinutes = diff;
-              // Dynamically insert an offline break for early leave
-              breaks.push({
-                  type: 'offline',
-                  rawStatus: 'offline (system inferred)',
-                  subType: '',
-                  remarks: '',
-                  originalStatus: 'offline',
-                  originalSubStatus: '',
-                  originalRemark: '',
-                  startTime: new Date(actualEndTime),
-                  endTime: new Date(shiftEndLimit),
-                  durationMinutes: diff
-              });
+              
+              // Only insert if no other break covers this significant portion
+              const alreadyCovered = breaks.some(b => 
+                  b.type === 'offline' && 
+                  b.startTime.getTime() <= actualEndTime.getTime() + 5 * 60000 &&
+                  b.endTime.getTime() >= shiftEndLimit.getTime() - 5 * 60000
+              );
+
+              if (!alreadyCovered) {
+                  // Dynamically insert an offline break for early leave
+                  breaks.push({
+                      type: 'offline',
+                      rawStatus: 'offline (system inferred)',
+                      subType: '',
+                      remarks: '',
+                      originalStatus: 'offline',
+                      originalSubStatus: '',
+                      originalRemark: '',
+                      startTime: new Date(actualEndTime),
+                      endTime: new Date(shiftEndLimit),
+                      durationMinutes: diff
+                  });
+              }
           }
       }
   }
@@ -666,7 +744,13 @@ function processDailyRowsFromColumns(date: string, rows: any[][]): EmployeeDayRe
     tardinessMinutes,
     earlyLeaveMinutes,
     actualStartTime,
-    actualEndTime
+    actualEndTime,
+    isATT,
+    isLOA,
+    isPTO,
+    isSL,
+    isSUSPP,
+    isOFF
   };
 }
 

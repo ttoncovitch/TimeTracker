@@ -1,4 +1,5 @@
 
+// Types for the application
 export interface BreakSession {
   type: 'meal' | 'short' | 'wellness' | 'wc' | 'praying' | 'idle' | 'other' | 'forgot_status' | 'offline' | 'moderating' | 'non_moderating' | 'meeting' | 'training';
   rawStatus?: string;
@@ -47,8 +48,16 @@ export interface EmployeeDayRecord {
 
   inferredShift?: string;
   scheduledShift?: string;
+  lob?: string;
   hasSingleShort30m?: boolean;
   hasMealWithoutShortAnomaly?: boolean;
+  isAbsence?: boolean;
+  isATT?: boolean;
+  isLOA?: boolean;
+  isPTO?: boolean;
+  isSL?: boolean;
+  isSUSPP?: boolean;
+  isOFF?: boolean;
 }
 
 export interface CalendarData {
@@ -59,6 +68,7 @@ export interface CalendarData {
   supervisor?: string;
   shift?: string; // If fixed shift, or schedule per date
   schedule?: Record<string, string>; // date -> shift mapping
+  lobSchedule?: Record<string, string>; // date -> lob mapping
 }
 
 export interface EmployeeSummary {
@@ -74,13 +84,22 @@ export interface EmployeeSummary {
   totalWorkMinutes: number;
   totalBreakMinutes: number;
   totalOverbreakMinutes: number;
+  wcTotalOverbreak?: number;
   totalTardinessMinutes: number;
   totalEarlyLeaveMinutes: number;
   totalNonModMinutes: number;
   totalReviewAndAppealMinutes: number;
   totalAwaitingTasksMinutes: number;
   totalForgotStatusMinutes: number;
+  totalAbsences: number;
   totalShort30MinRecords?: number;
+  isOffboarded?: boolean;
+  isATT?: boolean;
+  isLOA?: boolean;
+  isPTO?: boolean;
+  isSL?: boolean;
+  isSUSPP?: boolean;
+  isOFF?: boolean;
   wcAlerts: number;
   idleAlerts: number;
   wcTotalMinutes?: number;

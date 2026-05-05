@@ -6,6 +6,7 @@ import { AlertCircle, Users, CheckCircle2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useLanguage } from '../contexts/LanguageContext';
 import { format } from 'date-fns';
+import { PaginatedAgentList } from './PaginatedAgentList';
 
 interface StatsDashboardProps {
   summaries: EmployeeSummary[];
@@ -13,41 +14,105 @@ interface StatsDashboardProps {
   periodSummaries?: EmployeeSummary[];
   latestDate?: Date;
   globalTypeFilter: 'all' | 'idle_overbreak_wc';
+  globalTimeFilter?: 'all' | 'month' | 'week' | 'day' | 'yesterday';
   globalIncludeWc: boolean;
   globalIncludeIdle: boolean;
   globalIncludeNonMod: boolean;
   globalIncludeTardiness: boolean;
   globalIncludeEarlyLeave: boolean;
   globalIncludeShort30Min?: boolean;
+  globalIncludeAbsences?: boolean;
+  globalIncludeOffboarded?: boolean;
+  globalIncludeATT?: boolean;
+  globalIncludeLOA?: boolean;
+  globalIncludePTO?: boolean;
+  globalIncludeSL?: boolean;
+  globalIncludeSUSPP?: boolean;
+  globalIncludeOFF?: boolean;
   globalIncludeCheck?: boolean;
   globalFilterMajorOverbreaks: boolean;
   globalShiftFilter?: string[];
   basePeriodCount?: number;
 }
 
-export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], latestDate, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalFilterMajorOverbreaks, globalShiftFilter = [], basePeriodCount }: StatsDashboardProps) {
+export function StatsDashboard({ 
+  summaries, 
+  allSummaries, 
+  periodSummaries = [], 
+  latestDate, 
+  globalTypeFilter, 
+  globalTimeFilter,
+  globalIncludeWc, 
+  globalIncludeIdle, 
+  globalIncludeNonMod, 
+  globalIncludeTardiness, 
+  globalIncludeEarlyLeave, 
+  globalIncludeShort30Min, 
+  globalIncludeAbsences, 
+  globalIncludeOffboarded, 
+  globalIncludeATT,
+  globalIncludeLOA,
+  globalIncludePTO,
+  globalIncludeSL,
+  globalIncludeSUSPP,
+  globalIncludeOFF,
+  globalIncludeCheck, 
+  globalFilterMajorOverbreaks, 
+  globalShiftFilter = [], 
+  basePeriodCount 
+}: StatsDashboardProps) {
   const { t } = useLanguage();
   
-  const isWcOnly = globalIncludeWc && !globalIncludeShort30Min && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && globalTypeFilter === 'all';
-  const isIdleOnly = globalIncludeIdle && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && globalTypeFilter === 'all';
-  const isNonModOnly = globalIncludeNonMod && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && globalTypeFilter === 'all';
-  const isTardinessOnly = globalIncludeTardiness && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeEarlyLeave && !globalIncludeCheck && globalTypeFilter === 'all';
-  const isEarlyLeaveOnly = globalIncludeEarlyLeave && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeCheck && globalTypeFilter === 'all';
-  const isShort30MinOnly = globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && globalTypeFilter === 'all';
-  const isCheckOnly = (globalIncludeCheck && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && globalTypeFilter === 'all') || (globalShiftFilter.length === 1 && globalShiftFilter[0] === 'CHECK');
+  const isWcOnly = globalIncludeWc && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
+  const isIdleOnly = globalIncludeIdle && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
+  const isNonModOnly = globalIncludeNonMod && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
+  const isTardinessOnly = globalIncludeTardiness && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
+  const isEarlyLeaveOnly = globalIncludeEarlyLeave && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
+  const isShort30MinOnly = globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
+  const isAbsencesOnly = globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
+  const isOffboardedOnly = globalIncludeOffboarded && !globalIncludeAbsences && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
+  const isCheckOnly = (globalIncludeCheck && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all') || (globalShiftFilter.length === 1 && globalShiftFilter[0] === 'CHECK');
+
+  const baseNoFilters = !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && globalTypeFilter === 'all';
+  const isATTOnly = globalIncludeATT && baseNoFilters && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF;
+  const isLOAOnly = globalIncludeLOA && baseNoFilters && !globalIncludeATT && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF;
+  const isPTOOnly = globalIncludePTO && baseNoFilters && !globalIncludeATT && !globalIncludeLOA && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF;
+  const isSLOnly = globalIncludeSL && baseNoFilters && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSUSPP && !globalIncludeOFF;
+  const isSUSPPOnly = globalIncludeSUSPP && baseNoFilters && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeOFF;
+  const isOFFOnly = globalIncludeOFF && baseNoFilters && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP;
+
+  const activeExtraStatus = isATTOnly ? 'ATT' : isLOAOnly ? 'LOA' : isPTOOnly ? 'PTO (VAC)' : isSLOnly ? 'SL' : isSUSPPOnly ? 'SUSPP' : isOFFOnly ? 'OFF' : null;
+  const attrKey = isATTOnly ? 'isATT' : isLOAOnly ? 'isLOA' : isPTOOnly ? 'isPTO' : isSLOnly ? 'isSL' : isSUSPPOnly ? 'isSUSPP' : isOFFOnly ? 'isOFF' : null;
 
   const hasCheckFilter = globalShiftFilter.includes('CHECK') || !!globalIncludeCheck;
   const specificShifts = globalShiftFilter.filter(s => s !== 'CHECK');
   const isCheckAndShift = hasCheckFilter && specificShifts.length > 0;
+
+  const filteredPeriodSummaries = useMemo(() => periodSummaries.filter(s => s.dailyRecords.length > 0), [periodSummaries]);
 
   const cleanShift = (shift: string) => {
     const match = shift.match(/\b(\d{2}:\d{2}-\d{2}:\d{2})\b/);
     return match ? match[1] : shift;
   };
 
-  const agentsDoPeriodoCount = isCheckAndShift ? periodSummaries.filter(s => s.dailyRecords.some(r => r.scheduledShift && specificShifts.includes(cleanShift(r.scheduledShift)))).length : 0;
+  const agentsDoPeriodoCount = isCheckAndShift ? filteredPeriodSummaries.filter(s => s.dailyRecords.some(r => r.scheduledShift && specificShifts.includes(cleanShift(r.scheduledShift)))).length : filteredPeriodSummaries.length;
   
-  const agentsNoPeriodoCount = isCheckAndShift ? periodSummaries.filter(s => s.dailyRecords.some(r => r.inferredShift && specificShifts.includes(cleanShift(r.inferredShift)))).length : 0;
+  const agentsNoPeriodoCount = isCheckAndShift ? filteredPeriodSummaries.filter(s => s.dailyRecords.some(r => r.inferredShift && specificShifts.includes(cleanShift(r.inferredShift)))).length : filteredPeriodSummaries.length;
+
+  const totalAbsencesInPeriod = useMemo(() => {
+    return periodSummaries.filter(s => (s.totalAbsences || 0) > 0 && !s.isOffboarded).length;
+  }, [periodSummaries]);
+
+  const totalOffboardedInPeriod = useMemo(() => {
+    return periodSummaries.filter(s => s.isOffboarded).length;
+  }, [periodSummaries]);
+
+  const totalATTInPeriod = useMemo(() => periodSummaries.filter(s => s.isATT).length, [periodSummaries]);
+  const totalLOAInPeriod = useMemo(() => periodSummaries.filter(s => s.isLOA).length, [periodSummaries]);
+  const totalPTOInPeriod = useMemo(() => periodSummaries.filter(s => s.isPTO).length, [periodSummaries]);
+  const totalSLInPeriod = useMemo(() => periodSummaries.filter(s => s.isSL).length, [periodSummaries]);
+  const totalSUSPPInPeriod = useMemo(() => periodSummaries.filter(s => s.isSUSPP).length, [periodSummaries]);
+  const totalOFFInPeriod = useMemo(() => periodSummaries.filter(s => s.isOFF).length, [periodSummaries]);
 
   const agentsDeOutroPeriodoCount = isCheckAndShift ? periodSummaries.filter(s => s.dailyRecords.some(r => r.inferredShift && specificShifts.includes(cleanShift(r.inferredShift)) && r.scheduledShift && !specificShifts.includes(cleanShift(r.scheduledShift)))).length : 0;
 
@@ -96,7 +161,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
         if (isNonModOnlyCalc) {
           dailyOverbreak = nonModDur;
         } else if (isWcOnly) {
-          dailyOverbreak = wcOver;
+          dailyOverbreak = wcDur;
         } else if (isIdleOnly) {
           dailyOverbreak = idleOver;
         } else if (isTardinessOnlyCalc) {
@@ -108,7 +173,6 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
         } else {
           // Combined or Default
           dailyOverbreak = mealOver + shortOver + wellnessOver + prayingOver;
-          if (globalIncludeWc) dailyOverbreak += wcOver;
           if (globalIncludeIdle) dailyOverbreak += idleOver;
           if (globalIncludeTardiness) dailyOverbreak += (r.tardinessMinutes || 0);
         }
@@ -133,6 +197,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
       });
 
       const totalOverbreakMinutes = newRecords.reduce((acc, r) => acc + r.totalOverbreak, 0);
+      const wcTotalMinutes = newRecords.reduce((acc, r) => acc + r.wcDuration, 0);
       const wcAlerts = newRecords.reduce((acc, r) => acc + (r.wcDuration > 10 ? 1 : 0), 0);
       const idleAlerts = newRecords.reduce((acc, r) => acc + (r.idleDuration > 0 ? 1 : 0), 0);
 
@@ -140,6 +205,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
         ...s,
         dailyRecords: newRecords,
         totalOverbreakMinutes,
+        wcTotalMinutes,
         wcAlerts,
         idleAlerts
       };
@@ -148,14 +214,113 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
 
   const filteredSummaries = dashboardSummaries;
 
+  const extData = useMemo(() => {
+     if (!attrKey) return { out: [], soon: [], back: [] };
+     
+     const out: any[] = [];
+     const soon: any[] = [];
+     const back: any[] = [];
+     const refDateStr = format(latestDate || new Date(), 'yyyy-MM-dd');
+
+     const todayStr = format(new Date(), 'yyyy-MM-dd');
+     const isMonthOrAll = globalTimeFilter === 'month' || globalTimeFilter === 'all';
+     
+     filteredSummaries.forEach(s => {
+        const fullEmp = allSummaries.find(emp => emp.employeeName === s.employeeName) || s;
+        
+        // Find all contiguous blocks of the status
+        const sortedAll = [...fullEmp.dailyRecords].sort((a,b) => a.date.localeCompare(b.date));
+        const blocks: {start: string, end: string, returnDate: string}[] = [];
+        
+        let inBlock = false;
+        let blockStart = "";
+        let lastStatusDate = "";
+
+        sortedAll.forEach((r, idx) => {
+            const hasStatus = !!r[attrKey as keyof typeof r];
+            const isOff = r.isOFF;
+
+            if (hasStatus) {
+                if (!inBlock) {
+                    inBlock = true;
+                    blockStart = r.date;
+                }
+                lastStatusDate = r.date;
+            } else if (isOff) {
+                // Stay in block during OFF days
+            } else {
+                if (inBlock) {
+                    blocks.push({ 
+                        start: blockStart, 
+                        end: lastStatusDate, 
+                        returnDate: r.date
+                    });
+                    inBlock = false;
+                }
+            }
+        });
+        if (inBlock) {
+            const nextDay = new Date(lastStatusDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            blocks.push({ 
+                start: blockStart, 
+                end: lastStatusDate, 
+                returnDate: format(nextDay, 'yyyy-MM-dd') 
+            });
+        }
+
+        if (blocks.length === 0) return;
+
+        // Determine which block to show based on today/refDate
+        const currentRef = isMonthOrAll ? todayStr : refDateStr;
+        
+        // 1. Check if currently in a block
+        const activeBlock = blocks.find(b => b.start <= currentRef && b.returnDate > currentRef);
+        if (activeBlock) {
+            out.push({ summary: s, startDate: activeBlock.start, endDate: activeBlock.end, returnDate: activeBlock.returnDate });
+            return;
+        }
+
+        // 2. Check for future block (Soon)
+        const futureBlocks = blocks.filter(b => b.start > currentRef).sort((a,b) => a.start.localeCompare(b.start));
+        if (futureBlocks.length > 0) {
+            const fb = futureBlocks[0];
+            soon.push({ summary: s, startDate: fb.start, endDate: fb.end, returnDate: fb.returnDate });
+            return;
+        }
+
+        // 3. Check for past block (Back)
+        const pastBlocks = blocks.filter(b => b.returnDate <= currentRef).sort((a,b) => b.returnDate.localeCompare(a.returnDate));
+        if (pastBlocks.length > 0) {
+            const pb = pastBlocks[0];
+            back.push({ summary: s, startDate: pb.start, endDate: pb.end, returnDate: pb.returnDate });
+        }
+     });
+
+     out.sort((a, b) => a.startDate.localeCompare(b.startDate));
+     soon.sort((a, b) => a.startDate.localeCompare(b.startDate));
+     back.sort((a, b) => a.returnDate.localeCompare(b.returnDate));
+
+     return { out, soon, back };
+  }, [filteredSummaries, allSummaries, attrKey, latestDate, globalTimeFilter]);
+
+  
   // Use periodSummaries size if it has elements (meaning filters applied)
   // or fall back to allSummaries length
-  const totalEmployees = basePeriodCount !== undefined ? (basePeriodCount > 0 ? basePeriodCount : allSummaries.length) : (periodSummaries.length > 0 ? periodSummaries.length : allSummaries.length); 
+  const totalEmployees = (globalTimeFilter !== 'all' || (basePeriodCount !== undefined && basePeriodCount < allSummaries.length)) ? filteredPeriodSummaries.length : allSummaries.length;
   
   let affectedCount = 0;
   let affectedText = '';
 
-  if (isCheckOnly) {
+  if (activeExtraStatus && extData) {
+      if (globalTimeFilter === 'all' || globalTimeFilter === 'month') {
+          affectedCount = extData.out.length;
+          affectedText = `EM ${activeExtraStatus}`;
+      } else {
+          affectedCount = extData.out.length + extData.soon.length + extData.back.length;
+          affectedText = `EM ${activeExtraStatus}`;
+      }
+  } else if (isCheckOnly) {
       affectedCount = filteredSummaries.length;
       affectedText = "Fora do Horário Programado";
   } else if (isNonModOnly) {
@@ -176,6 +341,12 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
   } else if (isEarlyLeaveOnly) {
       affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0)).length;
       affectedText = "Pausaram Cedo (Early Leave)";
+  } else if (isAbsencesOnly) {
+      affectedCount = filteredPeriodSummaries.filter(s => (s.totalAbsences || 0) > 0).length;
+      affectedText = "Com Faltas no Período";
+  } else if (isOffboardedOnly) {
+      affectedCount = filteredSummaries.filter(s => s.isOffboarded).length;
+      affectedText = "Offboarded (Saíram)";
   } else if (globalTypeFilter === 'idle_overbreak_wc') {
       affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || (globalIncludeWc && s.wcAlerts > 0) || (globalIncludeIdle && s.idleAlerts > 0) || (globalIncludeTardiness && s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0)) || (globalIncludeEarlyLeave && s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0))).length;
       affectedText = "COM OVERBREAK";
@@ -341,8 +512,14 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
     .slice(0, 10);
 
   const agentsByOverbreakDuration = [...filteredSummaries]
-    .filter(s => s.totalOverbreakMinutes > 0)
-    .sort((a, b) => b.totalOverbreakMinutes - a.totalOverbreakMinutes)
+    .filter(s => {
+      if (globalIncludeWc && globalTypeFilter === 'all') return (s.wcTotalOverbreak || 0) > 0;
+      return s.totalOverbreakMinutes > 0;
+    })
+    .sort((a, b) => {
+      if (globalIncludeWc && globalTypeFilter === 'all') return (b.wcTotalOverbreak || 0) - (a.wcTotalOverbreak || 0);
+      return b.totalOverbreakMinutes - a.totalOverbreakMinutes;
+    })
     .slice(0, 10);
 
   const topReviewAndAppeal = [...filteredSummaries]
@@ -379,13 +556,14 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
   // Top WC
   const topWc = [...filteredSummaries]
     .map(s => {
+      const totalWcDur = s.wcTotalMinutes || 0;
       const totalWcOver = s.dailyRecords.reduce((acc, r) => acc + r.wcOverbreak, 0);
-      return { ...s, totalWcOver };
+      return { ...s, totalWcOver, totalWcDur };
     })
-    .filter(s => s.wcAlerts > 0 || s.totalWcOver > 0)
-    .sort((a, b) => b.totalWcOver - a.totalWcOver || b.wcAlerts - a.wcAlerts)
+    .filter(s => s.totalWcDur > 0 || s.wcAlerts > 0)
+    .sort((a, b) => b.totalWcDur - a.totalWcDur || b.wcAlerts - a.wcAlerts)
     .slice(0, 10);
-    
+
   // Top Short 30Min
   const topShort30Min = [...filteredSummaries]
     .filter(s => (s.totalShort30MinRecords || 0) > 0)
@@ -430,7 +608,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
     return {
       name: s.employeeName,
       overbreak: s.totalOverbreakMinutes,
-      formattedOverbreak: s.totalOverbreakMinutes > 0 ? `${Math.floor(s.totalOverbreakMinutes / 60)}h ${s.totalOverbreakMinutes % 60}m` : '',
+      formattedOverbreak: s.totalOverbreakMinutes > 0 ? `${Math.floor(s.totalOverbreakMinutes / 60)}h ${Math.round(s.totalOverbreakMinutes % 60)}m` : '',
       hours: Math.floor(s.totalOverbreakMinutes / 60),
       minutes: s.totalOverbreakMinutes % 60,
       breakdown: { mealOver, shortOver, wellnessOver, prayingOver, wcOver, idleOver, mealDur, shortDur, wellnessDur, prayingDur, wcDur }
@@ -485,8 +663,20 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
     const prayingDur = summary.dailyRecords.reduce((acc, r) => acc + r.prayingDuration, 0);
     const wcDur = summary.dailyRecords.reduce((acc, r) => acc + r.wcDuration, 0);
 
+    const [tooltipPos, setTooltipPos] = useState<'left' | 'right' | 'center'>('center');
+    const handleMouseEnter = (e: React.MouseEvent) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        if (rect.right > window.innerWidth - 250) {
+            setTooltipPos('left');
+        } else if (rect.left < 250) {
+            setTooltipPos('right');
+        } else {
+            setTooltipPos('center');
+        }
+    };
+
     return (
-      <div className="flex items-center justify-between p-3.5 hover:bg-slate-50 transition-colors relative group">
+      <div onMouseEnter={handleMouseEnter} className="flex items-center justify-between p-3.5 hover:bg-slate-50 transition-colors relative group">
         <div className="flex items-center gap-3 w-full">
           <span className={`flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-black shrink-0 ${rank === 1 ? `${colorClass.replace('text-', 'bg-').replace('-700', '-500')} text-white shadow-md` : `${colorClass.replace('text-', 'bg-').replace('-700', '-100')} ${colorClass}`}`}>{rank}</span>
           <div className="min-w-0 pr-4 cursor-help flex flex-col">
@@ -500,7 +690,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
             <p className="text-[10px] text-slate-400 truncate mt-0.5">
               {isNonModOnly ? (
                 <>
-                  Total: {Math.floor(summary.totalOverbreakMinutes / 60)}h {summary.totalOverbreakMinutes % 60}m | Média/Dia: {Math.floor((summary.totalOverbreakMinutes / summary.dailyRecords.length) / 60)}h {Math.round((summary.totalOverbreakMinutes / summary.dailyRecords.length) % 60)}m
+                  Total: {Math.floor(summary.totalOverbreakMinutes / 60)}h {Math.round(summary.totalOverbreakMinutes % 60)}m | Média/Dia: {Math.floor((summary.totalOverbreakMinutes / summary.dailyRecords.length) / 60)}h {Math.round((summary.totalOverbreakMinutes / summary.dailyRecords.length) % 60)}m
                 </>
               ) : (
                 <>{metricValue} {metricLabel}</>
@@ -511,18 +701,60 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
 
         {/* Tooltip Hover */}
         {!hideTooltip && (
-        <div className="absolute left-[80%] bottom-full mb-2 z-[100] hidden group-hover:block w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-4 text-white animate-in fade-in zoom-in-95 duration-200">
-          <p className="font-black text-sm border-b border-slate-700 pb-2 mb-2">{summary.employeeName}</p>
-          <div className="space-y-1.5 text-[10px]">
-             <div className="flex justify-between"><span>Meal:</span> <span className={mealOver > 0 ? "text-rose-400 font-bold" : "text-emerald-400"}>{mealOver > 0 ? `+${mealOver}m` : (mealDur > 0 ? `OK (${mealDur}m)` : `OK`)}</span></div>
-             <div className="flex justify-between"><span>Short:</span> <span className={shortOver > 0 ? "text-rose-400 font-bold" : "text-emerald-400"}>{shortOver > 0 ? `+${shortOver}m` : (shortDur > 0 ? `OK (${shortDur}m)` : `OK`)}</span></div>
-             <div className="flex justify-between"><span>Wellness:</span> <span className={wellnessOver > 0 ? "text-rose-400 font-bold" : "text-emerald-400"}>{wellnessOver > 0 ? `+${wellnessOver}m` : (wellnessDur > 0 ? `OK (${wellnessDur}m)` : `OK`)}</span></div>
-             <div className="flex justify-between"><span>Praying:</span> <span className={prayingOver > 0 ? "text-rose-400 font-bold" : "text-emerald-400"}>{prayingOver > 0 ? `+${prayingOver}m` : (prayingDur > 0 ? `OK (${prayingDur}m)` : `OK`)}</span></div>
-             <div className="flex justify-between"><span>Organic:</span> <span className={wcOver > 0 ? "text-amber-400 font-bold" : "text-emerald-400"}>{wcOver > 0 ? `+${wcOver}m` : (wcDur > 0 ? `OK (${wcDur}m)` : `OK`)}</span></div>
-             <div className="flex justify-between"><span>Idle:</span> <span className={idleOver > 0 ? "text-red-400 font-bold" : "text-emerald-400"}>{idleOver > 0 ? `+${idleOver}m` : `OK`}</span></div>
-             <div className="mt-2 pt-2 border-t border-slate-700/50 flex justify-between font-bold text-rose-400">
-                <span>Total Overbreak:</span>
-                <span>{summary.totalOverbreakMinutes}m</span>
+        <div className={`absolute bottom-[110%] z-[100] hidden group-hover:block w-64 bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl p-5 text-white animate-in fade-in zoom-in-95 duration-200 ${tooltipPos === 'left' ? 'right-0' : tooltipPos === 'right' ? 'left-0' : 'left-1/2 -translate-x-1/2'}`}>
+          <p className="font-black text-base border-b border-slate-700/50 pb-3 mb-3 text-white tracking-tight">{summary.employeeName}</p>
+          <div className="space-y-2.5 text-xs">
+             <div className="flex justify-between items-center text-slate-300 font-bold">
+               <span>Meal:</span> 
+               <span className={mealOver > 0 ? "text-rose-400 font-black" : "text-emerald-400 font-black"}>
+                 {mealOver > 0 ? `+${mealOver}m` : (mealDur > 0 ? `OK (${mealDur}m)` : `OK`)}
+               </span>
+             </div>
+             <div className="flex justify-between items-center text-slate-300 font-bold">
+               <span>Short:</span> 
+               <span className={shortOver > 0 ? "text-rose-400 font-black" : "text-emerald-400 font-black"}>
+                 {shortOver > 0 ? `+${shortOver}m` : (shortDur > 0 ? `OK (${shortDur}m)` : `OK`)}
+               </span>
+             </div>
+             <div className="flex justify-between items-center text-slate-300 font-bold">
+               <span>Wellness:</span> 
+               <span className={wellnessOver > 0 ? "text-rose-400 font-black" : "text-emerald-400 font-black"}>
+                 {wellnessOver > 0 ? `+${wellnessOver}m` : (wellnessDur > 0 ? `OK (${wellnessDur}m)` : `OK`)}
+               </span>
+             </div>
+             <div className="flex justify-between items-center text-slate-300 font-bold">
+               <span>Praying:</span> 
+               <span className={prayingOver > 0 ? "text-rose-400 font-black" : "text-emerald-400 font-black"}>
+                 {prayingOver > 0 ? `+${prayingOver}m` : (prayingDur > 0 ? `OK (${prayingDur}m)` : `OK`)}
+               </span>
+             </div>
+             <div className="flex justify-between items-center text-slate-300 font-bold">
+               <span>Organic:</span> 
+               <span className={wcOver > 0 ? "text-amber-400 font-black" : "text-emerald-400 font-black"}>
+                 {wcOver > 0 ? `+${wcOver}m` : (wcDur > 0 ? `OK (${wcDur}m)` : `OK`)}
+               </span>
+             </div>
+             <div className="flex justify-between items-center text-slate-300 font-bold">
+               <span>Idle:</span> 
+               <span className={idleOver > 0 ? "text-red-400 font-black" : "text-emerald-400 font-black"}>
+                 {idleOver > 0 ? `+${idleOver}m` : `OK`}
+               </span>
+             </div>
+             <div className="flex justify-between items-center text-slate-300 font-bold">
+               <span>Status:</span> 
+               <span className={summary.isOffboarded ? "text-slate-400 font-black" : "text-emerald-400 font-black"}>
+                 {summary.isOffboarded ? "OFFBOARDED" : "ACTIVE"}
+               </span>
+             </div>
+             <div className="flex justify-between items-center text-slate-300 font-bold">
+               <span>Faltas:</span> 
+               <span className={(summary.totalAbsences || 0) > 0 ? "text-red-500 font-black" : "text-emerald-400 font-black"}>
+                 {summary.totalAbsences || 0}
+               </span>
+             </div>
+             <div className="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center font-black">
+                <span className="text-rose-400/80 text-[10px] uppercase tracking-wider">Total Overbreak:</span>
+                <span className="text-rose-400 text-lg">{summary.totalOverbreakMinutes}m</span>
              </div>
           </div>
         </div>
@@ -564,14 +796,74 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                   </>
                 ) : (
                   <>
-                  <div className="pr-2">
+                  <div className="pr-6">
                     <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">Agentes no Período</p>
-                    <div className="flex items-baseline gap-1.5">
-                       <p className="text-3xl font-black text-slate-900 tracking-tight">{totalEmployees}</p>
-                       <span className="text-xs font-bold text-slate-400 tracking-wide uppercase">Total</span>
+                    <div className="flex items-center gap-6 divide-x divide-slate-200">
+                      <div className="flex items-baseline gap-1.5">
+                         <p className="text-3xl font-black text-slate-900 tracking-tight">{totalEmployees}</p>
+                         <span className="text-xs font-bold text-slate-400 tracking-wide uppercase">Total</span>
+                      </div>
+                      
+                      {(globalTimeFilter === 'all' || globalTimeFilter === 'month') && activeExtraStatus && (
+                         <div className="pl-6 flex flex-col">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-0.5">Que tiveram {activeExtraStatus.split(' (')[0]}</p>
+                            <p className="text-xl font-black text-emerald-700 tracking-tight leading-none">{extData.back.length}</p>
+                         </div>
+                      )}
+
+                      {(globalShiftFilter.length === 0 || isAbsencesOnly || globalIncludeAbsences) && !activeExtraStatus && (
+                        <div className="pl-6 flex flex-col">
+                           <p className="text-[9px] font-black uppercase tracking-widest text-red-500 mb-0.5">Faltas</p>
+                           <p className="text-xl font-black text-red-600 tracking-tight leading-none">{totalAbsencesInPeriod}</p>
+                        </div>
+                      )}
+
+                      {(isOffboardedOnly || globalIncludeOffboarded) && !activeExtraStatus && (
+                        <div className="pl-6 flex flex-col">
+                           <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-0.5">Offboarded</p>
+                           <p className="text-xl font-black text-slate-700 tracking-tight leading-none">{totalOffboardedInPeriod}</p>
+                        </div>
+                      )}
+
+                      {(globalIncludeATT) && !activeExtraStatus && (
+                        <div className="pl-6 flex flex-col border-l border-slate-200">
+                           <p className="text-[9px] font-black uppercase tracking-widest text-slate-800 mb-0.5">ATT</p>
+                           <p className="text-xl font-black text-slate-900 tracking-tight leading-none">{totalATTInPeriod}</p>
+                        </div>
+                      )}
+                      {(globalIncludeLOA) && !activeExtraStatus && (
+                        <div className="pl-6 flex flex-col border-l border-slate-200">
+                           <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500 mb-0.5">LOA</p>
+                           <p className="text-xl font-black text-indigo-600 tracking-tight leading-none">{totalLOAInPeriod}</p>
+                        </div>
+                      )}
+                      {(globalIncludePTO) && !activeExtraStatus && (
+                        <div className="pl-6 flex flex-col border-l border-slate-200">
+                           <p className="text-[9px] font-black uppercase tracking-widest text-cyan-500 mb-0.5">PTO</p>
+                           <p className="text-xl font-black text-cyan-600 tracking-tight leading-none">{totalPTOInPeriod}</p>
+                        </div>
+                      )}
+                      {(globalIncludeSL) && !activeExtraStatus && (
+                        <div className="pl-6 flex flex-col border-l border-slate-200">
+                           <p className="text-[9px] font-black uppercase tracking-widest text-rose-400 mb-0.5">SL</p>
+                           <p className="text-xl font-black text-rose-500 tracking-tight leading-none">{totalSLInPeriod}</p>
+                        </div>
+                      )}
+                      {(globalIncludeSUSPP) && !activeExtraStatus && (
+                        <div className="pl-6 flex flex-col border-l border-slate-200">
+                           <p className="text-[9px] font-black uppercase tracking-widest text-red-700 mb-0.5">SUSPP</p>
+                           <p className="text-xl font-black text-red-800 tracking-tight leading-none">{totalSUSPPInPeriod}</p>
+                        </div>
+                      )}
+                      {(globalIncludeOFF) && !activeExtraStatus && (
+                        <div className="pl-6 flex flex-col border-l border-slate-200">
+                           <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-0.5">OFF</p>
+                           <p className="text-xl font-black text-slate-600 tracking-tight leading-none">{totalOFFInPeriod}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div className="pl-6 flex-1 min-w-max">
+                  <div className="pl-6 flex-1 min-w-max border-l border-slate-200">
                     <p className={`text-[11px] font-black uppercase tracking-widest mb-1 truncate ${isNonModOnly ? 'text-amber-500' : (affectedCount > 0 ? 'text-rose-500' : 'text-emerald-500')}`}>{affectedText}</p>
                     <div className="flex items-baseline gap-1.5">
                        <p className={`text-3xl font-black tracking-tight ${isNonModOnly ? 'text-amber-600' : (affectedCount > 0 ? 'text-rose-600' : 'text-emerald-600')}`}>{affectedCount}</p>
@@ -585,7 +877,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
               </div>
               <div className="pl-6 flex-1 hidden xl:flex flex-col gap-2">
                  {/* Most Minutes */}
-                 {!isCheckOnly && (
+                 {(!isCheckOnly && !activeExtraStatus) && (
                  <div className="flex flex-col">
                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title="Shift com mais tempo neste filtro">Shift com mais minutos</p>
                    <div className="flex items-center gap-1.5">
@@ -599,6 +891,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                  </div>
                  )}
                  {/* Most Occurrences */}
+                 {!activeExtraStatus && (
                  <div className="flex flex-col">
                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title="Shift com mais ocorrências neste filtro">{isCheckOnly ? 'Shift com mais ocorrências (Agentes)' : 'Shift com mais ocorrências'}</p>
                    <div className="flex items-center gap-1.5">
@@ -606,6 +899,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                      <span className="text-[11px] font-bold text-amber-500">{shiftStats.mostOccurrences.occurrences}x</span>
                    </div>
                  </div>
+                 )}
               </div>
             </div>
           </CardContent>
@@ -623,14 +917,17 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
          
          const topGridClass = topCardsCount === 3 ? "md:grid-cols-3" : topCardsCount === 2 ? "md:grid-cols-2" : "md:grid-cols-1";
 
-         const showTopPerformers = !isIdleOnly && !isTardinessOnly && !isCheckOnly && !isShort30MinOnly && !isNonModOnly;
-         const isShort30MinApplicable = !isIdleOnly && !isTardinessOnly && !isCheckOnly && !isNonModOnly && !isWcOnly && !isEarlyLeaveOnly && !isShort30MinOnly;
-         const botPanesCount = isNonModOnly ? 4 : 1 + (isWcApplicable && !isTardinessOnly ? 1 : 0) + (showTopPerformers ? 1 : 0) + (isShort30MinApplicable ? 1 : 0);
-         const paneSpan = botPanesCount === 4 ? 'lg:col-span-3' : botPanesCount === 3 ? 'lg:col-span-4' : botPanesCount === 2 ? 'lg:col-span-6' : 'lg:col-span-12';
+         const showTopPerformers = !isIdleOnly && !isTardinessOnly && !isCheckOnly && !isShort30MinOnly && !isNonModOnly && !isAbsencesOnly && !isOffboardedOnly;
+         const isShort30MinApplicable = !isIdleOnly && !isTardinessOnly && !isCheckOnly && !isNonModOnly && !isWcOnly && !isEarlyLeaveOnly && !isShort30MinOnly && !isAbsencesOnly && !isOffboardedOnly;
+         const showBottom10 = !isNonModOnly && !isAbsencesOnly && !isOffboardedOnly;
+         const showTopWcCard = isWcApplicable && !isTardinessOnly && !isWcOnly;
+         const botPanesCount = (showBottom10 ? 1 : 0) + (showTopWcCard ? 1 : 0) + (showTopPerformers ? 1 : 0) + (isShort30MinApplicable ? 1 : 0) + (isNonModOnly ? 4 : 0);
+         const paneSpan = botPanesCount >= 4 ? 'lg:col-span-3' : botPanesCount === 3 ? 'lg:col-span-4' : botPanesCount === 2 ? 'lg:col-span-6' : 'lg:col-span-12';
 
          return (
             <>
-              <div className={`grid grid-cols-1 ${topGridClass} gap-6 mb-8`}>
+              {!activeExtraStatus && (
+               <div className={`grid grid-cols-1 ${topGridClass} gap-6 mb-8`}>
                 <Card className="rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                   <CardContent className="p-5">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
@@ -683,7 +980,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                                <p className="text-[9px] font-black uppercase text-slate-400 leading-tight mb-0.5">Média sem Top 5</p>
                                <p className="text-sm font-bold text-slate-600 tracking-tight leading-none">
                                  {averageWithoutTop5 > 59 ? (
-                                   `${Math.floor(averageWithoutTop5 / 60)}h ${averageWithoutTop5 % 60}m`
+                                   `${Math.floor(averageWithoutTop5 / 60)}h ${Math.round(averageWithoutTop5 % 60)}m`
                                  ) : (
                                    <>{averageWithoutTop5} <span className="text-[10px] font-bold text-slate-400">min</span></>
                                  )}
@@ -703,7 +1000,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                       <div className="flex items-baseline gap-2">
                         <p className="text-2xl font-black text-amber-600">
                           {totalWcMinutes > 59 ? (
-                            <>{Math.floor(totalWcMinutes / 60)}<span className="text-xs mr-1">h</span>{totalWcMinutes % 60}<span className="text-[14px] ml-2 text-amber-600/70">({totalWcMinutes}m)</span></>
+                            <>{Math.floor(totalWcMinutes / 60)}<span className="text-xs mr-1">h</span>{Math.round(totalWcMinutes % 60)}<span className="text-[14px] ml-2 text-amber-600/70">({Math.round(totalWcMinutes)}m)</span></>
                           ) : (
                             <>{totalWcMinutes}<span className="text-xs">m</span></>
                           )}
@@ -721,7 +1018,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                       <div className="flex items-baseline gap-2">
                         <p className="text-2xl font-black text-rose-600">
                           {totalIdleMinutes > 59 ? (
-                            <>{Math.floor(totalIdleMinutes / 60)}<span className="text-xs mr-1">h</span>{totalIdleMinutes % 60}<span className="text-[14px] ml-2 text-rose-600/70">({totalIdleMinutes}m)</span></>
+                            <>{Math.floor(totalIdleMinutes / 60)}<span className="text-xs mr-1">h</span>{Math.round(totalIdleMinutes % 60)}<span className="text-[14px] ml-2 text-rose-600/70">({Math.round(totalIdleMinutes)}m)</span></>
                           ) : (
                             <>{totalIdleMinutes}<span className="text-xs">m</span></>
                           )}
@@ -739,7 +1036,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                       <div className="flex items-baseline gap-2">
                         <p className="text-2xl font-black text-rose-600">
                            {totalOverbreak > 59 ? (
-                             <>{Math.floor(totalOverbreak / 60)}<span className="text-sm mr-1">h</span> {totalOverbreak % 60}<span className="text-xs">m</span><span className="text-[14px] ml-2 text-rose-600/70">({totalOverbreak}m)</span></>
+                             <>{Math.floor(totalOverbreak / 60)}<span className="text-sm mr-1">h</span> {Math.round(totalOverbreak % 60)}<span className="text-xs">m</span><span className="text-[14px] ml-2 text-rose-600/70">({Math.round(totalOverbreak)}m)</span></>
                            ) : (
                              <>{totalOverbreak}<span className="text-sm">m</span></>
                            )}
@@ -749,21 +1046,26 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                   </Card>
                 )}
               </div>
+              )}
               
+              {!activeExtraStatus && botPanesCount > 0 && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
+                {showBottom10 && (
                 <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
-                  <CardHeader className={`${isCheckOnly ? 'bg-amber-50/50 border-amber-100/50' : isNonModOnly || isShort30MinOnly ? 'bg-emerald-50/50 border-emerald-100/50' : 'bg-rose-50/50 border-rose-100/50'} border-b py-4 shrink-0 rounded-t-2xl`}>
-                    <CardTitle className={`text-sm font-black uppercase tracking-widest ${isCheckOnly ? 'text-amber-800' : isNonModOnly || isShort30MinOnly ? 'text-emerald-800' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-800' : 'text-rose-800'} flex items-center gap-2`}>
-                      <AlertCircle size={16} /> {isCheckOnly ? "AGENTES COM MAIS TURNOS UNSCHEDULED" : isNonModOnly ? "BOTTOM 10" : isShort30MinOnly ? "TOP 10" : isIdleOnly ? "Tempo em Idle" : isTardinessOnly ? "TOP 10 ATRASADOS" : isEarlyLeaveOnly ? "TOP 10 EARLY LEAVE" : "Tempo de Overbreaks"}
+                  <CardHeader className={`${isCheckOnly ? 'bg-amber-50/50 border-amber-100/50' : isWcOnly ? 'bg-amber-50/50 border-amber-100/50' : isNonModOnly || isShort30MinOnly ? 'bg-emerald-50/50 border-emerald-100/50' : 'bg-rose-50/50 border-rose-100/50'} border-b py-4 shrink-0 rounded-t-2xl`}>
+                    <CardTitle className={`text-sm font-black uppercase tracking-widest ${isCheckOnly ? 'text-amber-800' : isWcOnly ? 'text-amber-800' : isNonModOnly || isShort30MinOnly ? 'text-emerald-800' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-800' : 'text-rose-800'} flex items-center gap-2`}>
+                      <AlertCircle size={16} /> {isCheckOnly ? "AGENTES COM MAIS TURNOS UNSCHEDULED" : isWcOnly ? "TOP 10 ORGANIC" : isNonModOnly ? "BOTTOM 10" : isShort30MinOnly ? "TOP 10" : isIdleOnly ? "Tempo em Idle" : isTardinessOnly ? "TOP 10 ATRASADOS" : isEarlyLeaveOnly ? "TOP 10 EARLY LEAVE" : "Tempo de Overbreaks"}
                     </CardTitle>
-                    <CardDescription className={`text-xs ${isCheckOnly ? 'text-amber-600/80' : isNonModOnly || isShort30MinOnly ? 'text-emerald-600/80' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-600/80' : 'text-rose-600/80'} mt-1`}>
+                    <CardDescription className={`text-xs ${isCheckOnly ? 'text-amber-600/80' : isWcOnly ? 'text-amber-600/80' : isNonModOnly || isShort30MinOnly ? 'text-emerald-600/80' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-600/80' : 'text-rose-600/80'} mt-1`}>
                       {isCheckOnly 
                          ? `Mais dias trabalhados fora do horário`
+                         : isWcOnly
+                         ? `Maior tempo total em Organic`
                          : isNonModOnly 
                          ? `Menos tempo em Non-Moderating`
                          : isShort30MinOnly ? "Agentes com apenas 1 break diário" : isIdleOnly ? "Mais tempo total em idle" : isTardinessOnly ? "Mais tempo de atrasos na jornada" : isEarlyLeaveOnly ? "Mais tempo de early leave na jornada" : "Mais tempo total de overbreak"}
                     </CardDescription>
-                  </CardHeader>
+                   </CardHeader>
                   <CardContent className="p-0 flex-1">
                     <div className="divide-y divide-slate-50">
                       {isCheckOnly ? (
@@ -779,7 +1081,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                             />
                          ))
                       ) : isShort30MinOnly ? (
-                         topShort30Min.slice(0, 10).map((s, i) => (
+                         topShort30Min.map((s, i) => (
                             <AgentLine 
                                key={`${s.employeeName}-${i}`} 
                                summary={s} 
@@ -795,37 +1097,49 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                                key={`${s.employeeName}-${i}`} 
                                summary={s} 
                                rank={i+1} 
-                               metricValue={`${Math.floor(s.totalOverbreakMinutes / 60)}h ${s.totalOverbreakMinutes % 60}m`} 
-                               metricLabel="tempo" 
+                               metricValue={`${Math.round(s.totalOverbreakMinutes)}m`} 
+                               metricLabel="total" 
                                colorClass="text-emerald-700"
                             />
                          ))
+                      ) : isWcOnly ? (
+                         topWc.map((s, i) => (
+                            <AgentLine 
+                               key={`${s.employeeName}-${i}`} 
+                               summary={s} 
+                               rank={i+1} 
+                               metricValue={`${Math.round(s.totalWcDur)}m`} 
+                               metricLabel="total" 
+                               colorClass="text-amber-700"
+                            />
+                         ))
                       ) : (
-                        agentsByOverbreakDuration.map((s, i) => (
-                           <AgentLine 
-                              key={`${s.employeeName}-${i}`} 
-                              summary={s} 
-                              rank={i+1} 
-                              metricValue={`${Math.floor(s.totalOverbreakMinutes / 60)}h ${s.totalOverbreakMinutes % 60}m`} 
-                              metricLabel={isTardinessOnly ? "atraso" : isEarlyLeaveOnly ? "early leave" : "excedidos"} 
-                              colorClass={isTardinessOnly || isEarlyLeaveOnly ? "text-orange-700" : "text-rose-700"}
-                           />
-                        ))
+                         agentsByOverbreakDuration.map((s, i) => (
+                            <AgentLine 
+                               key={`${s.employeeName}-${i}`} 
+                               summary={s} 
+                               rank={i+1} 
+                               metricValue={isTardinessOnly ? `${Math.round(s.totalTardinessMinutes)}m` : isEarlyLeaveOnly ? `${Math.round(s.totalEarlyLeaveMinutes)}m` : `${Math.round(s.totalOverbreakMinutes)}m`} 
+                               metricLabel={isTardinessOnly ? "atraso" : isEarlyLeaveOnly ? "early leave" : "excedidos"} 
+                               colorClass={isTardinessOnly || isEarlyLeaveOnly ? "text-orange-700" : "text-rose-700"}
+                            />
+                         ))
                       )}
-                      {((isCheckOnly ? topCheck.length : isNonModOnly ? agentsBottom5Special.length : agentsByOverbreakDuration.length) === 0) && (
+                      {(isCheckOnly ? topCheck : isShort30MinOnly ? topShort30Min : isNonModOnly ? agentsBottom5Special : isWcOnly ? topWc : agentsByOverbreakDuration).length === 0 && (
                         <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
                       )}
                     </div>
                   </CardContent>
                 </Card>
+                )}
 
-                {isWcApplicable && (
+                {showTopWcCard && (
                   <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                     <CardHeader className="bg-amber-50/50 border-b border-amber-100/50 py-4 shrink-0 rounded-t-2xl">
                       <CardTitle className="text-sm font-black uppercase tracking-widest text-amber-800 flex items-center gap-2">
                         <AlertCircle size={16} /> TOP 10 ORGANIC
                       </CardTitle>
-                      <CardDescription className="text-xs text-amber-600/80 mt-1">{t('topWcDesc')}</CardDescription>
+                      <CardDescription className="text-xs text-amber-600/80 mt-1">Colaboradores com maior tempo/alertas em Organic</CardDescription>
                     </CardHeader>
                     <CardContent className="p-0 flex-1">
                       <div className="divide-y divide-slate-50">
@@ -834,8 +1148,8 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                               key={`${s.employeeName}-${i}`} 
                               summary={s} 
                               rank={i+1} 
-                              metricValue={`${s.totalWcOver}m`} 
-                              metricLabel="excedidos" 
+                              metricValue={`${Math.round(s.totalWcDur)}m`} 
+                              metricLabel="total" 
                               colorClass="text-amber-700"
                            />
                         ))}
@@ -923,7 +1237,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                               key={`${s.employeeName}-${i}`} 
                               summary={s} 
                               rank={i+1} 
-                              metricValue={`${Math.floor(s.totalForgotStatusMinutes / 60)}h ${s.totalForgotStatusMinutes % 60}m`} 
+                              metricValue={`${Math.floor(s.totalForgotStatusMinutes / 60)}h ${Math.round(s.totalForgotStatusMinutes % 60)}m`} 
                               metricLabel="tempo" 
                               colorClass="text-slate-700"
                               hideTooltip={true}
@@ -1019,13 +1333,202 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                   </>
                 )}
               </div>
+              )}
             </>
          );
       })()}
+      
+      {activeExtraStatus ? (() => {
+        const isPTO = activeExtraStatus === 'PTO (VAC)';
+        const hideBackAgents = globalTimeFilter === 'week' || globalTimeFilter === 'yesterday' || globalTimeFilter === 'day';
+        const showVoltando = periodSummaries.length > 0 && !hideBackAgents;
+        const showPTOBack = isPTO && !hideBackAgents;
+        
+        let cols = 1;
+        if (isPTO) cols = showPTOBack ? 3 : 2;
+        else if (showVoltando) cols = 2;
 
+        const colClass = cols === 3 ? "lg:col-span-4" : cols === 2 ? "lg:col-span-6" : "lg:col-span-12";
+
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
+             {(() => {
+                const isMonthOrAll = globalTimeFilter === 'all' || globalTimeFilter === 'month';
+                if (isMonthOrAll) {
+                   const todayStr = format(new Date(), 'yyyy-MM-dd');
+                   const hasBack = extData.out.some((d:any) => d.returnDate > todayStr) || extData.soon.some((d:any) => d.returnDate > todayStr);
+                   const cols = hasBack ? 3 : 2;
+                   const cl = cols === 3 ? "lg:col-span-4" : "lg:col-span-6";
+                   
+                   return (
+                     <>
+                        <Card className={`${cl} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
+                         <CardHeader className="bg-slate-50/50 border-b border-slate-200 py-4 shrink-0 rounded-t-2xl">
+                           <CardTitle className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2">
+                             <AlertCircle size={16} /> Agentes que tiveram {activeExtraStatus.split(' (')[0]}
+                           </CardTitle>
+                           <CardDescription className="text-xs text-slate-600/80 mt-1">Agentes que já voltaram</CardDescription>
+                         </CardHeader>
+                         <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+                           <div className="flex-1 overflow-hidden h-[600px] custom-scrollbar">
+                              <PaginatedAgentList items={extData.back} renderItem={(d, i) => (
+                                <AgentLine 
+                                   key={`${d.summary.employeeName}-${i}`} 
+                                   summary={d.summary} 
+                                   rank={i+1} 
+                                   metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
+                                   metricLabel=""
+                                   colorClass="text-slate-700"
+                                   hideTooltip={true}
+                                />
+                              )} />
+                           </div>
+                         </CardContent>
+                       </Card>
+
+                       <Card className={`${cl} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
+                         <CardHeader className="bg-rose-50/50 border-b border-rose-100 py-4 shrink-0 rounded-t-2xl">
+                           <CardTitle className="text-sm font-black uppercase tracking-widest text-rose-800 flex items-center gap-2">
+                             <AlertCircle size={16} /> AGENTES EM {activeExtraStatus}
+                           </CardTitle>
+                           <CardDescription className="text-xs text-rose-600/80 mt-1">Agentes que ainda estão no status</CardDescription>
+                         </CardHeader>
+                         <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+                           <div className="flex-1 overflow-hidden h-[600px] custom-scrollbar">
+                              <PaginatedAgentList items={extData.out} renderItem={(d, i) => (
+                                <AgentLine 
+                                   key={`${d.summary.employeeName}-${i}`} 
+                                   summary={d.summary} 
+                                   rank={i+1} 
+                                   metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
+                                   metricLabel=""
+                                   colorClass="text-rose-700"
+                                   hideTooltip={true}
+                                />
+                              )} />
+                           </div>
+                         </CardContent>
+                       </Card>
+
+                       {hasBack && (
+                       <Card className={`${cl} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
+                         <CardHeader className="bg-emerald-50/50 border-b border-emerald-100 py-4 shrink-0 rounded-t-2xl">
+                           <CardTitle className="text-sm font-black uppercase tracking-widest text-emerald-800 flex items-center gap-2">
+                             <AlertCircle size={16} /> Agentes {isPTO ? 'Back' : 'Back'}
+                           </CardTitle>
+                           <CardDescription className="text-xs text-emerald-600/80 mt-1">Agentes que voltam no futuro</CardDescription>
+                         </CardHeader>
+                         <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+                           <div className="flex-1 overflow-hidden h-[600px] custom-scrollbar">
+                              <PaginatedAgentList items={[...extData.out, ...extData.soon].filter((d:any) => d.returnDate > todayStr).sort((a:any, b:any) => a.returnDate.localeCompare(b.returnDate))} renderItem={(d:any, i:any) => (
+                                <AgentLine 
+                                   key={`${d.summary.employeeName}-${i}`} 
+                                   summary={d.summary} 
+                                   rank={i+1} 
+                                   metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
+                                   metricLabel="" 
+                                   colorClass="text-emerald-700"
+                                   hideTooltip={true}
+                                />
+                              )} />
+                           </div>
+                         </CardContent>
+                       </Card>
+                       )}
+                     </>
+                   );
+                } 
+
+                return (
+                  <>
+                    <Card className={`${colClass} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
+                        <CardHeader className="bg-rose-50/50 border-b border-rose-100 py-4 shrink-0 rounded-t-2xl">
+                          <CardTitle className="text-sm font-black uppercase tracking-widest text-rose-800 flex items-center gap-2">
+                            <AlertCircle size={16} /> Agentes em {isPTO ? 'PTO/VAC (Out)' : activeExtraStatus}
+                          </CardTitle>
+                          <CardDescription className="text-xs text-rose-600/80 mt-1">Agentes que já iniciaram o status</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+                           <div className="flex-1 overflow-hidden h-[600px] custom-scrollbar">
+                              <PaginatedAgentList items={extData.out} renderItem={(d, i) => {
+                                 return (
+                                 <AgentLine 
+                                    key={`${d.summary.employeeName}-${i}`} 
+                                    summary={d.summary} 
+                                    rank={i+1} 
+                                    metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
+                                    metricLabel=""
+                                    colorClass="text-rose-700"
+                                    hideTooltip={true}
+                                 />
+                                 );
+                              }} />
+                           </div>
+                        </CardContent>
+                    </Card>
+
+                    {(isPTO || showVoltando) && (
+                    <Card className={`${colClass} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
+                        <CardHeader className="bg-amber-50/50 border-b border-amber-100 py-4 shrink-0 rounded-t-2xl">
+                          <CardTitle className="text-sm font-black uppercase tracking-widest text-amber-800 flex items-center gap-2">
+                            <AlertCircle size={16} /> {isPTO ? 'Agentes em PTO/VAC (Soon)' : 'Agentes voltando'}
+                          </CardTitle>
+                          <CardDescription className="text-xs text-amber-600/80 mt-1">
+                             {isPTO ? 'Agentes que iniciarão o status no futuro' : 'Agentes que vão voltar de status futuramente'}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+                           <div className="flex-1 overflow-hidden h-[600px] custom-scrollbar">
+                              <PaginatedAgentList items={isPTO ? extData.soon : extData.back} renderItem={(d, i) => (
+                                 <AgentLine 
+                                    key={`${d.summary.employeeName}-${i}`} 
+                                    summary={d.summary} 
+                                    rank={i+1} 
+                                    metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
+                                    metricLabel="" 
+                                    colorClass="text-amber-700"
+                                    hideTooltip={true}
+                                 />
+                              )} />
+                           </div>
+                        </CardContent>
+                    </Card>
+                    )}
+
+                    {showPTOBack && (
+                    <Card className={`${colClass} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
+                        <CardHeader className="bg-emerald-50/50 border-b border-emerald-100 py-4 shrink-0 rounded-t-2xl">
+                          <CardTitle className="text-sm font-black uppercase tracking-widest text-emerald-800 flex items-center gap-2">
+                            <AlertCircle size={16} /> Agentes {isPTO ? 'Back' : 'Back'}
+                          </CardTitle>
+                          <CardDescription className="text-xs text-emerald-600/80 mt-1">Agentes que já voltaram ou voltam em breve</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+                           <div className="flex-1 overflow-hidden h-[600px] custom-scrollbar">
+                              <PaginatedAgentList items={extData.back} renderItem={(d, i) => (
+                                 <AgentLine 
+                                    key={`${d.summary.employeeName}-${i}`} 
+                                    summary={d.summary} 
+                                    rank={i+1} 
+                                    metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
+                                    metricLabel="" 
+                                    colorClass="text-emerald-700"
+                                    hideTooltip={true}
+                                 />
+                              )} />
+                           </div>
+                        </CardContent>
+                    </Card>
+                    )}
+                  </>
+                );
+             })()}
+          </div>
+        );
+      })() : (
         <Card className="lg:col-span-12 rounded-2xl shadow-sm border border-slate-200 overflow-hidden bg-white">
           <CardHeader className="bg-slate-50/50 border-b border-slate-100 py-4">
-                    <CardTitle className="text-sm font-black uppercase tracking-widest text-slate-700">
+            <CardTitle className="text-sm font-black uppercase tracking-widest text-slate-700">
                {isCheckOnly ? 'DETALHES DE DIVERGÊNCIA DE HORÁRIO' :
                isNonModOnly ? `Alertas Non-Moderating` : 
                isWcOnly ? 'Alertas Organic' : 
@@ -1045,8 +1548,8 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="divide-y divide-slate-100">
-              {(isCheckOnly ? topCheck : topProblematic).map((s, i) => (
+            <div className="divide-y divide-slate-100 flex flex-col h-[600px] custom-scrollbar relative">
+               <PaginatedAgentList items={isCheckOnly ? topCheck : topProblematic} renderItem={(s, i) => (
                 <div key={`${s.employeeName}-${i}`} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-slate-50 transition-colors gap-3">
                   <div className="flex items-center gap-3">
                     <span className={`flex items-center justify-center w-6 h-6 rounded-lg text-[10px] font-black shrink-0 ${i === 0 ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-600'}`}>{i+1}</span>
@@ -1066,7 +1569,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                              <span className="flex items-center gap-1.5">
                                <span>TOT: <span className="font-bold">{Math.floor((s.wcTotalMinutes || 0) / 60)}h {(s.wcTotalMinutes || 0) % 60}m</span></span>
                                <span className="opacity-40 font-normal">|</span>
-                               <span className="text-rose-600">EXC: <span className="font-bold">{Math.floor(s.totalOverbreakMinutes / 60)}h {s.totalOverbreakMinutes % 60}m</span></span>
+                               <span className="text-rose-600">EXC: <span className="font-bold">{Math.floor((s.wcTotalOverbreak || 0) / 60)}h {(s.wcTotalOverbreak || 0) % 60}m</span></span>
                              </span>
                            ) : isTardinessOnly ? (
                              <span>{Math.floor(s.totalOverbreakMinutes / 60)}h {s.totalOverbreakMinutes % 60}m ATRASO</span>
@@ -1085,7 +1588,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                               </DialogHeader>
                               <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2">
                                 {isWcOnly ? (
-                                   <span>{Math.floor((s.wcTotalMinutes || 0) / 60)}h {(s.wcTotalMinutes || 0) % 60}m Total <span className="mx-2 opacity-50">|</span> <span className="text-amber-500">{Math.floor(s.totalOverbreakMinutes / 60)}h {s.totalOverbreakMinutes % 60}m Excedidos</span></span>
+                                   <span>{Math.floor((s.wcTotalMinutes || 0) / 60)}h {(s.wcTotalMinutes || 0) % 60}m Total <span className="mx-2 opacity-50">|</span> <span className="text-amber-500">{Math.floor((s.wcTotalOverbreak || 0) / 60)}h {(s.wcTotalOverbreak || 0) % 60}m Excedidos</span></span>
                                 ) : isIdleOnly ? (
                                    <span>{Math.floor(s.totalOverbreakMinutes / 60)}h {s.totalOverbreakMinutes % 60}m <span className="text-rose-500">Em Ociosidade</span></span>
                                 ) : (
@@ -1224,7 +1727,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
                     </Dialog>
                   </div>
                 </div>
-              ))}
+               )} />
             </div>
             {totalEmployees === 0 && (
               <div className="text-center py-20 text-slate-400 italic text-sm">
@@ -1233,6 +1736,7 @@ export function StatsDashboard({ summaries, allSummaries, periodSummaries = [], 
             )}
           </CardContent>
         </Card>
+      )}
       </div>
     );
 }

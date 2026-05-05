@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
-import { Calendar as CalendarIcon, Upload, FileDown, LogOut, FileSpreadsheet, LayoutDashboard, ListFilter, Trash2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Upload, FileDown, LogOut, FileSpreadsheet, LayoutDashboard, ListFilter, Trash2, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,6 +23,9 @@ import { EmployeeList } from './components/EmployeeList';
 import { motion, AnimatePresence } from 'motion/react';
 
 import { CustomCalendar } from './components/CustomCalendar';
+import { LOBAnalytics, isSupportRole } from './components/LOBAnalytics';
+
+// LOB exclusion removed per user request
 
 export default function App() {
   const { lang, setLang, t } = useLanguage();
@@ -65,7 +68,7 @@ export default function App() {
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
   const [calendarNote, setCalendarNote] = useState<string>('');
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'week' | 'day'>('month');
+  const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'prev_month' | 'week' | 'day' | 'yesterday'>('month');
   const [typeFilter, setTypeFilter] = useState<'all' | 'idle_overbreak_wc'>('all');
   const [shiftFilter, setShiftFilter] = useState<string[]>([]);
   const [includeWcGlobal, setIncludeWcGlobal] = useState(false);
@@ -74,6 +77,15 @@ export default function App() {
   const [includeTardinessGlobal, setIncludeTardinessGlobal] = useState(false);
   const [includeEarlyLeaveGlobal, setIncludeEarlyLeaveGlobal] = useState(false);
   const [includeShort30MinGlobal, setIncludeShort30MinGlobal] = useState(false);
+  const [includeAbsencesGlobal, setIncludeAbsencesGlobal] = useState(false);
+  const [includeOffboardedGlobal, setIncludeOffboardedGlobal] = useState(false);
+  const [includeATTGlobal, setIncludeATTGlobal] = useState(false);
+  const [includeLOAGlobal, setIncludeLOAGlobal] = useState(false);
+  const [includePTOGlobal, setIncludePTOGlobal] = useState(false);
+  const [includeSLGlobal, setIncludeSLGlobal] = useState(false);
+  const [includeSUSPPGlobal, setIncludeSUSPPGlobal] = useState(false);
+  const [includeOFFGlobal, setIncludeOFFGlobal] = useState(false);
+  const [includeSupportStaff, setIncludeSupportStaff] = useState(false);
   const [includeCheckGlobal, setIncludeCheckGlobal] = useState(false);
   const [filterMinorOverbreaks, setFilterMinorOverbreaks] = useState(false);
   const [selectedDates, setSelectedDates] = useState<Date[] | undefined>();
@@ -117,10 +129,50 @@ export default function App() {
     return latest > 0 ? new Date(latest) : new Date();
   }, [summaries]);
 
+  const { globalMinDate, globalMaxDate } = useMemo(() => {
+    let min = new Date('2099-01-01');
+    let max = new Date('2000-01-01');
+    summaries.forEach(s => s.dailyRecords.forEach(r => {
+      const d = new Date(r.date + 'T12:00:00');
+      if (d < min) min = d;
+      if (d > max) max = d;
+    }));
+
+    calendarData.forEach(c => {
+       if (c.schedule) {
+           Object.keys(c.schedule).forEach(k => {
+               let d: Date | null = null;
+               if (k.includes('-')) {
+                  d = new Date(k + 'T12:00:00');
+               } else if (k.includes('/')) {
+                  const parts = k.split('/');
+                  if (parts.length === 3 && parts[2] && parts[2].length === 4) {
+                     if (parseInt(parts[0]) > 12) {
+                        d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+                     } else {
+                        d = new Date(`${parts[2]}-${parts[0]}-${parts[1]}T12:00:00`);
+                     }
+                  }
+               }
+               
+               if (d && !isNaN(d.getTime())) {
+                   if (d < min) min = d;
+                   if (d > max) max = d;
+               }
+           });
+       }
+    });
+
+    if (min.getFullYear() === 2099) min = new Date();
+    if (max.getFullYear() === 2000) max = new Date();
+
+    return { globalMinDate: min, globalMaxDate: max };
+  }, [summaries, calendarData]);
+
   const mergedSummaries = useMemo(() => {
     if (calendarData.length === 0) return summaries;
 
-    return summaries.map(s => {
+    const filtered = summaries.map(s => {
        let calEntry = calendarData.find(c => c.email && c.email.toLowerCase() === s.email?.toLowerCase());
 
        if (!calEntry) {
@@ -144,31 +196,116 @@ export default function App() {
            }
        }
        
+       // Filter out excluded LOBs removed
+       
        if (calEntry) {
-          return {
-             ...s,
-             shift: calEntry.shift,
-             dailyRecords: s.dailyRecords.map(r => {
-                const dateKey = format(new Date(r.date + 'T12:00:00'), 'dd/MM/yyyy');
-                const dateKeyAlt = format(new Date(r.date + 'T12:00:00'), 'MM/dd/yyyy');
-                let specificShift = undefined;
-                if (calEntry.schedule) {
+          const existingDates = new Set(s.dailyRecords.map(r => r.date));
+          const newRecords = [...s.dailyRecords];
+          
+          if (globalMinDate <= globalMaxDate && calEntry.schedule && !s.isOffboarded) {
+              let d = new Date(globalMinDate);
+              while (d <= globalMaxDate) {
+                 const dateStr = format(d, 'yyyy-MM-dd');
+                 const dateKey = format(d, 'dd/MM/yyyy');
+                 const dateKeyAlt = format(d, 'MM/dd/yyyy');
+                 
+                 if (!existingDates.has(dateStr)) {
+                    const scheduleForDay = calEntry.schedule[dateStr] || calEntry.schedule[dateKey] || calEntry.schedule[dateKeyAlt];
+                    
+                    if (scheduleForDay) {
+                        const schedUpper = scheduleForDay.toUpperCase();
+                        const isWorkday = !schedUpper.includes('OFF') && !schedUpper.includes('VAC') && !schedUpper.includes('FESTA') && !schedUpper.includes('HOLIDAY') && !schedUpper.includes('LOA') && !schedUpper.includes('PTO') && !schedUpper.includes('SL') && !schedUpper.includes('ATT') && !schedUpper.includes('SUSPP');
+                        const latestDateStr = format(latestDate, 'yyyy-MM-dd');
+                        
+                        newRecords.push({
+                           date: dateStr,
+                           totalWorkTimeMillis: 0,
+                           totalOfflineTimeMillis: 0,
+                           breaks: [],
+                           mealDuration: 0,
+                           mealOverbreak: 0,
+                           shortDuration: 0,
+                           shortOverbreak: 0,
+                           wellnessDuration: 0,
+                           wellnessOverbreak: 0,
+                           prayingDuration: 0,
+                           prayingOverbreak: 0,
+                           wcDuration: 0,
+                           wcOverbreak: 0,
+                           idleDuration: 0,
+                           idleOverbreak: 0,
+                           totalBreakMinutes: 0,
+                           tardinessMinutes: 0,
+                           earlyLeaveMinutes: 0,
+                           inferredShift: scheduleForDay,
+                           scheduledShift: scheduleForDay,
+                           isAbsence: isWorkday && dateStr < latestDateStr
+                        });
+                    }
+                 }
+                 d.setDate(d.getDate() + 1);
+              }
+          }
+       
+           const updatedDailyRecords = newRecords.map(r => {
+              const dateKey = format(new Date(r.date + 'T12:00:00'), 'dd/MM/yyyy');
+              const dateKeyAlt = format(new Date(r.date + 'T12:00:00'), 'MM/dd/yyyy');
+              let specificShift = undefined;
+              let specificLob = undefined;
+              if (calEntry) {
+                 if (calEntry.schedule) {
                    specificShift = calEntry.schedule[r.date] || calEntry.schedule[dateKey] || calEntry.schedule[dateKeyAlt];
-                }
-                const scheduledShift = specificShift || calEntry?.shift;
-                return {
-                   ...r,
-                   scheduledShift: scheduledShift,
-                   inferredShift: r.inferredShift || scheduledShift
-                };
-             })
-          };
+                 }
+                 if (calEntry.lobSchedule) {
+                   specificLob = calEntry.lobSchedule[r.date] || calEntry.lobSchedule[dateKey] || calEntry.lobSchedule[dateKeyAlt];
+                 }
+              }
+              const scheduledShift = specificShift || calEntry?.shift || r.scheduledShift;
+              const inferredShift = r.inferredShift || scheduledShift;
+              const currentLob = specificLob || calEntry?.lob || s.lob;
+              
+              const shiftUpper = (scheduledShift || inferredShift || '').toUpperCase();
+              
+              const isWorkingShift = /\d{1,2}:\d{2}/.test(shiftUpper);
+              const isOffShift = shiftUpper.includes('OFF') || shiftUpper.includes('FOLGA');
+              const isVacationShift = (shiftUpper.includes('VAC') || shiftUpper.includes('PTO') || shiftUpper.includes('FÉRIAS')) && !isWorkingShift;
+              const isSickShift = (shiftUpper.includes('SL') || shiftUpper.includes('SICK') || shiftUpper.includes('MEDICO') || shiftUpper.includes('ATESTADO')) && !isWorkingShift;
+              const isLoaShift = (shiftUpper.includes('LOA') || shiftUpper.includes('LICENÇA')) && !isWorkingShift;
+              const isSusppShift = (shiftUpper.includes('SUSPP') || shiftUpper.includes('SUSPENSÃO')) && !isWorkingShift;
+              const isAttShift = (shiftUpper.includes('ATT') || shiftUpper.includes('ATTRITION') || shiftUpper.includes('RESIGN') || shiftUpper.includes('SAÍDA')) && !isWorkingShift;
+              
+              return {
+                 ...r,
+                 scheduledShift: scheduledShift,
+                 inferredShift: inferredShift,
+                 lob: currentLob,
+                 isATT: isAttShift || (specificShift ? false : (isWorkingShift ? false : r.isATT)),
+                 isLOA: isLoaShift || (specificShift ? false : (isWorkingShift ? false : r.isLOA)),
+                 isPTO: isVacationShift || (specificShift ? false : (isWorkingShift ? false : r.isPTO)),
+                 isSL: isSickShift || (specificShift ? false : (isWorkingShift ? false : r.isSL)),
+                 isSUSPP: isSusppShift || (specificShift ? false : (isWorkingShift ? false : r.isSUSPP)),
+                 isOFF: isOffShift || (specificShift ? false : (isWorkingShift ? false : r.isOFF))
+              };
+           }).sort((a, b) => a.date.localeCompare(b.date));
+
+           const totalAbsences = updatedDailyRecords.filter(r => r.isAbsence).length;
+
+           return {
+              ...s,
+              shift: calEntry.shift,
+              lob: calEntry.lob,
+              language: calEntry.language,
+              totalAbsences,
+              dailyRecords: updatedDailyRecords
+           };
        }
        return s;
-    });
-  }, [summaries, calendarData]);
+    }).filter((s): s is EmployeeSummary => s !== null);
 
-  const periodSummaries = useMemo(() => {
+    return filtered;
+  }, [summaries, calendarData, globalMinDate, globalMaxDate]);
+
+  const basePeriodSummaries = useMemo(() => {
     return mergedSummaries.map(s => {
       const records = s.dailyRecords.filter(r => {
         if (selectedDates && selectedDates.length > 0) {
@@ -180,6 +317,13 @@ export default function App() {
            const d = new Date(r.date + 'T12:00:00');
            const today = new Date();
            
+           if (timeFilter === 'month') {
+              if (d.getMonth() !== today.getMonth() || d.getFullYear() !== today.getFullYear()) return false;
+           }
+           if (timeFilter === 'prev_month') {
+              const pm = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+              if (d.getMonth() !== pm.getMonth() || d.getFullYear() !== pm.getFullYear()) return false;
+           }
            if (timeFilter === 'week') {
               const dow = today.getDay();
               const diffToMon = dow === 0 ? -6 : 1 - dow;
@@ -194,11 +338,106 @@ export default function App() {
 
               if (d < startOfWeek || d > endOfWeek) return false;
            }
-           if (timeFilter === 'day' && !(d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear())) return false;
+           if (timeFilter === 'day') {
+              const today = new Date();
+              if (!(d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear())) return false;
+           }
+           if (timeFilter === 'yesterday') {
+              const yesterday = new Date();
+              yesterday.setDate(yesterday.getDate() - 1);
+              if (!(d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear())) return false;
+           }
         }
 
-        if (shiftFilter.length > 0 || includeCheckGlobal) {
-            const hasCheck = shiftFilter.includes('CHECK') || includeCheckGlobal;
+        const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
+        if (otherShifts.length > 0) {
+            const activeShift = r.scheduledShift ? cleanShift(r.scheduledShift) : (r.inferredShift ? cleanShift(r.inferredShift) : null);
+            const isShiftMatch = activeShift ? otherShifts.includes(activeShift) : false;
+            if (!isShiftMatch) return false;
+        }
+
+        return true;
+      });
+      const isATTInfo = records.some(r => r.isATT) || s.isOffboarded;
+      const isLOAInfo = records.some(r => r.isLOA);
+      const isPTOInfo = records.some(r => r.isPTO);
+      const isSLInfo = records.some(r => r.isSL);
+      const isSUSPPInfo = records.some(r => r.isSUSPP);
+      const isOFFInfo = records.some(r => r.isOFF);
+
+      const isGlobalView = (timeFilter === 'month' || timeFilter === 'all') && (!selectedDates || selectedDates.length === 0);
+
+      const finalIsATT = isGlobalView ? (s.dailyRecords.some(r => r.isATT) || s.isOffboarded) : isATTInfo;
+      const finalIsLOA = isGlobalView ? s.dailyRecords.some(r => r.isLOA) : isLOAInfo;
+      const finalIsPTO = isGlobalView ? s.dailyRecords.some(r => r.isPTO) : isPTOInfo;
+      const finalIsSL = isGlobalView ? s.dailyRecords.some(r => r.isSL) : isSLInfo;
+      const finalIsSUSPP = isGlobalView ? s.dailyRecords.some(r => r.isSUSPP) : isSUSPPInfo;
+      const finalIsOFF = isGlobalView ? s.dailyRecords.some(r => r.isOFF) : isOFFInfo;
+      const totalAbsences = records.reduce((acc, r) => acc + (r.isAbsence && !r.isATT ? 1 : 0), 0);
+      
+      const activeLob = records.find(r => r.lob)?.lob || s.lob;
+
+      return (records.length > 0 || s.isOffboarded || finalIsATT || finalIsLOA || finalIsPTO || finalIsSL || finalIsSUSPP || finalIsOFF) ? { 
+          ...s, 
+          dailyRecords: records,
+          lob: activeLob,
+          totalAbsences,
+          isATT: finalIsATT,
+          isLOA: finalIsLOA,
+          isPTO: finalIsPTO,
+          isSL: finalIsSL,
+          isSUSPP: finalIsSUSPP,
+          isOFF: finalIsOFF
+      } : null;
+    }).filter(Boolean) as EmployeeSummary[];
+  }, [mergedSummaries, timeFilter, shiftFilter, selectedDates]);
+
+  const periodSummaries = useMemo(() => {
+    return mergedSummaries.map(s => {
+      const records = s.dailyRecords.filter(r => {
+        if (selectedDates && selectedDates.length > 0) {
+           const selectedDateStrings = selectedDates.map(d => format(d, 'yyyy-MM-dd'));
+           if (!selectedDateStrings.includes(r.date)) return false;
+        }
+        
+        if (timeFilter !== 'all') {
+           const d = new Date(r.date + 'T12:00:00');
+           const today = new Date();
+           
+           if (timeFilter === 'month') {
+              if (d.getMonth() !== today.getMonth() || d.getFullYear() !== today.getFullYear()) return false;
+           }
+           if (timeFilter === 'prev_month') {
+              const pm = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+              if (d.getMonth() !== pm.getMonth() || d.getFullYear() !== pm.getFullYear()) return false;
+           }
+           if (timeFilter === 'week') {
+              const dow = today.getDay();
+              const diffToMon = dow === 0 ? -6 : 1 - dow;
+              
+              const startOfWeek = new Date(today);
+              startOfWeek.setDate(today.getDate() + diffToMon);
+              startOfWeek.setHours(0, 0, 0, 0);
+              
+              const endOfWeek = new Date(startOfWeek);
+              endOfWeek.setDate(startOfWeek.getDate() + 6);
+              endOfWeek.setHours(23, 59, 59, 999);
+
+              if (d < startOfWeek || d > endOfWeek) return false;
+           }
+           if (timeFilter === 'day') {
+              const today = new Date();
+              if (!(d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear())) return false;
+           }
+           if (timeFilter === 'yesterday') {
+              const yesterday = new Date();
+              yesterday.setDate(yesterday.getDate() - 1);
+              if (!(d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear())) return false;
+           }
+        }
+
+        if (shiftFilter.length > 0) {
+            const hasCheck = shiftFilter.includes('CHECK');
             const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
             
             const isCheckMatch = r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim();
@@ -216,17 +455,46 @@ export default function App() {
 
         return true;
       });
-      return records.length > 0 ? { ...s, dailyRecords: records } : null;
+      const isATTInfo = records.some(r => r.isATT) || s.isOffboarded;
+      const isLOAInfo = records.some(r => r.isLOA);
+      const isPTOInfo = records.some(r => r.isPTO);
+      const isSLInfo = records.some(r => r.isSL);
+      const isSUSPPInfo = records.some(r => r.isSUSPP);
+      const isOFFInfo = records.some(r => r.isOFF);
+
+      const isGlobalView = (timeFilter === 'month' || timeFilter === 'all') && (!selectedDates || selectedDates.length === 0);
+
+      const finalIsATT = isGlobalView ? (s.dailyRecords.some(r => r.isATT) || s.isOffboarded) : isATTInfo;
+      const finalIsLOA = isGlobalView ? s.dailyRecords.some(r => r.isLOA) : isLOAInfo;
+      const finalIsPTO = isGlobalView ? s.dailyRecords.some(r => r.isPTO) : isPTOInfo;
+      const finalIsSL = isGlobalView ? s.dailyRecords.some(r => r.isSL) : isSLInfo;
+      const finalIsSUSPP = isGlobalView ? s.dailyRecords.some(r => r.isSUSPP) : isSUSPPInfo;
+      const finalIsOFF = isGlobalView ? s.dailyRecords.some(r => r.isOFF) : isOFFInfo;
+      const totalAbsences = records.reduce((acc, r) => acc + (r.isAbsence && !r.isATT ? 1 : 0), 0);
+      
+      const activeLob = records.find(r => r.lob)?.lob || s.lob;
+
+      return (records.length > 0 || s.isOffboarded || finalIsATT || finalIsLOA || finalIsPTO || finalIsSL || finalIsSUSPP || finalIsOFF) ? { 
+          ...s, 
+          dailyRecords: records,
+          lob: activeLob,
+          totalAbsences,
+          isATT: finalIsATT,
+          isLOA: finalIsLOA,
+          isPTO: finalIsPTO,
+          isSL: finalIsSL,
+          isSUSPP: finalIsSUSPP,
+          isOFF: finalIsOFF
+      } : null;
     }).filter(Boolean) as EmployeeSummary[];
   }, [mergedSummaries, timeFilter, shiftFilter, selectedDates, includeCheckGlobal]);
 
-  const filteredSummaries = useMemo(() => {
+  const processedSummaries = useMemo(() => {
     const today = new Date();
-    const currentMonth = today.getMonth();
-    const currentYear = today.getFullYear();
+    const todayStr = format(today, 'yyyy-MM-dd');
 
-    let filtered = mergedSummaries.map(s => {
-      const records = s.dailyRecords.map(r => {
+      let filtered = periodSummaries.map(s => {
+        const records = s.dailyRecords.map(r => {
         let wcDur = 0, mealDur = 0, shortDur = 0, wellnessDur = 0, prayingDur = 0, idleDur = 0;
 
         r.breaks.forEach(b => {
@@ -248,28 +516,42 @@ export default function App() {
         let prayingOverbreak = Math.max(0, prayingDur - 15);
         let idleOverbreak = idleDur;
 
-        const isWcOnly = includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isIdleOnly = includeIdleGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isNonModOnly = includeNonModGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isTardinessOnly = includeTardinessGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
+        const isWcOnly = includeWcGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isIdleOnly = includeIdleGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isNonModOnly = includeNonModGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isTardinessOnly = includeTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
+        const isShort30MinOnly = includeShort30MinGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isAbsencesOnly = includeAbsencesGlobal && !includeOffboardedGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isOffboardedOnly = includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
         const isOverbreakOnly = typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal;
 
-        let dailyOverbreak = 0;
-        if (isWcOnly) {
-          dailyOverbreak = wcOverbreak;
-        } else if (isIdleOnly) {
-          dailyOverbreak = idleOverbreak;
-        } else if (isOverbreakOnly) {
-          dailyOverbreak = mealOverbreak + shortOverbreak + wellnessOverbreak + prayingOverbreak;
-        } else {
-          // Combined or Default
-          dailyOverbreak = mealOverbreak + shortOverbreak + wellnessOverbreak + prayingOverbreak;
-          if (includeWcGlobal) dailyOverbreak += wcOverbreak;
+        let dailyOverbreak = mealOverbreak + shortOverbreak + wellnessOverbreak + prayingOverbreak;
+        if (isIdleOnly) {
+          dailyOverbreak += idleOverbreak;
+        } else if (!isOverbreakOnly && !isWcOnly) {
           if (includeIdleGlobal) dailyOverbreak += idleOverbreak;
         }
 
-        return { ...r, totalOverbreak: dailyOverbreak, wcOverbreak, mealOverbreak, shortOverbreak, wellnessOverbreak, prayingOverbreak, idleOverbreak };
+        // We explicitly compute wcTotalOverbreak instead of pushing it into dailyOverbreak
+        // So that "OVERBREAKS" metric genuinely ignores Organic per user request.
+        
+        return { 
+          ...r, 
+          wcDuration: wcDur,
+          mealDuration: mealDur,
+          shortDuration: shortDur,
+          wellnessDuration: wellnessDur,
+          prayingDuration: prayingDur,
+          idleDuration: idleDur,
+          totalOverbreak: dailyOverbreak, 
+          wcOverbreak, 
+          mealOverbreak, 
+          shortOverbreak, 
+          wellnessOverbreak, 
+          prayingOverbreak, 
+          idleOverbreak 
+        };
       }).filter(r => {
         if (selectedDates && selectedDates.length > 0) {
            const selectedDateStrings = selectedDates.map(d => format(d, 'yyyy-MM-dd'));
@@ -280,9 +562,13 @@ export default function App() {
            const d = new Date(r.date + 'T12:00:00');
            const today = new Date();
            
-           if (timeFilter === 'month') {
-              if (d.getMonth() !== today.getMonth() || d.getFullYear() !== today.getFullYear()) return false;
-           }
+            if (timeFilter === 'month') {
+               if (d.getMonth() !== today.getMonth() || d.getFullYear() !== today.getFullYear()) return false;
+            }
+            if (timeFilter === 'prev_month') {
+               const pm = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+               if (d.getMonth() !== pm.getMonth() || d.getFullYear() !== pm.getFullYear()) return false;
+            }
            if (timeFilter === 'week') {
               // Standard week check (Monday start)
               const today = new Date();
@@ -299,7 +585,14 @@ export default function App() {
 
               if (d < startOfWeek || d > endOfWeek) return false;
            }
-           if (timeFilter === 'day' && !(d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear())) return false;
+           if (timeFilter === 'day') {
+              if (!(d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear())) return false;
+           }
+           if (timeFilter === 'yesterday') {
+              const yesterday = new Date();
+              yesterday.setDate(yesterday.getDate() - 1);
+              if (!(d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear())) return false;
+           }
         }
 
         if (shiftFilter.length > 0 || includeCheckGlobal) {
@@ -319,12 +612,14 @@ export default function App() {
             }
         }
 
-        const isWcOnly = includeWcGlobal && !includeShort30MinGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isIdleOnly = includeIdleGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isNonModOnly = includeNonModGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isTardinessOnly = includeTardinessGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
-        const isShort30MinOnly = includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isWcOnly = includeWcGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isIdleOnly = includeIdleGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isNonModOnly = includeNonModGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isTardinessOnly = includeTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
+        const isShort30MinOnly = includeShort30MinGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isAbsencesOnly = includeAbsencesGlobal && !includeOffboardedGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isOffboardedOnly = includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
 
         if (isWcOnly) {
            if (r.wcDuration <= 0) return false;
@@ -339,9 +634,11 @@ export default function App() {
         } else if (isShort30MinOnly) {
            // Agent took exactly one shortbreak in the day, > 20min (hasSingleShort30m is already true if it was)
            if (!r.hasSingleShort30m) return false;
-        } else if (typeFilter === 'idle_overbreak_wc' && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal) {
-           if (r.totalOverbreak <= 0) return false;
-        } else if (includeWcGlobal || includeIdleGlobal || includeNonModGlobal || includeTardinessGlobal || includeEarlyLeaveGlobal || includeShort30MinGlobal || typeFilter === 'idle_overbreak_wc') {
+        } else if (isAbsencesOnly) {
+           if (!r.isAbsence) return false;
+        } else if (typeFilter === 'idle_overbreak_wc' && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal) {
+           if (r.totalOverbreak <= 0 && (r.wcDuration || 0) <= 0 && (r.idleDuration || 0) <= 0) return false;
+        } else if (includeWcGlobal || includeIdleGlobal || includeNonModGlobal || includeTardinessGlobal || includeEarlyLeaveGlobal || includeShort30MinGlobal || includeAbsencesGlobal || includeOffboardedGlobal || typeFilter === 'idle_overbreak_wc') {
            // Mixed filters logic
            let keep = false;
            if (includeWcGlobal && r.wcDuration > 0) keep = true;
@@ -350,6 +647,8 @@ export default function App() {
            if (includeTardinessGlobal && (r.tardinessMinutes || 0) > 0) keep = true;
            if (includeEarlyLeaveGlobal && (r.earlyLeaveMinutes || 0) > 0) keep = true;
            if (includeShort30MinGlobal && r.hasSingleShort30m) keep = true;
+           if (includeAbsencesGlobal && r.isAbsence) keep = true;
+           if (includeOffboardedGlobal && s.isOffboarded) keep = true;
            if (typeFilter === 'idle_overbreak_wc' && r.totalOverbreak > 0) keep = true;
            if (!keep) return false;
         }
@@ -357,25 +656,27 @@ export default function App() {
         return true;
       });
 
-      if (records.length === 0) return null;
+      if (records.length === 0 && !s.isOffboarded && !s.isATT && !s.isLOA && !s.isPTO && !s.isSL && !s.isSUSPP && !s.isOFF) return null;
 
-      const totalOverbreak = records.reduce((acc, r) => acc + r.totalOverbreak, 0);
-      const wcAlerts = records.reduce((acc, r) => acc + (r.wcDuration > 10 ? 1 : 0), 0);
-      const idleAlerts = records.reduce((acc, r) => acc + (r.idleDuration > 0 ? 1 : 0), 0);
-      const wcTotalMinutes = records.reduce((acc, r) => acc + r.wcDuration, 0);
-      const idleTotalMinutes = records.reduce((acc, r) => acc + r.idleDuration, 0);
-      const totalTardinessMinutes = records.reduce((acc, r) => acc + (r.tardinessMinutes || 0), 0);
-      const totalEarlyLeaveMinutes = records.reduce((acc, r) => acc + (r.earlyLeaveMinutes || 0), 0);
-      const totalShort30MinRecords = records.reduce((acc, r) => acc + (r.hasSingleShort30m ? 1 : 0), 0);
-      const totalNonModMinutes = records.reduce((acc, r) => acc + (r.nonModDuration || 0), 0);
-      const totalReviewAndAppealMinutes = records.reduce((acc, r) => acc + (r.reviewAndAppealDuration || 0), 0);
-      const totalAwaitingTasksMinutes = records.reduce((acc, r) => acc + (r.awaitingTasksDuration || 0), 0);
-      const totalForgotStatusMinutes = records.reduce((acc, r) => acc + (r.forgotStatusDuration || 0), 0);
-      const totalWorkMinutes = records.reduce((acc, r) => acc + (r.totalWorkTimeMillis / 60000), 0);
-      const totalBreakMinutes = records.reduce((acc, r) => {
+      const totalOverbreak = records.length > 0 ? records.reduce((acc, r) => acc + r.totalOverbreak, 0) : 0;
+      const wcTotalOverbreak = records.length > 0 ? records.reduce((acc, r) => acc + r.wcOverbreak, 0) : 0;
+      const wcAlerts = records.length > 0 ? records.reduce((acc, r) => acc + (r.wcDuration > 10 ? 1 : 0), 0) : 0;
+      const idleAlerts = records.length > 0 ? records.reduce((acc, r) => acc + (r.idleDuration > 0 ? 1 : 0), 0) : 0;
+      const wcTotalMinutes = records.length > 0 ? records.reduce((acc, r) => acc + r.wcDuration, 0) : 0;
+      const idleTotalMinutes = records.length > 0 ? records.reduce((acc, r) => acc + r.idleDuration, 0) : 0;
+      const totalTardinessMinutes = records.length > 0 ? records.reduce((acc, r) => acc + (r.tardinessMinutes || 0), 0) : 0;
+      const totalEarlyLeaveMinutes = records.length > 0 ? records.reduce((acc, r) => acc + (r.earlyLeaveMinutes || 0), 0) : 0;
+      const totalShort30MinRecords = records.length > 0 ? records.reduce((acc, r) => acc + (r.hasSingleShort30m ? 1 : 0), 0) : 0;
+      const totalNonModMinutes = records.length > 0 ? records.reduce((acc, r) => acc + (r.nonModDuration || 0), 0) : 0;
+      const totalReviewAndAppealMinutes = records.length > 0 ? records.reduce((acc, r) => acc + (r.reviewAndAppealDuration || 0), 0) : 0;
+      const totalAwaitingTasksMinutes = records.length > 0 ? records.reduce((acc, r) => acc + (r.awaitingTasksDuration || 0), 0) : 0;
+      const totalForgotStatusMinutes = records.length > 0 ? records.reduce((acc, r) => acc + (r.forgotStatusDuration || 0), 0) : 0;
+      const totalAbsences = records.length > 0 ? records.reduce((acc, r) => acc + (r.isAbsence ? 1 : 0), 0) : 0;
+      const totalWorkMinutes = records.length > 0 ? records.reduce((acc, r) => acc + (r.totalWorkTimeMillis / 60000), 0) : 0;
+      const totalBreakMinutes = records.length > 0 ? records.reduce((acc, r) => {
         const breakMins = r.breaks.reduce((bAcc, b) => bAcc + b.durationMinutes, 0);
         return acc + breakMins;
-      }, 0);
+      }, 0) : 0;
 
       if (filterMinorOverbreaks && (totalOverbreak > 2 || totalOverbreak === 0)) return null;
 
@@ -385,6 +686,7 @@ export default function App() {
         totalWorkMinutes: Math.round(totalWorkMinutes),
         totalBreakMinutes: Math.round(totalBreakMinutes),
         totalOverbreakMinutes: Math.round(totalOverbreak),
+        wcTotalOverbreak: Math.round(wcTotalOverbreak),
         totalTardinessMinutes: Math.round(totalTardinessMinutes),
         totalEarlyLeaveMinutes: Math.round(totalEarlyLeaveMinutes),
         totalShort30MinRecords,
@@ -392,6 +694,7 @@ export default function App() {
         totalReviewAndAppealMinutes: Math.round(totalReviewAndAppealMinutes),
         totalAwaitingTasksMinutes: Math.round(totalAwaitingTasksMinutes),
         totalForgotStatusMinutes: Math.round(totalForgotStatusMinutes),
+        totalAbsences,
         wcAlerts,
         idleAlerts,
         wcTotalMinutes,
@@ -400,7 +703,157 @@ export default function App() {
     }).filter(Boolean) as EmployeeSummary[];
 
     return filtered;
-  }, [mergedSummaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, includeTardinessGlobal, includeEarlyLeaveGlobal, filterMinorOverbreaks, includeShort30MinGlobal, includeCheckGlobal]);
+  }, [periodSummaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, includeTardinessGlobal, includeEarlyLeaveGlobal, filterMinorOverbreaks, includeShort30MinGlobal, includeAbsencesGlobal, includeOffboardedGlobal, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeCheckGlobal]);
+
+  const activeAnyStatus = includeATTGlobal || includeLOAGlobal || includePTOGlobal || includeSLGlobal || includeSUSPPGlobal || includeOFFGlobal || includeOffboardedGlobal || includeAbsencesGlobal;
+
+  const filteredSummaries = useMemo(() => {
+    if (!activeAnyStatus) return processedSummaries;
+    
+    return processedSummaries.map(s => {
+       const isSupport = isSupportRole(s.lob || '');
+       if (includeSupportStaff && !isSupport) return null;
+       if (!includeSupportStaff && isSupport) return null;
+
+       let recs = s.dailyRecords;
+
+       if (includeOFFGlobal) {
+           recs = s.dailyRecords.filter(r => r.isOFF);
+           if (recs.length > 0) return { ...s, dailyRecords: recs };
+           if (s.isOFF && s.dailyRecords.length === 0) return s;
+           return null;
+       } 
+       if (includeATTGlobal) {
+           recs = s.dailyRecords.filter(r => r.isATT);
+           if (recs.length > 0) return { ...s, dailyRecords: recs };
+           if (s.isATT || s.isOffboarded) return s;
+           return null;
+       }
+       if (includeLOAGlobal) {
+           recs = s.dailyRecords.filter(r => r.isLOA);
+           if (recs.length > 0) return { ...s, dailyRecords: recs };
+           if (s.isLOA) return s;
+           return null;
+       }
+       if (includePTOGlobal) {
+           recs = s.dailyRecords.filter(r => r.isPTO);
+           if (recs.length > 0) return { ...s, dailyRecords: recs };
+           if (s.isPTO) return s;
+           return null;
+       }
+       if (includeSLGlobal) {
+           recs = s.dailyRecords.filter(r => r.isSL);
+           if (recs.length > 0) return { ...s, dailyRecords: recs };
+           if (s.isSL) return s;
+           return null;
+       }
+       if (includeSUSPPGlobal) {
+           recs = s.dailyRecords.filter(r => r.isSUSPP);
+           if (recs.length > 0) return { ...s, dailyRecords: recs };
+           if (s.isSUSPP) return s;
+           return null;
+       }
+       if (includeAbsencesGlobal) {
+           recs = s.dailyRecords.filter(r => r.isAbsence);
+           if (recs.length > 0) return { ...s, dailyRecords: recs };
+           if ((s.totalAbsences || 0) > 0) return s;
+           return null;
+       }
+       if (includeOffboardedGlobal) {
+           if (s.isOffboarded) return s;
+           return null;
+       }
+       return null;
+    }).filter(Boolean) as EmployeeSummary[];
+  }, [processedSummaries, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeOffboardedGlobal, includeAbsencesGlobal, includeSupportStaff]);
+
+  const hasSupportStaffWithStatus = useMemo(() => {
+    if (!activeAnyStatus) return false;
+    
+    return processedSummaries.some(s => {
+       if (!isSupportRole(s.lob || '')) return false;
+
+       let recs = s.dailyRecords;
+
+       if (includeOFFGlobal) {
+           if (s.dailyRecords.some(r => r.isOFF)) return true;
+           if (s.isOFF && s.dailyRecords.length === 0) return true;
+       } 
+       if (includeATTGlobal) {
+           if (s.dailyRecords.some(r => r.isATT)) return true;
+           if (s.isATT || s.isOffboarded) return true;
+       }
+       if (includeLOAGlobal) {
+           if (s.dailyRecords.some(r => r.isLOA)) return true;
+           if (s.isLOA) return true;
+       }
+       if (includePTOGlobal) {
+           if (s.dailyRecords.some(r => r.isPTO)) return true;
+           if (s.isPTO) return true;
+       }
+       if (includeSLGlobal) {
+           if (s.dailyRecords.some(r => r.isSL)) return true;
+           if (s.isSL) return true;
+       }
+       if (includeSUSPPGlobal) {
+           if (s.dailyRecords.some(r => r.isSUSPP)) return true;
+           if (s.isSUSPP) return true;
+       }
+       if (includeAbsencesGlobal) {
+           if (s.dailyRecords.some(r => r.isAbsence)) return true;
+           if ((s.totalAbsences || 0) > 0) return true;
+       }
+       if (includeOffboardedGlobal) {
+           if (s.isOffboarded) return true;
+       }
+       return false;
+    });
+  }, [processedSummaries, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeOffboardedGlobal, includeAbsencesGlobal]);
+
+  const dashboardStats = useMemo(() => {
+    return {
+      totalEmployees: filteredSummaries.length,
+      totalOverbreakMinutes: filteredSummaries.reduce((acc, s) => acc + s.totalOverbreakMinutes, 0),
+      topProblematicEmployees: [...filteredSummaries]
+        .sort((a, b) => b.totalOverbreakMinutes - a.totalOverbreakMinutes)
+        .slice(0, 5)
+        .map(s => ({ name: s.employeeName, overbreak: s.totalOverbreakMinutes })),
+      wcAlertCount: filteredSummaries.reduce((acc, s) => acc + s.wcAlerts, 0)
+    };
+  }, [filteredSummaries]);
+
+  const workingSummaries = useMemo(() => {
+    return processedSummaries.filter(s => {
+      // Allow if they have daily records (they worked during the filtered period).
+      if (s.dailyRecords.length > 0) return true;
+      // If they have no records, and they have an absence/offboard status, exclude them.
+      return false;
+    });
+  }, [processedSummaries]);
+
+  const clearExtraStatuses = () => {
+    setIncludeATTGlobal(false);
+    setIncludeLOAGlobal(false);
+    setIncludePTOGlobal(false);
+    setIncludeSLGlobal(false);
+    setIncludeSUSPPGlobal(false);
+    setIncludeOFFGlobal(false);
+    setIncludeSupportStaff(false);
+  };
+
+  const clearNormalStatuses = () => {
+    setTypeFilter('all');
+    setIncludeShort30MinGlobal(false);
+    setIncludeWcGlobal(false);
+    setIncludeIdleGlobal(false);
+    setIncludeNonModGlobal(false);
+    setIncludeTardinessGlobal(false);
+    setIncludeEarlyLeaveGlobal(false);
+    setIncludeAbsencesGlobal(false);
+    setIncludeOffboardedGlobal(false);
+    setIncludeCheckGlobal(false);
+    setFilterMinorOverbreaks(false);
+  };
 
   const handleCalendarUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -433,7 +886,8 @@ export default function App() {
            }
         }
         setCalendarNote(finalNote);
-        return `${data.length} agentes mapeados.`;
+        const filteredCount = data.length;
+        return `${filteredCount} agentes mapeados.`;
       },
       error: (err) => {
         console.error(err);
@@ -494,6 +948,7 @@ export default function App() {
     let periodLabel = t('allTime');
     if (timeFilter === 'month') periodLabel = t('filterMonth');
     if (timeFilter === 'week') periodLabel = t('filterWeek');
+    if (timeFilter === 'yesterday') periodLabel = t('filterYesterday');
     if (timeFilter === 'day') periodLabel = t('filterDay');
 
     const titleStr = typeFilter === 'idle_overbreak_wc' ? `Overbreaks & Violators Report - ${periodLabel}` : `General Report - ${periodLabel}`;
@@ -589,8 +1044,8 @@ export default function App() {
         <div className="mb-10">
           <div className="flex flex-col items-start gap-4 mb-2">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-lg shadow-lg">SC</div>
-              <h1 className="text-[17px] font-bold tracking-tight">StatusChecker <span className="text-blue-400">Pro</span></h1>
+              <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-lg shadow-lg">LO</div>
+              <h1 className="text-[17px] font-bold tracking-tight">Live <span className="text-blue-400">Overview</span></h1>
             </div>
             <button 
               onClick={() => setLang(lang === 'pt' ? 'en' : 'pt')}
@@ -625,6 +1080,12 @@ export default function App() {
             >
               <ListFilter size={16} /> {t('agents')}
             </button>
+            <button 
+              onClick={() => setActiveTab('lobs')}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'lobs' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+            >
+              <Target size={16} /> {t('lobsPerformance')}
+            </button>
           </div>
         </nav>
 
@@ -640,10 +1101,10 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-y-auto">
         {/* Header - Geometric Balance */}
-        <header className="sticky top-0 z-10 flex justify-between items-center py-4 px-8 bg-slate-50/80 backdrop-blur-md border-b border-slate-200">
+        <header className="sticky top-0 z-[60] flex justify-between items-center py-4 px-8 bg-white/95 backdrop-blur-md border-b border-slate-200">
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold text-slate-900 hidden sm:block">
-              {summaries.length > 0 ? (activeTab === 'dashboard' ? t('overview') : t('agents')) : ''}
+              {summaries.length > 0 ? (activeTab === 'dashboard' ? t('overview') : activeTab === 'lobs' ? t('lobsPerformance') : t('agents')) : ''}
             </h2>
             <div className="lg:hidden flex items-center gap-2">
               <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white">SC</div>
@@ -653,8 +1114,15 @@ export default function App() {
           <div className="flex items-center gap-3">
             {summaries.length > 0 && (
               <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-bold flex items-center gap-2 h-10 px-4 shadow-sm cursor-pointer transition-colors relative">
+                 <Upload size={18} className="text-emerald-600" /> 
+                 <span className="hidden sm:inline">{summaries.length > 0 ? t('updateExtract') : t('addExtract')}</span>
+                 <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
+              </label>
+            )}
+            {summaries.length > 0 && (
+              <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-bold flex items-center gap-2 h-10 px-4 shadow-sm cursor-pointer transition-colors relative">
                  <CalendarIcon size={18} className="text-blue-600" /> 
-                 <span className="hidden sm:inline">{calendarData.length > 0 ? "Upload/Update Calendar" : "Add Calendário"}</span>
+                 <span className="hidden sm:inline">{calendarData.length > 0 ? t('updateCalendar') : t('addCalendar')}</span>
                  {calendarData.length > 0 && calendarNote && (
                     <span className="absolute -top-2.5 -right-2 bg-indigo-500 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full shadow-sm border border-indigo-600">
                        {calendarNote}
@@ -668,14 +1136,17 @@ export default function App() {
                 <FileDown size={18} /> <span className="hidden sm:inline">{t('exportPdf')}</span>
               </Button>
             )}
-            <div className="flex lg:hidden gap-1 bg-white border border-slate-200 rounded-lg p-1">
-              <Button variant="ghost" size="sm" onClick={() => setActiveTab('dashboard')} className={activeTab === 'dashboard' ? 'bg-slate-100' : ''}>
-                <LayoutDashboard size={16} />
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setActiveTab('list')} className={activeTab === 'list' ? 'bg-slate-100' : ''}>
-                <ListFilter size={16} />
-              </Button>
-            </div>
+                <div className="flex lg:hidden gap-1 bg-white border border-slate-200 rounded-lg p-1">
+                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('dashboard')} className={activeTab === 'dashboard' ? 'bg-slate-100' : ''}>
+                    <LayoutDashboard size={16} />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('list')} className={activeTab === 'list' ? 'bg-slate-100' : ''}>
+                    <ListFilter size={16} />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('lobs')} className={activeTab === 'lobs' ? 'bg-slate-100' : ''}>
+                    <Target size={16} />
+                  </Button>
+                </div>
           </div>
         </header>
 
@@ -737,7 +1208,7 @@ export default function App() {
                 transition={{ duration: 0.4 }}
                 className="space-y-8"
               >
-                <div className="sticky lg:top-[72px] top-0 z-[50] bg-slate-50/95 backdrop-blur-md border-b border-slate-200 pb-4 pt-4 px-8 -mx-8 -mt-8 mb-8 shadow-sm">
+                <div className="sticky lg:top-[72px] top-[72px] z-[50] bg-slate-50/95 backdrop-blur-md border-b border-slate-200 pb-4 pt-4 px-8 -mx-8 -mt-8 mb-8 shadow-sm">
                   <div className="flex flex-col gap-3">
                     <h3 className="text-slate-500 text-xs font-bold uppercase tracking-widest leading-none">{t('realtimeMetrics')}</h3>
                     <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 justify-between w-full">
@@ -810,7 +1281,25 @@ export default function App() {
                                           setTimeFilter('all');
                                        }}
                                      >
-                                       Mês Atual
+                                       {t('filterMonth')}
+                                     </Button>
+                                     <Button 
+                                       variant="outline" 
+                                       size="sm" 
+                                       className="text-[10px] font-bold uppercase h-7 px-2 border-slate-200 rounded-full"
+                                       onClick={() => {
+                                          const now = new Date();
+                                          const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                                          const end = new Date(now.getFullYear(), now.getMonth(), 0);
+                                          const days = [];
+                                          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                                             days.push(new Date(d));
+                                          }
+                                          setSelectedDates(days);
+                                          setTimeFilter('all');
+                                       }}
+                                     >
+                                       {t('filterPrevMonth')}
                                      </Button>
                                      <Button 
                                        variant="ghost" 
@@ -822,7 +1311,7 @@ export default function App() {
                                      </Button>
                                   </div>
                                   <CustomCalendar
-                                      summaries={summaries}
+                                      summaries={mergedSummaries}
                                       selectedDates={selectedDates}
                                       onSelectDates={(dates) => {
                                           setSelectedDates(dates);
@@ -831,7 +1320,7 @@ export default function App() {
                                   />
                               </PopoverContent>
                             </Popover>
-                            {(['month', 'week', 'day'] as const).map(filter => (
+                            {(['month', 'prev_month', 'week', 'yesterday', 'day'] as const).map(filter => (
                                <button 
                                  key={filter}
                                  onClick={() => {
@@ -844,7 +1333,7 @@ export default function App() {
                                  }}
                                  className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${timeFilter === filter && (!selectedDates || selectedDates.length === 0) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
                                >
-                                 {filter === 'month' ? t('filterMonth') : filter === 'week' ? t('filterWeek') : t('filterDay')}
+                                 {filter === 'month' ? t('filterMonth') : filter === 'prev_month' ? t('filterPrevMonth') : filter === 'week' ? t('filterWeek') : filter === 'yesterday' ? t('filterYesterday') : t('filterDay')}
                                </button>
                             ))}
                           </div>
@@ -852,60 +1341,163 @@ export default function App() {
                           <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto">
                              <span className="text-[10px] font-black uppercase text-slate-400 px-2 shrink-0">Status:</span>
                              <button 
-                               onClick={() => setTypeFilter(typeFilter === 'all' ? 'idle_overbreak_wc' : 'all')}
+                               onClick={() => { setTypeFilter(typeFilter === 'all' ? 'idle_overbreak_wc' : 'all'); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${typeFilter === 'idle_overbreak_wc' ? 'bg-rose-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                OVERBREAKS
                              </button>
                              <button
-                               onClick={() => setIncludeShort30MinGlobal(!includeShort30MinGlobal)}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${includeShort30MinGlobal ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}
+                               onClick={() => { setIncludeShort30MinGlobal(!includeShort30MinGlobal); clearExtraStatuses(); }}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${includeShort30MinGlobal ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-100'}`}
                              >
                                30MIN
                              </button>
                              <button
-                               onClick={() => setIncludeWcGlobal(!includeWcGlobal)}
+                               onClick={() => { setIncludeWcGlobal(!includeWcGlobal); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeWcGlobal ? 'bg-amber-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                Organic
                              </button>
                              <button
-                               onClick={() => setIncludeIdleGlobal(!includeIdleGlobal)}
+                               onClick={() => { setIncludeIdleGlobal(!includeIdleGlobal); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeIdleGlobal ? 'bg-rose-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                IDLE
                              </button>
                              <button
-                               onClick={() => setIncludeNonModGlobal(!includeNonModGlobal)}
+                               onClick={() => { setIncludeNonModGlobal(!includeNonModGlobal); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeNonModGlobal ? 'bg-teal-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                NON-MOD
                              </button>
                              <button
-                               onClick={() => setIncludeTardinessGlobal(!includeTardinessGlobal)}
+                               onClick={() => { setIncludeTardinessGlobal(!includeTardinessGlobal); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeTardinessGlobal ? 'bg-orange-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                TARDINESS
                              </button>
                              <button
-                               onClick={() => setIncludeEarlyLeaveGlobal(!includeEarlyLeaveGlobal)}
+                               onClick={() => { setIncludeEarlyLeaveGlobal(!includeEarlyLeaveGlobal); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeEarlyLeaveGlobal ? 'bg-orange-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                EARLY LEAVE
                              </button>
                              <button
-                               onClick={() => setIncludeCheckGlobal(!includeCheckGlobal)}
+                               onClick={() => { setIncludeAbsencesGlobal(!includeAbsencesGlobal); clearExtraStatuses(); }}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap overflow-hidden relative flex items-center gap-2 ${includeAbsencesGlobal ? 'bg-red-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               <span className="relative z-10 hidden sm:inline">FALTAS</span>
+                               <span className="relative z-10 sm:hidden">FALTAS</span>
+                               
+                               <span className="hidden">
+                                  {filteredSummaries.reduce((acc, s) => acc + (s.totalAbsences || 0), 0) > 0 ? (
+                                     <span>{filteredSummaries.reduce((acc, s) => acc + (s.totalAbsences || 0), 0)}</span>
+                                  ) : (
+                                     <span className={includeAbsencesGlobal ? 'text-white' : 'text-emerald-500'}>0</span>
+                                  )}
+                               </span>
+                             </button>
+                             <button
+                               onClick={() => { setIncludeOffboardedGlobal(!includeOffboardedGlobal); clearExtraStatuses(); }}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap overflow-hidden relative flex items-center gap-2 ${includeOffboardedGlobal ? 'bg-slate-700 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                                <span className="relative z-10 hidden sm:inline">OFFBOARDED</span>
+                                <span className="relative z-10 sm:hidden">OFFBOARDED</span>
+                                <span className="hidden">
+                                  {summaries.filter(s => s.isOffboarded).length}
+                                </span>
+                             </button>
+                             <button
+                               onClick={() => { setIncludeCheckGlobal(!includeCheckGlobal); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeCheckGlobal ? 'bg-amber-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                CHECK
                              </button>
                              <button
-                               onClick={() => setFilterMinorOverbreaks(!filterMinorOverbreaks)}
+                               onClick={() => { setFilterMinorOverbreaks(!filterMinorOverbreaks); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${filterMinorOverbreaks ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                                title="Mostra apenas agentes com total de 2 minutos ou menos"
                              >
                                2min or less
                              </button>
+                           </div>
+                           
+                           <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto mt-1">
+                             <span className="text-[10px] font-black uppercase text-slate-400 px-2 shrink-0">Status Extras:</span>
+                             <button
+                               onClick={() => {
+                                 setIncludeATTGlobal(!includeATTGlobal);
+                                 clearNormalStatuses();
+                                 if (!includeATTGlobal) { setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); }
+                               }}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeATTGlobal ? 'bg-slate-800 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               ATT
+                             </button>
+                             <button
+                               onClick={() => {
+                                 setIncludeLOAGlobal(!includeLOAGlobal);
+                                 clearNormalStatuses();
+                                 if (!includeLOAGlobal) { setIncludeATTGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); }
+                               }}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeLOAGlobal ? 'bg-indigo-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               LOA
+                             </button>
+                             <button
+                               onClick={() => {
+                                 setIncludePTOGlobal(!includePTOGlobal);
+                                 clearNormalStatuses();
+                                 if (!includePTOGlobal) { setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); }
+                               }}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includePTOGlobal ? 'bg-cyan-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               PTO (VAC)
+                             </button>
+                             <button
+                               onClick={() => {
+                                 setIncludeSLGlobal(!includeSLGlobal);
+                                 clearNormalStatuses();
+                                 if (!includeSLGlobal) { setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); }
+                               }}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeSLGlobal ? 'bg-rose-400 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               SL
+                             </button>
+                             <button
+                               onClick={() => {
+                                 setIncludeSUSPPGlobal(!includeSUSPPGlobal);
+                                 clearNormalStatuses();
+                                 if (!includeSUSPPGlobal) { setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeOFFGlobal(false); }
+                               }}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeSUSPPGlobal ? 'bg-red-700 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               SUSPP
+                             </button>
+                             <button
+                               onClick={() => {
+                                 setIncludeOFFGlobal(!includeOFFGlobal);
+                                 clearNormalStatuses();
+                                 if (!includeOFFGlobal) { setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); }
+                               }}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeOFFGlobal ? 'bg-slate-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               OFF
+                             </button>
+                             
+                             <AnimatePresence>
+                               {activeAnyStatus && hasSupportStaffWithStatus && (
+                                 <motion.button
+                                   initial={{ opacity: 0, scale: 0.8 }}
+                                   animate={{ opacity: 1, scale: 1 }}
+                                   exit={{ opacity: 0, scale: 0.8 }}
+                                   onClick={() => setIncludeSupportStaff(!includeSupportStaff)}
+                                   className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap relative flex items-center gap-2 ${includeSupportStaff ? 'bg-fuchsia-600 text-white shadow-md' : 'bg-fuchsia-50 text-fuchsia-600 border border-fuchsia-200 hover:bg-fuchsia-100 shadow-[0_0_12px_rgba(192,38,211,0.5)] animate-pulse'}`}
+                                 >
+                                   SUPPORT STAFF
+                                 </motion.button>
+                               )}
+                             </AnimatePresence>
                           </div>
                         </div>
                       </div>
@@ -915,10 +1507,69 @@ export default function App() {
 
                 <div className="min-h-[600px]">
                   {activeTab === 'dashboard' ? (
-                    <StatsDashboard summaries={filteredSummaries} allSummaries={summaries} periodSummaries={periodSummaries} basePeriodCount={periodSummaries.length} latestDate={latestDate} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalFilterMajorOverbreaks={false} globalShiftFilter={shiftFilter} />
+                    <StatsDashboard 
+                      summaries={activeAnyStatus ? filteredSummaries : workingSummaries} 
+                      allSummaries={mergedSummaries} 
+                      periodSummaries={periodSummaries} 
+                      basePeriodCount={basePeriodSummaries.length} 
+                      latestDate={latestDate} 
+                      globalTypeFilter={typeFilter}
+                      globalTimeFilter={timeFilter}
+                      globalIncludeWc={includeWcGlobal} 
+                      globalIncludeIdle={includeIdleGlobal} 
+                      globalIncludeNonMod={includeNonModGlobal} 
+                      globalIncludeTardiness={includeTardinessGlobal} 
+                      globalIncludeEarlyLeave={includeEarlyLeaveGlobal} 
+                      globalIncludeShort30Min={includeShort30MinGlobal} 
+                      globalIncludeAbsences={includeAbsencesGlobal}
+                      globalIncludeOffboarded={includeOffboardedGlobal}
+                      globalIncludeATT={includeATTGlobal}
+                      globalIncludeLOA={includeLOAGlobal}
+                      globalIncludePTO={includePTOGlobal}
+                      globalIncludeSL={includeSLGlobal}
+                      globalIncludeSUSPP={includeSUSPPGlobal}
+                      globalIncludeOFF={includeOFFGlobal}
+                      globalFilterMajorOverbreaks={false} 
+                      globalShiftFilter={shiftFilter} 
+                    />
+                  ) : activeTab === 'lobs' ? (
+                    <LOBAnalytics summaries={filteredSummaries} />
                   ) : (
-                    <EmployeeList summaries={filteredSummaries} allSummaries={summaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalFilterMajorOverbreaks={false} />
+                    <EmployeeList summaries={filteredSummaries} allSummaries={mergedSummaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalIncludeCheck={includeCheckGlobal} globalFilterMajorOverbreaks={false} />
                   )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Floating Summary Banner */}
+          <AnimatePresence>
+            {filteredSummaries.length > 0 && !isLoading && !isCalendarLoading && (
+              <motion.div 
+                initial={{ y: 100, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 100, opacity: 0 }}
+                className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 px-6 py-3 rounded-full shadow-2xl shadow-indigo-500/20"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex flex-col border-r border-slate-700 pr-4">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-tight">{t('agents')}</span>
+                    <span className="text-sm font-black text-white">{filteredSummaries.length}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-tight">{t('totalOverbreak')}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-black text-rose-400">
+                        {Math.floor(dashboardStats.totalOverbreakMinutes / 60)}h {dashboardStats.totalOverbreakMinutes % 60}m
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col border-l border-slate-700 pl-4">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-tight">{t('avgOverbreak')}</span>
+                    <span className="text-sm font-black text-indigo-400">
+                      {summaries.length > 0 ? Math.round(dashboardStats.totalOverbreakMinutes / summaries.length) : 0}m
+                    </span>
+                  </div>
                 </div>
               </motion.div>
             )}
