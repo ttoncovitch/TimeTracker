@@ -462,7 +462,7 @@ export default function App() {
   };
 
   const basePeriodSummaries = useMemo(() => {
-    const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
+    const otherShifts = shiftFilter;
     
     return mergedSummaries.map(s => {
       const records = s.dailyRecords.filter(r => {
@@ -514,14 +514,14 @@ export default function App() {
   }, [mergedSummaries, timeFilter, shiftFilter, selectedDates, showRealTime]);
 
   const periodSummaries = useMemo(() => {
-    const hasCheck = shiftFilter.includes('CHECK');
-    const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
+    const hasCheck = includeCheckGlobal;
+    const otherShifts = shiftFilter;
 
     return mergedSummaries.map(s => {
       const records = s.dailyRecords.filter(r => {
         if (!recordTimeFilterFn(r)) return false;
 
-        if (shiftFilter.length > 0) {
+        if (shiftFilter.length > 0 || includeCheckGlobal) {
             
             const isCheckMatch = r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim();
             const activeShift = r.scheduledShift ? cleanShift(r.scheduledShift) : (r.inferredShift ? cleanShift(r.inferredShift) : null);
@@ -575,11 +575,23 @@ export default function App() {
     }).filter(Boolean) as EmployeeSummary[];
   }, [mergedSummaries, timeFilter, shiftFilter, selectedDates, includeCheckGlobal, showRealTime]);
 
+  const hasMismatchesInSelection = useMemo(() => {
+    return mergedSummaries.some(s => {
+      const records = s.dailyRecords.filter(r => recordTimeFilterFn(r));
+      if (records.length === 0) return false;
+      
+      // If Real Time is on, only count mismatches for agents that are currently active
+      if (showRealTime && !isAgentActiveNow(records)) return false;
+
+      return records.some(r => !!(r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()));
+    });
+  }, [mergedSummaries, recordTimeFilterFn, showRealTime]);
+
   const processedSummaries = useMemo(() => {
     const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
     const todayStr = format(today, 'yyyy-MM-dd');
-    const hasCheck = shiftFilter.includes('CHECK') || includeCheckGlobal;
-    const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
+    const hasCheck = includeCheckGlobal;
+    const otherShifts = shiftFilter;
 
       let filtered = periodSummaries.map(s => {
         const records = s.dailyRecords.map(r => {
@@ -1175,7 +1187,10 @@ export default function App() {
           <div className="flex flex-col items-start gap-4 mb-2">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-lg shadow-lg">LO</div>
-              <h1 className="text-[17px] font-bold tracking-tight">Live <span className="text-blue-400">Overview</span></h1>
+              <div className="flex flex-col">
+                <h1 className="text-[17px] font-bold tracking-tight">Live <span className="text-blue-400">Overview</span></h1>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest -mt-1">Beta v1</span>
+              </div>
             </div>
             <button 
               onClick={() => setLang(lang === 'pt' ? 'en' : 'pt')}
@@ -1346,12 +1361,21 @@ export default function App() {
                 transition={{ duration: 0.4 }}
                 className="space-y-8"
               >
-                <div className="sticky lg:top-[72px] top-[72px] z-[50] bg-slate-50/95 backdrop-blur-md border-b border-slate-200 pb-4 pt-4 px-8 -mx-8 -mt-8 mb-8 shadow-sm">
-                  <div className="flex flex-col gap-3">
+                {activeTab !== 'howto' && (
+                  <div className="sticky lg:top-[72px] top-[72px] z-[50] bg-slate-50/95 backdrop-blur-md border-b border-slate-200 pb-4 pt-4 px-8 -mx-8 -mt-8 mb-8 shadow-sm">
+                    <div className="flex flex-col gap-3">
                     <div className="flex flex-col gap-2 items-start">
                       <h3 className="text-slate-500 text-xs font-bold uppercase tracking-widest leading-none">{t('realtimeMetrics')}</h3>
                       <button 
-                         onClick={() => setShowRealTime(!showRealTime)}
+                         onClick={() => {
+                           const nextValue = !showRealTime;
+                           setShowRealTime(nextValue);
+                           if (nextValue) {
+                             setTimeFilter('day');
+                             setShiftFilter([]);
+                             setSelectedDates([]);
+                           }
+                         }}
                          className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 min-w-max shadow-sm w-fit ${showRealTime ? 'bg-red-500 text-white border-red-500' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
                        >
                          <div className={`w-2 h-2 rounded-full ${showRealTime ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
@@ -1386,18 +1410,7 @@ export default function App() {
                                {shift}
                              </button>
                           ))}
-                          <button 
-                             onClick={() => {
-                               if (shiftFilter.includes('CHECK')) {
-                                 setShiftFilter(shiftFilter.filter(s => s !== 'CHECK'));
-                               } else {
-                                 setShiftFilter([...shiftFilter, 'CHECK']);
-                               }
-                             }}
-                             className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${shiftFilter.includes('CHECK') ? 'bg-amber-500 text-white border-amber-500 shadow-md' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'}`}
-                           >
-                             CHECK
-                          </button>
+
                            </div>
                          </div>
 
@@ -1558,7 +1571,7 @@ export default function App() {
                              </button>
                              <button
                                onClick={() => { setIncludeCheckGlobal(!includeCheckGlobal); clearExtraStatuses(); }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeCheckGlobal ? 'bg-amber-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeCheckGlobal ? 'bg-amber-500 text-white shadow-md' : (hasMismatchesInSelection ? 'bg-amber-100 text-amber-700 animate-pulse border border-amber-300' : 'bg-transparent text-slate-500 hover:bg-slate-100')}`}
                              >
                                {t('check')}
                              </button>
@@ -1666,6 +1679,7 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+              )}
 
                 <div className="min-h-[600px]">
                   {activeTab === 'dashboard' ? (

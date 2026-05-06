@@ -106,6 +106,15 @@ export function HowTo() {
              <div className="space-y-3">
                <div>
                  <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                   <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> {t('howtoFilterRealTime')}
+                 </h4>
+                 <p className="pl-4 border-l border-slate-200 ml-1">
+                   {t('howtoFilterRealTimeDesc')}
+                 </p>
+               </div>
+
+               <div>
+                 <h4 className="font-bold text-slate-800 flex items-center gap-2">
                    <span className="w-2 h-2 rounded-full bg-amber-500"></span> {t('howtoFilterTime')}
                  </h4>
                  <p className="pl-4 border-l border-slate-200 ml-1">
@@ -159,7 +168,7 @@ export function HowTo() {
                  <p>{t('howtoAbbrevNonMod')}</p>
                </div>
                <div>
-                 <h4 className="font-bold text-slate-800 bg-slate-100 px-2 py-1 rounded inline-block mb-1">CHECK</h4>
+                 <h4 className="font-bold text-slate-800 bg-slate-100 px-2 py-1 rounded inline-block mb-1 text-[10px] uppercase tracking-wider">{t('check')}</h4>
                  <p>{t('howtoAbbrevCheck')}</p>
                </div>
              </div>
