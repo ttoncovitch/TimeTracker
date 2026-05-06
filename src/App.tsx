@@ -1057,8 +1057,15 @@ export default function App() {
             ? `Overbreaks & Violators Report - ${periodLabel}` 
             : `General Report - ${periodLabel}`;
     
-    let fileSuffix = specificFilterLabel ? specificFilterLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + periodLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_') : periodLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-    if (typeFilter === 'idle_overbreak_wc') {
+    const baseLabel = specificFilterLabel 
+        ? specificFilterLabel 
+        : typeFilter === 'idle_overbreak_wc' 
+            ? 'Overbreaks_Violators' 
+            : 'General';
+            
+    let fileSuffix = `${baseLabel}_${periodLabel}`.replace(/[^A-Za-z0-9]+/g, '_');
+    
+    if (typeFilter === 'idle_overbreak_wc' && specificFilterLabel) {
         fileSuffix += "_only_overbreaks";
     }
 
@@ -1066,7 +1073,7 @@ export default function App() {
     const totalAgentsCount = periodSummaries.filter(s => !isSupportRole(s.lob || '')).length;
     const affectedAgentsCount = nonSupportExport.length;
 
-    exportToPDF(nonSupportExport, titleStr, `report_${fileSuffix}`, {
+    exportToPDF(nonSupportExport, titleStr, `Report_${fileSuffix}`, {
       isTardiness: isTardinessOnly,
       isMinorTardiness: isMinorTardinessOnly,
       isEarlyLeave: isEarlyLeaveOnly,

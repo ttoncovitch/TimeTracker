@@ -78,7 +78,7 @@ export function HowTo() {
                 <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-2">
                    <Target className="w-4 h-4 text-emerald-600" /> LOB's Performance
                 </h4>
-                <p>Divide todos os agentes por operação (LOB) e permite avaliar cada operação através das línguas. Essencial para verificar quais operações e quais idiomas de uma mesma operação precisam de maior suporte.</p>
+                <p>Divide todos os agentes por operação (LOB) e permite avaliar cada operação através das línguas. Essencial para verificar quais operações e quais idiomas de uma mesma operação precisam de maior suporte a Infratores.</p>
               </div>
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 md:col-span-2">
                 <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-2">
@@ -127,7 +127,7 @@ export function HowTo() {
                    <span className="w-2 h-2 rounded-full bg-rose-500"></span> Infrações Gerais
                  </h4>
                  <p className="pl-4 border-l border-slate-200 ml-1">
-                   Filtros de ocorrências: OVERBREAKS, ORGANIC, IDLE, NON-MOD, TARDINESS (Atrasos), MINOR TARDINESS (Atrasos Curtos), EARLY LEAVE. 
+                   Filtros de ocorrências: OVERBREAKS, ORGANIC, IDLE, NON-MOD, TARDINESS (Atrasos grandes &#8805; 15 min), MINOR TARDINESS (Atrasos Curtos &lt; 15 min), EARLY LEAVE. 
                    Ao clicar nestes botões, a lista mostrará apenas quem cometeu estas exatas violações no período selecionado.
                  </p>
                </div>
@@ -167,13 +167,44 @@ export function HowTo() {
           </div>
         </motion.div>
 
+        {/* Exportação PDF */}
+        <motion.div variants={item} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-indigo-100 p-2 rounded-lg">
+              <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
+            </div>
+            <h3 className="text-lg font-black text-slate-800">5. Extração de Relatórios PDF</h3>
+          </div>
+          <div className="text-slate-600 space-y-4 leading-relaxed text-sm">
+             <p>A ferramenta permite gerar relatórios em PDF de acordo com o filtro aplicado. O botão <strong>"Exportar PDF"</strong> ficará disponível na visualização de "Dashboard".</p>
+             <p className="pl-4 border-l-2 border-indigo-200">
+                Os arquivos PDF são nomeados de forma inteligente com o padrão <code className="text-indigo-600 font-bold bg-indigo-50 px-1 py-0.5 rounded">Report_Tipo_Data.pdf</code>.
+             </p>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+               <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  <h4 className="font-bold text-slate-800 mb-1">Tardiness / Minor Tardiness</h4>
+                  <p>O relatório PDF apresentará colunas cruciais:</p>
+                  <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li><strong>Scheduled Shift:</strong> O turno original planejado.</li>
+                    <li><strong>Effective Shift:</strong> O turno que o agente <em>efetivamente</em> assumiu (caso tenha realizado trocas de turno/horas extras, aparecerá aqui. Se for o mesmo turno original, constará um <code className="text-slate-500 bg-slate-200 px-1 rounded">-</code>).</li>
+                    <li><strong>Started at:</strong> O horário real em que o agente começou a trabalhar.</li>
+                  </ul>
+               </div>
+               <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  <h4 className="font-bold text-slate-800 mb-1">Outras Ocorrências</h4>
+                  <p>O PDF consolidará todos os agentes, incluindo contagem de infrações, tempos acumulados de overbreak/idle e lista de datas em que a anomalia verificou-se no extrato para facilitar o One-on-One e planilhas de PIP.</p>
+               </div>
+             </div>
+          </div>
+        </motion.div>
+
         {/* Support Staff e Status */}
         <motion.div variants={item} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
           <div className="flex items-center gap-3 mb-4">
             <div className="bg-rose-100 p-2 rounded-lg">
               <AlertTriangle className="w-5 h-5 text-rose-600" />
             </div>
-            <h3 className="text-lg font-black text-slate-800">5. Status Extras & Botão Support Staff</h3>
+            <h3 className="text-lg font-black text-slate-800">6. Status Extras & Botão Support Staff</h3>
           </div>
           <div className="text-slate-600 space-y-3 leading-relaxed text-sm">
              <p>Ao lado da barra de ocorrências comuns e turnos, temos o seletor rápido de Status Específicos (ATT, LOA, PTO, SL, SUSPP, OFF, FALTAS, OFFBOARDED). </p>

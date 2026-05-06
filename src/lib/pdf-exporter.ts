@@ -207,5 +207,5 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
     }
   });
 
-  doc.save(`${filename}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`);
+  doc.save(`${filename}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
 }
