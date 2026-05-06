@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { EmployeeSummary } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Users, AlertTriangle, Clock, CalendarX, TrendingDown, Target, Globe } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface LOBAnalyticsProps {
   summaries: EmployeeSummary[];
@@ -19,6 +20,8 @@ export function isSupportRole(lob: string): boolean {
 }
 
 export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
+  const { t, lang } = useLanguage();
+
   // Group summaries by LOB, excluding support roles
   const lobsData = useMemo(() => {
     const lobs: Record<string, EmployeeSummary[]> = {};
@@ -28,7 +31,7 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
       const hasWorkingSchedule = s.dailyRecords.some(r => (!r.isOFF && !r.isPTO && !r.isLOA && !r.isSL && !r.isSUSPP && !r.isATT) || r.isAbsence);
       if (!hasWorkingSchedule) return;
 
-      const lob = (s.lob && s.lob.trim() !== '') ? s.lob : 'Unknown';
+      const lob = (s.lob && s.lob.trim() !== '') ? s.lob : t('unknown');
       if (isSupportRole(lob)) return; // Exclude QA, RTA, etc.
       if (lob.toUpperCase() === 'LEG') return; // Exclude LEG
       
@@ -46,7 +49,7 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
   if (lobNames.length === 0) {
      return (
         <div className="mt-12 mb-24 px-4 text-center">
-           <h2 className="text-xl font-bold text-slate-500">Nenhum LOB de operação encontrado ou selecionado.</h2>
+           <h2 className="text-xl font-bold text-slate-500">{t('noLobFound')}</h2>
         </div>
      );
   }
@@ -70,7 +73,7 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
     
     // If exact match 'Unknown' we fallback to the second biggest if it exists
     const biggest = lobScores[0];
-    if (biggest.name === 'Unknown' && lobScores.length > 1 && lobScores[1].score > 0) {
+    if (biggest.name === t('unknown') && lobScores.length > 1 && lobScores[1].score > 0) {
       return lobScores[1];
     }
     return biggest;
@@ -84,8 +87,8 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
             <Target className="w-6 h-6 text-indigo-400" />
           </div>
           <div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">LOB's Performance</h2>
-            <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">Análise de Pontos de Melhoria por Operação e Língua</p>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">{t('lobsPerformance')}</h2>
+            <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">{t('lobPerformanceSubtitle')}</p>
           </div>
         </div>
 
@@ -93,7 +96,7 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
           <div className="flex items-center gap-3 bg-rose-50 border border-rose-200/60 rounded-2xl p-3 px-4 shadow-sm">
              <AlertTriangle className="w-5 h-5 text-rose-500" />
              <div className="flex flex-col">
-               <span className="text-[10px] font-black uppercase text-rose-500 tracking-widest">Maior Infrator (No Filtro)</span>
+               <span className="text-[10px] font-black uppercase text-rose-500 tracking-widest">{t('biggestInfractor')}</span>
                <span className="text-sm font-black text-rose-800">{mostCriticalLOB.name}</span>
              </div>
           </div>
@@ -116,6 +119,8 @@ interface LOBCardProps {
 }
 
 const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
+   const { t, lang } = useLanguage();
+
    const languages = useMemo(() => {
       const langs = new Set<string>();
       summaries.forEach(s => {
@@ -192,12 +197,12 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
               <h3 className="text-xl font-black text-slate-900 leading-tight">{lobName}</h3>
               <div className="flex items-center gap-2 mt-1">
                 <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
-                   <Users className="w-3 h-3" /> {stats.agentCount} agentes
+                   <Users className="w-3 h-3" /> {stats.agentCount} {t('agentsString')}
                 </span>
                 {(stats.totalOverbreak > 500 || stats.totalAbsences > 3) && (
                   <div className="flex items-center gap-1 bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full animate-pulse">
                     <AlertTriangle className="w-3.5 h-3.5" />
-                    <span className="text-[10px] font-black uppercase">Crítico</span>
+                    <span className="text-[10px] font-black uppercase">{t('critical')}</span>
                   </div>
                 )}
               </div>
@@ -212,7 +217,7 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
                       onClick={() => setSelectedLang(lang)}
                       className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${selectedLang === lang ? 'bg-indigo-600 text-white shadow-sm' : 'bg-transparent text-slate-500 hover:bg-slate-200'}`}
                     >
-                      {lang === 'ALL' ? 'Todas' : lang}
+                      {lang === 'ALL' ? t('allShort') : lang}
                     </button>
                  ))}
                </div>
@@ -222,52 +227,52 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-y-6 gap-x-4 mb-8">
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                <Clock className="w-3 h-3" /> Overbreak
+                <Clock className="w-3 h-3" /> {t('exceptions')}
               </span>
               <div className="flex flex-col">
                 <span className={`text-xl font-black leading-none ${stats.totalOverbreak > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                   {Math.floor(stats.totalOverbreak / 60)}h <span className="text-sm">{stats.totalOverbreak % 60}m</span>
                 </span>
-                <span className="text-[10px] font-bold text-slate-400 mt-1">Méd: {stats.agentCount > 0 ? Math.round(stats.totalOverbreak / stats.agentCount) : 0}m / ag</span>
+                <span className="text-[10px] font-bold text-slate-400 mt-1">{t('avg')}: {stats.agentCount > 0 ? Math.round(stats.totalOverbreak / stats.agentCount) : 0}m / ag</span>
               </div>
             </div>
 
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                <CalendarX className="w-3 h-3" /> Faltas
+                <CalendarX className="w-3 h-3" /> {t('absencesString')}
               </span>
               <div className="flex flex-col">
                 <span className={`text-xl font-black leading-none ${stats.totalAbsences > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                   {stats.totalAbsences}
                 </span>
-                <span className="text-[10px] font-bold text-slate-400 mt-1">{stats.employeeWithAbsences} Agfaltaram</span>
+                <span className="text-[10px] font-bold text-slate-400 mt-1">{stats.employeeWithAbsences} {t('agMissed')}</span>
               </div>
             </div>
 
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                <TrendingDown className="w-3 h-3" /> IDLE/WC
+                <TrendingDown className="w-3 h-3" /> {t('idleOrgaLabel')}
               </span>
               <div className="flex flex-col">
                 <span className="text-xl font-black leading-none text-amber-600">
                   {stats.idleAlerts + stats.wcAlerts}
                 </span>
                 <div className="flex gap-2 text-[9px] font-black text-slate-400 uppercase mt-1">
-                  <span>WC:{stats.wcAlerts}</span>
-                  <span>IDLE:{stats.idleAlerts}</span>
+                  <span>{t('orgaLabelShort')}:{stats.wcAlerts}</span>
+                  <span>{t('idleLabelShort')}:{stats.idleAlerts}</span>
                 </div>
               </div>
             </div>
 
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                 <AlertTriangle className="w-3 h-3" /> Atrasos
+                 <AlertTriangle className="w-3 h-3" /> {t('delays')}
               </span>
               <div className="flex flex-col">
                 <span className={`text-xl font-black leading-none ${stats.totalTardiness > 0 ? 'text-orange-600' : 'text-emerald-600'}`}>
                   {Math.floor(stats.totalTardiness / 60)}h <span className="text-sm">{stats.totalTardiness % 60}m</span>
                 </span>
-                <span className="text-[10px] font-bold text-slate-400 mt-1">Tempo total</span>
+                <span className="text-[10px] font-bold text-slate-400 mt-1">{t('totalTime')}</span>
               </div>
             </div>
           </div>
@@ -275,11 +280,11 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
           {/* Top Agents List */}
           <div className="mt-auto pt-5 border-t border-slate-100">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3 flex items-center gap-1">
-              <Globe className="w-3 h-3" /> Maiores Infratores ({selectedLang === 'ALL' ? 'Todas as Línguas' : selectedLang})
+              <Globe className="w-3 h-3" /> {t('biggestInfractors')} ({selectedLang === 'ALL' ? t('allLangs') : selectedLang})
             </span>
             <div className="space-y-2">
               {stats.topAgents.length === 0 ? (
-                 <div className="text-[11px] text-slate-400 font-bold py-2 bg-slate-50/50 rounded-lg text-center border border-slate-100/50">Nenhum agente crítico nesta seleção.</div>
+                 <div className="text-[11px] text-slate-400 font-bold py-2 bg-slate-50/50 rounded-lg text-center border border-slate-100/50">{t('noCriticalAgent')}</div>
               ) : stats.topAgents.map((agent, aIdx) => (
                 <div key={`${agent.name}-${aIdx}`} className="flex items-center justify-between text-left bg-slate-50/80 p-2.5 rounded-xl border border-transparent hover:border-slate-200 transition-all">
                   <div className="flex items-center gap-2 overflow-hidden flex-1">
@@ -293,11 +298,11 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
                        </span>
                     )}
                     {agent.absences > 0 && (
-                      <span className="text-[9px] font-black text-red-600 bg-red-50/80 px-1.5 py-0.5 border border-red-100 rounded shadow-sm">Fa: {agent.absences}</span>
+                      <span className="text-[9px] font-black text-red-600 bg-red-50/80 px-1.5 py-0.5 border border-red-100 rounded shadow-sm">{t('absencesLabel')}: {agent.absences}</span>
                     )}
                     {agent.overbreak > 0 && (
                       <span className="text-[9px] font-black text-rose-600 bg-rose-50/80 px-1.5 py-0.5 border border-rose-100 rounded shadow-sm">
-                        Exc: {agent.overbreak}m
+                        {t('exceededLabel')}: {agent.overbreak}m
                       </span>
                     )}
                   </div>

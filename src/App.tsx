@@ -14,7 +14,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useLanguage } from './contexts/LanguageContext';
-import { EmployeeSummary } from './types';
+import { EmployeeSummary, EmployeeDayRecord } from './types';
 import { parseExcelFile } from './lib/excel-parser';
 import { exportToPDF } from './lib/pdf-exporter';
 import { parseCalendarFile } from './lib/calendar-parser';
@@ -361,7 +361,7 @@ export default function App() {
     endOfWeek.setDate(startOfWeek.getDate() + 6);
     endOfWeek.setHours(23, 59, 59, 999);
 
-    return (r: DailyRecord) => {
+    return (r: EmployeeDayRecord) => {
         if (showRealTime) {
            const d = new Date(r.date + 'T12:00:00');
            const isToday = d.getDate() === td && d.getMonth() === tm && d.getFullYear() === ty;
@@ -396,7 +396,7 @@ export default function App() {
     };
   }, [timeFilter, selectedDates, showRealTime]);
 
-  const isAgentActiveNow = (records: DailyRecord[]) => {
+  const isAgentActiveNow = (records: EmployeeDayRecord[]) => {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
     const todayDateStr = format(now, 'yyyy-MM-dd');
     const yesterday = new Date(now);
@@ -938,7 +938,7 @@ export default function App() {
     const promise = Promise.all([parseCalendarFile(file), delayPromise]).then(([result]) => result);
     
     toast.promise(promise, {
-      loading: 'Processando calendário...',
+      loading: t('processingCalendarStatus'),
       success: ({ data, note }) => {
         setCalendarData(data);
         setIsCalendarLoading(false);
@@ -953,12 +953,12 @@ export default function App() {
         }
         setCalendarNote(finalNote);
         const filteredCount = data.length;
-        return `${filteredCount} agentes mapeados.`;
+        return `${filteredCount} ${t('agentsMapped')}`;
       },
       error: (err) => {
         console.error(err);
         setIsCalendarLoading(false);
-        return 'Erro ao processar calendário.';
+        return t('errorProcessingCalendar');
       }
     });
 
@@ -993,14 +993,14 @@ export default function App() {
       error: (err) => {
         console.error(err);
         setIsLoading(false);
-        return 'Erro ao processar arquivo. Verifique o formato.';
+        return t('errorProcessingFile');
       }
     });
   }, [t]);
 
   const handleExport = () => {
     if (filteredSummaries.length === 0) {
-      toast.error('Nenhum dado para exportar');
+      toast.error(t('noDataExport'));
       return;
     }
 
@@ -1039,28 +1039,28 @@ export default function App() {
     if (timeFilter === 'day') periodLabel = t('filterDay');
 
     let specificFilterLabel = '';
-    if (isTardinessOnly) specificFilterLabel = 'Tardiness (> 15m)';
-    else if (isMinorTardinessOnly) specificFilterLabel = 'Minor Tardiness (< 15m)';
-    else if (isEarlyLeaveOnly) specificFilterLabel = 'Early Leave';
-    else if (isAbsencesOnly) specificFilterLabel = 'Absences';
-    else if (isWcOnly) specificFilterLabel = 'WC Overbreaks';
-    else if (isIdleOnly) specificFilterLabel = 'Idle Overbreaks';
-    else if (isNonModOnly) specificFilterLabel = 'Non Moderating';
-    else if (isShort30MinOnly) specificFilterLabel = 'Only 1 Short Break';
-    else if (isCheckOnly) specificFilterLabel = 'Schedule Check (Mismatch)';
-    else if (activeExtraStatus) specificFilterLabel = `Status ${activeExtraStatus}`;
-    else if (includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all') specificFilterLabel = 'Offboarded (Saíram)';
+    if (isTardinessOnly) specificFilterLabel = t('reportTardiness');
+    else if (isMinorTardinessOnly) specificFilterLabel = t('reportMinorTardiness');
+    else if (isEarlyLeaveOnly) specificFilterLabel = t('reportEarlyLeave');
+    else if (isAbsencesOnly) specificFilterLabel = t('reportAbsences');
+    else if (isWcOnly) specificFilterLabel = t('reportWcOverbreaks');
+    else if (isIdleOnly) specificFilterLabel = t('reportIdleOverbreaks');
+    else if (isNonModOnly) specificFilterLabel = t('reportNonModerating');
+    else if (isShort30MinOnly) specificFilterLabel = t('reportShortBreak');
+    else if (isCheckOnly) specificFilterLabel = t('reportScheduleMismatch');
+    else if (activeExtraStatus) specificFilterLabel = `${t('reportStatusPrefix')} ${activeExtraStatus}`;
+    else if (includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all') specificFilterLabel = t('reportOffboarded');
 
     const titleStr = specificFilterLabel 
-        ? `${specificFilterLabel} Report - ${periodLabel}`
+        ? `${specificFilterLabel} ${t('reportSuffix')} - ${periodLabel}`
         : typeFilter === 'idle_overbreak_wc' 
-            ? `Overbreaks & Violators Report - ${periodLabel}` 
-            : `General Report - ${periodLabel}`;
+            ? `${t('reportOverbreakViolators')} - ${periodLabel}` 
+            : `${t('reportGeneral')} - ${periodLabel}`;
     
     const baseLabel = specificFilterLabel 
         ? specificFilterLabel 
         : typeFilter === 'idle_overbreak_wc' 
-            ? 'Overbreaks_Violators' 
+            ? 'Overbreaks_Outliers' 
             : 'General';
             
     let fileSuffix = `${baseLabel}_${periodLabel}`.replace(/[^A-Za-z0-9]+/g, '_');
@@ -1086,14 +1086,15 @@ export default function App() {
       activeExtraStatus: activeExtraStatus,
       attrKey: attrKey,
       totalAgentsCount,
-      affectedAgentsCount
+      affectedAgentsCount,
+      lang: lang as 'pt' | 'en'
     });
-    toast.success('PDF gerado com sucesso!');
+    toast.success(t('pdfSuccess'));
   };
 
   const clearData = () => {
     setSummaries([]);
-    toast.success('Dados resetados');
+    toast.success(t('dataReset'));
   };
 
   return (
@@ -1154,7 +1155,7 @@ export default function App() {
               transition={{ delay: 0.2 }}
               className="mt-6 text-xl font-black text-white tracking-widest uppercase"
             >
-              Processando Calendário
+              {t('processingCalendar')}
             </motion.h2>
             <motion.p 
               initial={{ y: 10, opacity: 0 }}
@@ -1162,7 +1163,7 @@ export default function App() {
               transition={{ delay: 0.4 }}
               className="mt-2 text-sm text-slate-400 font-medium max-w-sm text-center"
             >
-              Mapeando horários de turnos e idiomas...
+              {t('mappingShiftsDesc')}
             </motion.p>
           </motion.div>
         )}
@@ -1180,7 +1181,7 @@ export default function App() {
               onClick={() => setLang(lang === 'pt' ? 'en' : 'pt')}
               className="bg-slate-800 text-[10px] font-black uppercase text-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-700 transition-colors w-auto"
             >
-              {lang === 'pt' ? 'Switch to English' : 'Mudar para Português'}
+              {lang === 'pt' ? t('switchToEnglish') : t('switchToPortuguese')}
             </button>
           </div>
         </div>
@@ -1213,7 +1214,7 @@ export default function App() {
               onClick={() => setActiveTab('howto')}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 mt-2 ${activeTab === 'howto' ? 'bg-indigo-600/90 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}
             >
-              <HelpCircle size={16} className={activeTab === 'howto' ? "text-indigo-200" : ""} /> How To / Ajuda
+              <HelpCircle size={16} className={activeTab === 'howto' ? "text-indigo-200" : ""} /> {t('howtoMenu')}
             </button>
           </div>
         </nav>
@@ -1233,7 +1234,7 @@ export default function App() {
         <header className="sticky top-0 z-[60] flex justify-between items-center py-4 px-8 bg-white/95 backdrop-blur-md border-b border-slate-200">
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold text-slate-900 hidden sm:block">
-              {summaries.length > 0 ? (activeTab === 'howto' ? 'How To / Ajuda' : activeTab === 'dashboard' ? t('overview') : activeTab === 'lobs' ? t('lobsPerformance') : t('agents')) : ''}
+              {summaries.length > 0 ? (activeTab === 'howto' ? t('howtoMenu') : activeTab === 'dashboard' ? t('overview') : activeTab === 'lobs' ? t('lobsPerformance') : t('agents')) : ''}
             </h2>
             <div className="lg:hidden flex items-center gap-2">
               <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white">SC</div>
@@ -1315,8 +1316,8 @@ export default function App() {
                         <Upload size={32} />
                       </div>
                       <div>
-                        <p className="mb-1 text-2xl font-bold text-slate-800">2. Byteworks Extract</p>
-                        <p className="text-slate-500 font-medium text-[13px] leading-tight">Na aba <b>Calibration</b>, selecione os departamentos (exceto Management). A data deve iniciar em <b>00:00</b>. Exporte e faça o download em "My Export".</p>
+                        <p className="mb-1 text-2xl font-bold text-slate-800">{t('homeExtractTitle')}</p>
+                        <p className="text-slate-500 font-medium text-[13px] leading-tight" dangerouslySetInnerHTML={{ __html: t('homeExtractDesc') }}></p>
                       </div>
                     </div>
                     <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
@@ -1328,8 +1329,8 @@ export default function App() {
                         <CalendarIcon size={32} />
                       </div>
                       <div>
-                        <p className="mb-1 text-2xl font-bold text-slate-800">1. Opcional: Calendário</p>
-                        <p className="text-slate-500 font-medium text-[13px] leading-tight">Faça o upload do <b>Bytedance Schedules</b> (.csv, .xls, .xlsx). A ferramenta irá atualizar a LOB, Language, Turnos e as Faltas dos agentes.</p>
+                        <p className="mb-1 text-2xl font-bold text-slate-800">{t('homeCalendarTitle')}</p>
+                        <p className="text-slate-500 font-medium text-[13px] leading-tight" dangerouslySetInnerHTML={{ __html: t('homeCalendarDesc') }}></p>
                       </div>
                     </div>
                     <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleCalendarUpload} />
@@ -1354,7 +1355,7 @@ export default function App() {
                          className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 min-w-max shadow-sm w-fit ${showRealTime ? 'bg-red-500 text-white border-red-500' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
                        >
                          <div className={`w-2 h-2 rounded-full ${showRealTime ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
-                         REAL TIME
+                         {t('realTime')}
                        </button>
                     </div>
                     <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 justify-between w-full mt-2">
@@ -1363,12 +1364,12 @@ export default function App() {
                         {/* Top Filter Row: Shift Select */}
                         <div className="flex gap-1 items-center overflow-x-auto w-full sm:w-auto">
                            <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm min-w-max">
-                             <span className="text-[10px] font-black uppercase text-slate-400 px-2">Shift:</span>
+                             <span className="text-[10px] font-black uppercase text-slate-400 px-2">{t('shift')}:</span>
                              <button 
                                 onClick={() => setShiftFilter([])}
                                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${shiftFilter.length === 0 ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
                               >
-                                Todos
+                                {t('all')}
                              </button>
                           {availableShifts.map(shift => (
                              <button 
@@ -1403,13 +1404,13 @@ export default function App() {
                         {/* Bottom Filter Row: Calendars and Options */}
                         <div className="flex gap-2 flex-wrap justify-end w-full">
                           <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto">
-                            <span className="text-[10px] font-black uppercase text-slate-400 px-2">Período:</span>
+                            <span className="text-[10px] font-black uppercase text-slate-400 px-2">{t('period')}:</span>
                             <Popover>
                               <PopoverTrigger
                                    className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 bg-amber-500 text-white shadow-md hover:bg-amber-600`}
                                  >
                                    <CalendarIcon size={12} />
-                                   Calendário {selectedDates && selectedDates.length > 0 ? `(${selectedDates.length})` : ''}
+                                   {t('calendar')} {selectedDates && selectedDates.length > 0 ? `(${selectedDates.length})` : ''}
                               </PopoverTrigger>
                               <PopoverContent className="w-auto p-0" align="start">
                                   <div className="p-2 border-b border-slate-100 flex justify-between gap-2 bg-slate-50">
@@ -1455,7 +1456,7 @@ export default function App() {
                                        className="text-[10px] font-bold uppercase h-7 px-2 text-rose-500 hover:text-rose-600 rounded-full"
                                        onClick={() => setSelectedDates(undefined)}
                                      >
-                                       Limpar
+                                       {t('clearBtn')}
                                      </Button>
                                   </div>
                                   <CustomCalendar
@@ -1492,13 +1493,13 @@ export default function App() {
                                onClick={() => { setTypeFilter(typeFilter === 'all' ? 'idle_overbreak_wc' : 'all'); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${typeFilter === 'idle_overbreak_wc' ? 'bg-rose-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
-                               OVERBREAKS
+                               {t('overbreaks').toUpperCase()}
                              </button>
                              <button
                                onClick={() => { setIncludeShort30MinGlobal(!includeShort30MinGlobal); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${includeShort30MinGlobal ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-100'}`}
                              >
-                               30MIN
+                               {t('short30Min')}
                              </button>
                              <button
                                onClick={() => { setIncludeWcGlobal(!includeWcGlobal); clearExtraStatuses(); }}
@@ -1534,8 +1535,8 @@ export default function App() {
                                onClick={() => { setIncludeAbsencesGlobal(!includeAbsencesGlobal); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap overflow-hidden relative flex items-center gap-2 ${includeAbsencesGlobal ? 'bg-red-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
-                               <span className="relative z-10 hidden sm:inline">FALTAS</span>
-                               <span className="relative z-10 sm:hidden">FALTAS</span>
+                               <span className="relative z-10 hidden sm:inline">{t('absences')}</span>
+                               <span className="relative z-10 sm:hidden">{t('absences')}</span>
                                
                                <span className="hidden">
                                   {filteredSummaries.reduce((acc, s) => acc + (s.totalAbsences || 0), 0) > 0 ? (
@@ -1549,8 +1550,8 @@ export default function App() {
                                onClick={() => { setIncludeOffboardedGlobal(!includeOffboardedGlobal); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap overflow-hidden relative flex items-center gap-2 ${includeOffboardedGlobal ? 'bg-slate-700 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
-                                <span className="relative z-10 hidden sm:inline">OFFBOARDED</span>
-                                <span className="relative z-10 sm:hidden">OFFBOARDED</span>
+                                <span className="relative z-10 hidden sm:inline">{t('offboarded')}</span>
+                                <span className="relative z-10 sm:hidden">{t('offboarded')}</span>
                                 <span className="hidden">
                                   {summaries.filter(s => s.isOffboarded).length}
                                 </span>
@@ -1559,7 +1560,7 @@ export default function App() {
                                onClick={() => { setIncludeCheckGlobal(!includeCheckGlobal); clearExtraStatuses(); }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeCheckGlobal ? 'bg-amber-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
-                               CHECK
+                               {t('check')}
                              </button>
                              <button
                                onClick={() => { setFilterMinorOverbreaks(!filterMinorOverbreaks); clearExtraStatuses(); }}
@@ -1571,7 +1572,7 @@ export default function App() {
                            </div>
                            
                            <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto mt-1">
-                             <span className="text-[10px] font-black uppercase text-slate-400 px-2 shrink-0">Status Extras:</span>
+                             <span className="text-[10px] font-black uppercase text-slate-400 px-2 shrink-0">{t('additionalStatus')}:</span>
                              <AnimatePresence>
                                {includeTardinessGlobal && (
                                  <motion.button
@@ -1593,7 +1594,7 @@ export default function App() {
                                }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeATTGlobal ? 'bg-slate-800 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
-                               ATT
+                               {t('statusAtt')}
                              </button>
                              <button
                                onClick={() => {
@@ -1603,7 +1604,7 @@ export default function App() {
                                }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeLOAGlobal ? 'bg-indigo-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
-                               LOA
+                               {t('statusLoa')}
                              </button>
                              <button
                                onClick={() => {
@@ -1613,7 +1614,7 @@ export default function App() {
                                }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includePTOGlobal ? 'bg-cyan-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
-                               PTO (VAC)
+                               {t('statusPto')}
                              </button>
                              <button
                                onClick={() => {
@@ -1623,7 +1624,7 @@ export default function App() {
                                }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeSLGlobal ? 'bg-rose-400 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
-                               SL
+                               {t('statusSl')}
                              </button>
                              <button
                                onClick={() => {
@@ -1633,7 +1634,7 @@ export default function App() {
                                }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeSUSPPGlobal ? 'bg-red-700 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
-                               SUSPP
+                               {t('statusSuspp')}
                              </button>
                              <button
                                onClick={() => {
@@ -1643,7 +1644,7 @@ export default function App() {
                                }}
                                className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeOFFGlobal ? 'bg-slate-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
-                               OFF
+                               {t('statusOff')}
                              </button>
                              
                              <AnimatePresence>
@@ -1655,7 +1656,7 @@ export default function App() {
                                    onClick={() => setIncludeSupportStaff(!includeSupportStaff)}
                                    className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap relative flex items-center gap-2 ${includeSupportStaff ? 'bg-fuchsia-600 text-white shadow-md' : 'bg-fuchsia-50 text-fuchsia-600 border border-fuchsia-200 hover:bg-fuchsia-100 shadow-[0_0_12px_rgba(192,38,211,0.5)] animate-pulse'}`}
                                  >
-                                   SUPPORT STAFF
+                                   {t('supportStaff')}
                                  </motion.button>
                                )}
                              </AnimatePresence>

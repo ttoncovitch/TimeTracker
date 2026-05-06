@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { EmployeeSummary } from '../types';
+import { translations, Language } from './i18n';
 
 export interface PDFOptions {
   isTardiness?: boolean;
@@ -17,9 +18,13 @@ export interface PDFOptions {
   attrKey?: string | null;
   totalAgentsCount?: number;
   affectedAgentsCount?: number;
+  lang?: Language;
 }
 
 export function exportToPDF(summaries: EmployeeSummary[], title: string = "Breaks Report", filename: string = "breaks_report", options: PDFOptions = {}) {
+  const lang = options.lang || 'pt';
+  const t = (key: keyof typeof translations['pt']) => translations[lang][key] || key;
+
   const doc = new jsPDF();
   
   doc.setFontSize(18);
@@ -27,12 +32,12 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
   
   doc.setFontSize(11);
   doc.setTextColor(100);
-  doc.text(`Generated at: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 30);
+  doc.text(`${t('generatedAt')}: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 30);
   
   let startYPos = 40;
   if (options.totalAgentsCount !== undefined && options.affectedAgentsCount !== undefined) {
-    doc.text(`Total de Agentes no Periodo: ${options.totalAgentsCount}`, 14, 38);
-    doc.text(`Agentes Afetados: ${options.affectedAgentsCount}`, 14, 46);
+    doc.text(`${t('totalAgentsPeriod')}: ${options.totalAgentsCount}`, 14, 38);
+    doc.text(`${t('affectedAgents')}: ${options.affectedAgentsCount}`, 14, 46);
     startYPos = 54;
   }
   
@@ -40,16 +45,21 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
 
   let tableData: any[][] = [];
 
-  if (options.isTardiness) {
-    head = [['Agent', 'Date', 'Scheduled Shift', 'Effective Shift', 'Started at:', 'Tardiness (Mins)']];
+  if (options.isTardiness || options.isMinorTardiness) {
+    head = [[t('pdfAgent'), t('pdfDate'), t('pdfScheduledShift'), t('pdfEffectiveShift'), t('pdfStartedAt'), t('pdfTardinessMins')]];
+    
     summaries.forEach(s => {
-      s.dailyRecords.filter(r => (r.tardinessMinutes || 0) >= 15).forEach(r => {
-        let actualStart = 'Unknown';
+      const filterFn = options.isTardiness 
+        ? (r: any) => (r.tardinessMinutes || 0) >= 15
+        : (r: any) => (r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15;
+
+      s.dailyRecords.filter(filterFn).forEach(r => {
+        let actualStart = t('pdfUnknown');
         if (r.actualStartTime) {
             actualStart = format(new Date(r.actualStartTime), 'HH:mm');
         } else {
             const breakFirst = [...r.breaks].sort((a,b) => String(a.startTime).localeCompare(String(b.startTime)))[0];
-            actualStart = breakFirst ? (breakFirst.startTime ? format(new Date(breakFirst.startTime), 'HH:mm') : 'Unknown') : 'Unknown';
+            actualStart = breakFirst ? (breakFirst.startTime ? format(new Date(breakFirst.startTime), 'HH:mm') : t('pdfUnknown')) : t('pdfUnknown');
         }
         let effectiveShift = '-';
         if (r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) {
@@ -61,35 +71,7 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
         tableData.push([
           s.employeeName,
           r.date,
-          r.scheduledShift || r.inferredShift || 'Unknown',
-          effectiveShift,
-          actualStart,
-          `${r.tardinessMinutes}m`
-        ]);
-      });
-    });
-  } else if (options.isMinorTardiness) {
-    head = [['Agent', 'Date', 'Scheduled Shift', 'Effective Shift', 'Started at:', 'Tardiness (Mins)']];
-    summaries.forEach(s => {
-      s.dailyRecords.filter(r => (r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15).forEach(r => {
-        let actualStart = 'Unknown';
-        if (r.actualStartTime) {
-            actualStart = format(new Date(r.actualStartTime), 'HH:mm');
-        } else {
-            const breakFirst = [...r.breaks].sort((a,b) => String(a.startTime).localeCompare(String(b.startTime)))[0];
-            actualStart = breakFirst ? (breakFirst.startTime ? format(new Date(breakFirst.startTime), 'HH:mm') : 'Unknown') : 'Unknown';
-        }
-        let effectiveShift = '-';
-        if (r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) {
-            effectiveShift = r.inferredShift;
-        } else if (!r.scheduledShift && r.inferredShift) {
-            effectiveShift = r.inferredShift;
-        }
-
-        tableData.push([
-          s.employeeName,
-          r.date,
-          r.scheduledShift || r.inferredShift || 'Unknown',
+          r.scheduledShift || r.inferredShift || t('pdfUnknown'),
           effectiveShift,
           actualStart,
           `${r.tardinessMinutes}m`
@@ -97,51 +79,51 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
       });
     });
   } else if (options.isEarlyLeave) {
-    head = [['Agent', 'Date', 'Scheduled Shift', 'Actual End', 'Early Leave (Mins)']];
+    head = [[t('pdfAgent'), t('pdfDate'), t('pdfScheduledShift'), t('pdfActualEnd'), t('pdfEarlyLeaveMins')]];
     summaries.forEach(s => {
       s.dailyRecords.filter(r => (r.earlyLeaveMinutes || 0) > 0).forEach(r => {
-        let actualEnd = 'Unknown';
+        let actualEnd = t('pdfUnknown');
         if (r.actualEndTime) {
             actualEnd = format(new Date(r.actualEndTime), 'HH:mm');
         } else {
             const breakLast = [...r.breaks].sort((a,b) => String(b.endTime).localeCompare(String(a.endTime)))[0];
-            actualEnd = breakLast ? (breakLast.endTime ? format(new Date(breakLast.endTime), 'HH:mm') : 'Unknown') : 'Unknown';
+            actualEnd = breakLast ? (breakLast.endTime ? format(new Date(breakLast.endTime), 'HH:mm') : t('pdfUnknown')) : t('pdfUnknown');
         }
         tableData.push([
           s.employeeName,
           r.date,
-          r.scheduledShift || r.inferredShift || 'Unknown',
+          r.scheduledShift || r.inferredShift || t('pdfUnknown'),
           actualEnd,
           `${r.earlyLeaveMinutes}m`
         ]);
       });
     });
   } else if (options.isAbsences) {
-    head = [['Agent', 'Date', 'Scheduled Shift', 'Status']];
+    head = [[t('pdfAgent'), t('pdfDate'), t('pdfScheduledShift'), t('pdfStatus')]];
     summaries.forEach(s => {
       s.dailyRecords.filter(r => r.isAbsence).forEach(r => {
         tableData.push([
           s.employeeName,
           r.date,
-          r.scheduledShift || r.inferredShift || 'Unknown',
-          'Absence'
+          r.scheduledShift || r.inferredShift || t('pdfUnknown'),
+          t('pdfAbsence')
         ]);
       });
     });
   } else if (options.isCheck) {
-    head = [['Agent', 'Date', 'Scheduled Shift', 'Worked Shift']];
+    head = [[t('pdfAgent'), t('pdfDate'), t('pdfScheduledShift'), t('pdfWorkedShift')]];
     summaries.forEach(s => {
       s.dailyRecords.filter(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()).forEach(r => {
         tableData.push([
           s.employeeName,
           r.date,
-          r.scheduledShift || 'Unknown',
-          r.inferredShift || 'Unknown'
+          r.scheduledShift || t('pdfUnknown'),
+          r.inferredShift || t('pdfUnknown')
         ]);
       });
     });
   } else if (options.activeExtraStatus && options.attrKey) {
-    head = [['Agent', 'Date', 'Status']];
+    head = [[t('pdfAgent'), t('pdfDate'), t('pdfStatus')]];
     const key = options.attrKey as keyof EmployeeSummary['dailyRecords'][0];
     summaries.forEach(s => {
       s.dailyRecords.filter(r => !!r[key]).forEach(r => {
@@ -153,20 +135,20 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
       });
     });
   } else {
-    head = [['Agent', 'Work Time', 'Total Breaks', 'Overbreak Types', 'Overbreak Time', 'WC Time', 'WC Alerts']];
+    head = [[t('pdfAgent'), t('pdfWorkTime'), t('pdfTotalBreaks'), t('pdfOverbreakTypes'), t('pdfOverbreakTime'), t('pdfWcTime'), t('pdfWcAlerts')]];
     tableData = summaries.map(s => {
       const overbreakTypes = [];
       const mealOver = s.dailyRecords.reduce((acc, r) => acc + r.mealOverbreak, 0);
-      if (mealOver > 0) overbreakTypes.push('Meal');
+      if (mealOver > 0) overbreakTypes.push(t('meal'));
       const shortOver = s.dailyRecords.reduce((acc, r) => acc + r.shortOverbreak, 0);
-      if (shortOver > 0) overbreakTypes.push('Short');
+      if (shortOver > 0) overbreakTypes.push(t('short'));
       const wellOver = s.dailyRecords.reduce((acc, r) => acc + r.wellnessOverbreak, 0);
-      if (wellOver > 0) overbreakTypes.push('Well.');
+      if (wellOver > 0) overbreakTypes.push(t('wellness'));
       const prayOver = s.dailyRecords.reduce((acc, r) => acc + r.prayingOverbreak, 0);
-      if (prayOver > 0) overbreakTypes.push('Pray.');
+      if (prayOver > 0) overbreakTypes.push(t('praying'));
       const idleOver = s.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0);
-      if (idleOver > 0) overbreakTypes.push('IDLE');
-      const typesStr = overbreakTypes.length > 0 ? overbreakTypes.join(', ') : 'None';
+      if (idleOver > 0) overbreakTypes.push(t('idle'));
+      const typesStr = overbreakTypes.length > 0 ? overbreakTypes.join(', ') : t('pdfNone');
 
       return [
         s.employeeName,
@@ -175,7 +157,7 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
         typesStr,
         `${s.totalOverbreakMinutes}m`,
         s.wcTotalMinutes > 0 ? `${s.wcTotalMinutes}m` : '0m',
-        s.wcAlerts > 0 ? `${s.wcAlerts} alerts` : 'None'
+        s.wcAlerts > 0 ? `${s.wcAlerts} ${t('pdfAlerts')}` : t('pdfNone')
       ];
     });
   }

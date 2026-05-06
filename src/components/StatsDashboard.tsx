@@ -84,7 +84,7 @@ export function StatsDashboard({
   const isSUSPPOnly = globalIncludeSUSPP && baseNoFilters && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeOFF;
   const isOFFOnly = globalIncludeOFF && baseNoFilters && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP;
 
-  const activeExtraStatus = isATTOnly ? 'ATT' : isLOAOnly ? 'LOA' : isPTOOnly ? 'PTO (VAC)' : isSLOnly ? 'SL' : isSUSPPOnly ? 'SUSPP' : isOFFOnly ? 'OFF' : null;
+  const activeExtraStatus = isATTOnly ? t('statusAtt') : isLOAOnly ? t('statusLoa') : isPTOOnly ? t('statusPto') : isSLOnly ? t('statusSl') : isSUSPPOnly ? t('statusSuspp') : isOFFOnly ? t('statusOff') : null;
   const attrKey = isATTOnly ? 'isATT' : isLOAOnly ? 'isLOA' : isPTOOnly ? 'isPTO' : isSLOnly ? 'isSL' : isSUSPPOnly ? 'isSUSPP' : isOFFOnly ? 'isOFF' : null;
 
   const hasCheckFilter = globalShiftFilter.includes('CHECK') || !!globalIncludeCheck;
@@ -327,47 +327,47 @@ export function StatsDashboard({
   if (activeExtraStatus && extData) {
       if (globalTimeFilter === 'all' || globalTimeFilter === 'month') {
           affectedCount = extData.out.length;
-          affectedText = `EM ${activeExtraStatus}`;
+          affectedText = `${t('inStatus')} ${activeExtraStatus}`;
       } else {
           affectedCount = extData.out.length + extData.soon.length + extData.back.length;
-          affectedText = `EM ${activeExtraStatus}`;
+          affectedText = `${t('inStatus')} ${activeExtraStatus}`;
       }
   } else if (isCheckOnly) {
-      affectedCount = filteredSummaries.length;
-      affectedText = "Fora do Horário Programado";
+       affectedCount = filteredSummaries.length;
+      affectedText = t('outsideSchedule');
   } else if (isNonModOnly) {
       affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => r.breaks.some(b => b.type === 'non_moderating'))).length;
-      affectedText = "Em Non-Moderating";
+      affectedText = t('inNonMod');
   } else if (isWcOnly) {
       affectedCount = filteredSummaries.filter(s => s.wcAlerts > 0).length;
-      affectedText = "Em Excesso de Organic";
+      affectedText = t('organicExcess');
   } else if (isIdleOnly) {
       affectedCount = filteredSummaries.filter(s => s.idleAlerts > 0).length;
-      affectedText = "Com Ociosidade";
+      affectedText = t('withIdle');
   } else if (isTardinessOnly) {
       affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => (r.tardinessMinutes || 0) >= 15)).length;
-      affectedText = "Chegaram Atrasados";
+      affectedText = t('tardyAgents');
   } else if (isMinorTardinessOnly) {
       affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => (r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15)).length;
-      affectedText = "Atrasos (< 15m)";
+      affectedText = t('minorTardyAgents');
   } else if (isShort30MinOnly) {
       affectedCount = filteredSummaries.filter(s => (s.totalShort30MinRecords || 0) > 0).length;
-      affectedText = "Com apenas 1 break diário";
+      affectedText = t('onlyOneBreak');
   } else if (isEarlyLeaveOnly) {
       affectedCount = filteredSummaries.filter(s => s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0)).length;
-      affectedText = "Pausaram Cedo (Early Leave)";
+      affectedText = t('earlyLeaveAlerts');
   } else if (isAbsencesOnly) {
       affectedCount = filteredPeriodSummaries.filter(s => (s.totalAbsences || 0) > 0).length;
-      affectedText = "Com Faltas no Período";
+      affectedText = t('withAbsencesPeriod');
   } else if (isOffboardedOnly) {
       affectedCount = filteredSummaries.filter(s => s.isOffboarded).length;
-      affectedText = "Offboarded (Saíram)";
+      affectedText = t('offboardedAgents');
   } else if (globalTypeFilter === 'idle_overbreak_wc') {
       affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || (globalIncludeWc && s.wcAlerts > 0) || (globalIncludeIdle && s.idleAlerts > 0) || (globalIncludeTardiness && s.dailyRecords.some(r => (globalIncludeMinorTardiness ? ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15) : (r.tardinessMinutes || 0) >= 15))) || (globalIncludeEarlyLeave && s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0))).length;
-      affectedText = "COM OVERBREAK";
+      affectedText = t('overbreakAffected');
   } else {
       affectedCount = filteredSummaries.filter(s => s.totalOverbreakMinutes > 0 || (globalIncludeWc && s.wcAlerts > 0) || (globalIncludeIdle && s.idleAlerts > 0) || (globalIncludeTardiness && s.dailyRecords.some(r => (globalIncludeMinorTardiness ? ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15) : (r.tardinessMinutes || 0) >= 15))) || (globalIncludeEarlyLeave && s.dailyRecords.some(r => (r.earlyLeaveMinutes || 0) > 0))).length;
-      affectedText = "COM OVERBREAK (Geral)";
+      affectedText = t('overbreakAffectedGeneral');
   }
 
   const isDefaultNoFilters = globalTypeFilter === 'all' && !globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness;
@@ -573,7 +573,6 @@ export function StatsDashboard({
     .slice(0, 10);
 
   const topProblematic = agentsByOverbreakDuration;
-  const topInfrator = topProblematic[0];
 
   // Top WC
   const topWc = [...filteredSummaries]
@@ -712,7 +711,7 @@ export function StatsDashboard({
             <p className="text-[10px] text-slate-400 truncate mt-0.5">
               {isNonModOnly ? (
                 <>
-                  Total: {Math.floor(summary.totalOverbreakMinutes / 60)}h {Math.round(summary.totalOverbreakMinutes % 60)}m | Média/Dia: {Math.floor((summary.totalOverbreakMinutes / summary.dailyRecords.length) / 60)}h {Math.round((summary.totalOverbreakMinutes / summary.dailyRecords.length) % 60)}m
+                  {t('total')}: {Math.floor(summary.totalOverbreakMinutes / 60)}h {Math.round(summary.totalOverbreakMinutes % 60)}m | {t('avgDay')}: {Math.floor((summary.totalOverbreakMinutes / summary.dailyRecords.length) / 60)}h {Math.round((summary.totalOverbreakMinutes / summary.dailyRecords.length) % 60)}m
                 </>
               ) : (
                 <>{metricValue} {metricLabel}</>
@@ -757,25 +756,25 @@ export function StatsDashboard({
                </span>
              </div>
              <div className="flex justify-between items-center text-slate-300 font-bold">
-               <span>Idle:</span> 
+               <span>{t('idleLabel')}:</span> 
                <span className={idleOver > 0 ? "text-red-400 font-black" : "text-emerald-400 font-black"}>
-                 {idleOver > 0 ? `+${idleOver}m` : `OK`}
+                 {idleOver > 0 ? `+${idleOver}m` : t('okLabel')}
                </span>
              </div>
              <div className="flex justify-between items-center text-slate-300 font-bold">
-               <span>Status:</span> 
+               <span>{t('status')}:</span> 
                <span className={summary.isOffboarded ? "text-slate-400 font-black" : "text-emerald-400 font-black"}>
-                 {summary.isOffboarded ? "OFFBOARDED" : "ACTIVE"}
+                 {summary.isOffboarded ? t('offboarded') : t('active')}
                </span>
              </div>
              <div className="flex justify-between items-center text-slate-300 font-bold">
-               <span>Faltas:</span> 
+               <span>{t('absencesString')}:</span> 
                <span className={(summary.totalAbsences || 0) > 0 ? "text-red-500 font-black" : "text-emerald-400 font-black"}>
                  {summary.totalAbsences || 0}
                </span>
              </div>
              <div className="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center font-black">
-                <span className="text-rose-400/80 text-[10px] uppercase tracking-wider">Total Overbreak:</span>
+                <span className="text-rose-400/80 text-[10px] uppercase tracking-wider">{t('totalOverbreakLabel')}:</span>
                 <span className="text-rose-400 text-lg">{summary.totalOverbreakMinutes}m</span>
              </div>
           </div>
@@ -800,18 +799,18 @@ export function StatsDashboard({
                 {isCheckAndShift ? (
                   <>
                   <div className="pr-2">
-                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">Agentes do Período</p>
+                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">{t('agentsInPeriod')}</p>
                     <div className="flex items-baseline gap-1.5">
                        <p className="text-3xl font-black text-slate-900 tracking-tight">{agentsDoPeriodoCount}</p>
-                       <span className="text-xs font-bold text-slate-400 tracking-wide uppercase">Calendário</span>
+                       <span className="text-xs font-bold text-slate-400 tracking-wide uppercase">{t('calendar')}</span>
                     </div>
                   </div>
                   <div className="pl-6 flex-1 min-w-max">
-                    <p className="text-[11px] font-black uppercase tracking-widest mb-1 truncate text-amber-500">Agentes no período</p>
+                    <p className="text-[11px] font-black uppercase tracking-widest mb-1 truncate text-amber-500">{t('agentsInPeriod')}</p>
                     <div className="flex items-baseline gap-1.5">
                        <p className="text-3xl font-black tracking-tight text-amber-600">{agentsNoPeriodoCount}</p>
                        <span className="text-xs font-bold tracking-wide uppercase text-amber-500/70">
-                         {agentsDeOutroPeriodoCount > 0 ? `${agentsDeOutroPeriodoCount} de outro período` : 'Todos do período'}
+                         {agentsDeOutroPeriodoCount > 0 ? `${agentsDeOutroPeriodoCount} ${t('fromAnotherPeriod')}` : t('allFromPeriod')}
                        </span>
                     </div>
                   </div>
@@ -819,23 +818,23 @@ export function StatsDashboard({
                 ) : (
                   <>
                   <div className="pr-6">
-                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">Agentes no Período</p>
+                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">{t('agentsInPeriod')}</p>
                     <div className="flex items-center gap-6 divide-x divide-slate-200">
                       <div className="flex items-baseline gap-1.5">
                          <p className="text-3xl font-black text-slate-900 tracking-tight">{totalEmployees}</p>
-                         <span className="text-xs font-bold text-slate-400 tracking-wide uppercase">Total</span>
+                         <span className="text-xs font-bold text-slate-400 tracking-wide uppercase">{t('total')}</span>
                       </div>
                       
                       {(globalTimeFilter === 'all' || globalTimeFilter === 'month') && activeExtraStatus && (
                          <div className="pl-6 flex flex-col">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-0.5">Que tiveram {activeExtraStatus.split(' (')[0]}</p>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-0.5">{t('whoHad')} {activeExtraStatus.split(' (')[0]}</p>
                             <p className="text-xl font-black text-emerald-700 tracking-tight leading-none">{extData.back.length}</p>
                          </div>
                       )}
 
                       {(globalShiftFilter.length === 0 || isAbsencesOnly || globalIncludeAbsences) && !activeExtraStatus && (
                         <div className="pl-6 flex flex-col">
-                           <p className="text-[9px] font-black uppercase tracking-widest text-red-500 mb-0.5">Faltas</p>
+                           <p className="text-[9px] font-black uppercase tracking-widest text-red-500 mb-0.5">{t('absencesString')}</p>
                            <p className="text-xl font-black text-red-600 tracking-tight leading-none">{totalAbsencesInPeriod}</p>
                         </div>
                       )}
@@ -886,13 +885,13 @@ export function StatsDashboard({
                     </div>
                   </div>
                   <div className="pl-6 flex-1 min-w-max border-l border-slate-200">
-                    <p className={`text-[11px] font-black uppercase tracking-widest mb-1 truncate ${isNonModOnly ? 'text-amber-500' : (affectedCount > 0 ? 'text-rose-500' : 'text-emerald-500')}`}>{affectedText}</p>
-                    <div className="flex items-baseline gap-1.5">
-                       <p className={`text-3xl font-black tracking-tight ${isNonModOnly ? 'text-amber-600' : (affectedCount > 0 ? 'text-rose-600' : 'text-emerald-600')}`}>{affectedCount}</p>
-                       <span className={`text-xs font-bold tracking-wide uppercase ${isNonModOnly ? 'text-amber-400' : (affectedCount > 0 ? 'text-rose-400' : 'text-emerald-400')}`}>
-                         {isNonModOnly ? 'AGENTES' : 'Afetados'}
-                       </span>
-                    </div>
+                     <p className={`text-[11px] font-black uppercase tracking-widest mb-1 truncate ${isNonModOnly ? 'text-amber-500' : (affectedCount > 0 ? 'text-rose-500' : 'text-emerald-500')}`}>{isNonModOnly ? t('agentsString').toUpperCase() : t('withOverbreakGen')}</p>
+                     <div className="flex items-baseline gap-1.5">
+                        <p className={`text-3xl font-black tracking-tight ${isNonModOnly ? 'text-amber-600' : (affectedCount > 0 ? 'text-rose-600' : 'text-emerald-600')}`}>{affectedCount}</p>
+                        <span className={`text-xs font-bold tracking-wide uppercase ${isNonModOnly ? 'text-amber-400' : (affectedCount > 0 ? 'text-rose-400' : 'text-emerald-400')}`}>
+                          {isNonModOnly ? t('agentsString').toUpperCase() : t('affected')}
+                        </span>
+                     </div>
                   </div>
                   </>
                 )}
@@ -901,7 +900,7 @@ export function StatsDashboard({
                  {/* Most Minutes */}
                  {(!isCheckOnly && !activeExtraStatus) && (
                  <div className="flex flex-col">
-                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title="Shift com mais tempo neste filtro">Shift com mais minutos</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title={t('shiftMostMinutes')}>{t('shiftMostMinutes')}</p>
                    <div className="flex items-center gap-1.5">
                      <span className="text-[10px] font-black text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded uppercase border border-slate-200">{shiftStats.mostMinutes.shift}</span>
                      <span className="text-[11px] font-bold text-rose-500">
@@ -915,7 +914,7 @@ export function StatsDashboard({
                  {/* Most Occurrences */}
                  {!activeExtraStatus && (
                  <div className="flex flex-col">
-                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title="Shift com mais ocorrências neste filtro">{isCheckOnly ? 'Shift com mais ocorrências (Agentes)' : 'Shift com mais ocorrências'}</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title={t('shiftMostOccurrences')}>{isCheckOnly ? t('shiftMostOccurrencesAgents') : t('shiftMostOccurrences')}</p>
                    <div className="flex items-center gap-1.5">
                      <span className="text-[10px] font-black text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded uppercase border border-slate-200">{shiftStats.mostOccurrences.shift}</span>
                      <span className="text-[11px] font-bold text-amber-500">{shiftStats.mostOccurrences.occurrences}x</span>
@@ -953,14 +952,14 @@ export function StatsDashboard({
                 <Card className="rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                   <CardContent className="p-5">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                      {isCheckOnly ? (globalTimeFilter === 'day' ? "TOTAL DE AGENTES" : "MÉDIA DE AGENTES POR PERÍODO") : 
-                       isNonModOnly ? "Tempo médio de Non-Moderating/Dia" :
-                       isWcOnly ? "Média Organic Break/Dia por agente" :
-                       isIdleOnly ? "Média Idle/Dia por agente" :
-                       isTardinessOnly ? "Média Atraso/Dia por agente" :
-                       isEarlyLeaveOnly ? "Média Early Leave/Dia por agente" :
-                       isShort30MinOnly ? "Média 30min/dia" :
-                       "MÉDIA OVERBREAK/DIA POR AGENTE"}
+                      {isCheckOnly ? (globalTimeFilter === 'day' ? t('totalAgentsTitle') : t('avgAgentsTitle')) : 
+                       isNonModOnly ? t('avgNonModDay') :
+                       isWcOnly ? t('avgOrganicDay') :
+                       isIdleOnly ? t('avgIdleDay') :
+                       isTardinessOnly ? t('avgTardinessDay') :
+                       isEarlyLeaveOnly ? t('avgEarlyLeaveDay') :
+                       isShort30MinOnly ? t('avg30minDay') :
+                       t('avgOverbreakDay')}
                     </p>
                     <div className="flex items-baseline gap-1">
                       {isCheckOnly ? (
@@ -999,7 +998,7 @@ export function StatsDashboard({
                           </div>
                           {isWcOnly && (
                             <div className="absolute right-0 top-1/2 -translate-y-1/2 border-l border-slate-200 pl-3">
-                               <p className="text-[9px] font-black uppercase text-slate-400 leading-tight mb-0.5">Média sem Top 5</p>
+                            <p className="text-[9px] font-black uppercase text-slate-400 leading-tight mb-0.5">{t('avgWithoutTop5')}</p>
                                <p className="text-sm font-bold text-slate-600 tracking-tight leading-none">
                                  {averageWithoutTop5 > 59 ? (
                                    `${Math.floor(averageWithoutTop5 / 60)}h ${Math.round(averageWithoutTop5 % 60)}m`
@@ -1054,7 +1053,7 @@ export function StatsDashboard({
                 {showOverbreakCard && (
                   <Card className="rounded-2xl shadow-sm border border-rose-200 overflow-hidden bg-rose-50">
                     <CardContent className="p-5">
-                      <p className="text-[10px] font-bold text-rose-800 uppercase tracking-widest mb-1">{isTardinessOnly ? 'Tempo Total de Atrasos' : 'Tempo Total de Overbreak'}</p>
+                      <p className="text-[10px] font-bold text-rose-800 uppercase tracking-widest mb-1">{isTardinessOnly ? t('totalTardinessTime') : t('totalOverbreakTime')}</p>
                       <div className="flex items-baseline gap-2">
                         <p className="text-2xl font-black text-rose-600">
                            {totalOverbreak > 59 ? (
@@ -1075,17 +1074,17 @@ export function StatsDashboard({
                 {showBottom10 && (
                 <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                   <CardHeader className={`${isCheckOnly ? 'bg-amber-50/50 border-amber-100/50' : isWcOnly ? 'bg-amber-50/50 border-amber-100/50' : isNonModOnly || isShort30MinOnly ? 'bg-emerald-50/50 border-emerald-100/50' : 'bg-rose-50/50 border-rose-100/50'} border-b py-4 shrink-0 rounded-t-2xl`}>
-                    <CardTitle className={`text-sm font-black uppercase tracking-widest ${isCheckOnly ? 'text-amber-800' : isWcOnly ? 'text-amber-800' : isNonModOnly || isShort30MinOnly ? 'text-emerald-800' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-800' : 'text-rose-800'} flex items-center gap-2`}>
-                      <AlertCircle size={16} /> {isCheckOnly ? (globalTimeFilter === 'day' ? "AGENTES FORA DE TURNO" : "AGENTES COM MAIS TURNOS UNSCHEDULED") : isWcOnly ? "TOP 10 ORGANIC" : isNonModOnly ? "BOTTOM 10" : isShort30MinOnly ? "TOP 10" : isIdleOnly ? "Tempo em Idle" : isTardinessOnly ? "TOP 10 ATRASADOS" : isEarlyLeaveOnly ? "TOP 10 EARLY LEAVE" : "Tempo de Overbreaks"}
-                    </CardTitle>
+                      <CardTitle className={`text-sm font-black uppercase tracking-widest ${isCheckOnly ? 'text-amber-800' : isWcOnly ? 'text-amber-800' : isNonModOnly || isShort30MinOnly ? 'text-emerald-800' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-800' : 'text-rose-800'} flex items-center gap-2`}>
+                        <AlertCircle size={16} /> {isCheckOnly ? (globalTimeFilter === 'day' ? t('mismatchDetails') : t('top10Mismatch')) : isWcOnly ? t('top10Organic') : isNonModOnly ? "BOTTOM 10" : isShort30MinOnly ? "TOP 10" : isIdleOnly ? t('totalIdleTime') : isTardinessOnly ? t('top10Tardiness') : isEarlyLeaveOnly ? t('top10EarlyLeave') : t('totalOverbreakTime')}
+                      </CardTitle>
                     <CardDescription className={`text-xs ${isCheckOnly ? 'text-amber-600/80' : isWcOnly ? 'text-amber-600/80' : isNonModOnly || isShort30MinOnly ? 'text-emerald-600/80' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-600/80' : 'text-rose-600/80'} mt-1`}>
                       {isCheckOnly 
-                         ? (globalTimeFilter === 'day' ? `Agentes escalados para um horário mas que trabalharam em outro` : `Mais dias trabalhados fora do horário`)
+                         ? (globalTimeFilter === 'day' ? t('mismatchDescShort') : t('mismatchDaysDesc'))
                          : isWcOnly
-                         ? `Maior tempo total em Organic`
+                         ? t('topOrganicDesc')
                          : isNonModOnly 
-                         ? `Menos tempo em Non-Moderating`
-                         : isShort30MinOnly ? "Agentes com apenas 1 break diário" : isIdleOnly ? "Mais tempo total em idle" : isTardinessOnly ? "Mais tempo de atrasos na jornada" : isEarlyLeaveOnly ? "Mais tempo de early leave na jornada" : "Mais tempo total de overbreak"}
+                         ? t('lessNonModDesc')
+                         : isShort30MinOnly ? t('agentsWith1BreakDesc') : isIdleOnly ? t('idleDesc') : isTardinessOnly ? t('tardinessDesc') : isEarlyLeaveOnly ? t('earlyLeaveDesc') : t('mostOverbreakTimeDesc')}
                     </CardDescription>
                    </CardHeader>
                   <CardContent className="p-0 flex-1">
@@ -1099,7 +1098,7 @@ export function StatsDashboard({
                                   summary={s} 
                                   rank={i+1} 
                                   metricValue={globalTimeFilter === 'day' && mismatchRecord ? `${mismatchRecord.scheduledShift} ➔ ${mismatchRecord.inferredShift}` : `${s.mismatchCount}`} 
-                                  metricLabel={globalTimeFilter === 'day' ? "" : (s.mismatchCount === 1 ? "dia" : "dias")} 
+                                  metricLabel={globalTimeFilter === 'day' ? "" : (s.mismatchCount === 1 ? t('day').toLowerCase() : t('days').toLowerCase())} 
                                   colorClass="text-amber-700"
                                   hideTooltip={true}
                                />
@@ -1112,7 +1111,7 @@ export function StatsDashboard({
                                summary={s} 
                                rank={i+1} 
                                metricValue={`${s.totalShort30MinRecords}`} 
-                               metricLabel={s.totalShort30MinRecords === 1 ? "dia" : "dias"} 
+                               metricLabel={s.totalShort30MinRecords === 1 ? t('day').toLowerCase() : t('days').toLowerCase()} 
                                colorClass="text-emerald-700"
                             />
                          ))
@@ -1145,7 +1144,7 @@ export function StatsDashboard({
                                summary={s} 
                                rank={i+1} 
                                metricValue={isTardinessOnly ? `${Math.round(s.totalTardinessMinutes)}m` : isEarlyLeaveOnly ? `${Math.round(s.totalEarlyLeaveMinutes)}m` : `${Math.round(s.totalOverbreakMinutes)}m`} 
-                               metricLabel={isTardinessOnly ? "atraso" : isEarlyLeaveOnly ? "early leave" : "excedidos"} 
+                               metricLabel={isTardinessOnly ? t('delays').toLowerCase() : isEarlyLeaveOnly ? "early leave" : t('overbreakExceeded')} 
                                colorClass={isTardinessOnly || isEarlyLeaveOnly ? "text-orange-700" : "text-rose-700"}
                             />
                          ))
@@ -1164,7 +1163,7 @@ export function StatsDashboard({
                       <CardTitle className="text-sm font-black uppercase tracking-widest text-amber-800 flex items-center gap-2">
                         <AlertCircle size={16} /> TOP 10 ORGANIC
                       </CardTitle>
-                      <CardDescription className="text-xs text-amber-600/80 mt-1">Colaboradores com maior tempo/alertas em Organic</CardDescription>
+                      <CardDescription className="text-xs text-amber-600/80 mt-1">{t('topOrganicDesc')}</CardDescription>
                     </CardHeader>
                     <CardContent className="p-0 flex-1">
                       <div className="divide-y divide-slate-50">
@@ -1192,7 +1191,7 @@ export function StatsDashboard({
                       <CardTitle className="text-sm font-black uppercase tracking-widest text-emerald-800 flex items-center gap-2">
                         <AlertCircle size={16} /> SHORTBREAKS 30MIN
                       </CardTitle>
-                      <CardDescription className="text-xs text-emerald-600/80 mt-1">Agentes com apenas 1 break diário</CardDescription>
+                      <CardDescription className="text-xs text-emerald-600/80 mt-1">{t('agentsWith1BreakDesc')}</CardDescription>
                     </CardHeader>
                     <CardContent className="p-0 flex-1">
                       <div className="divide-y divide-slate-50">
@@ -1233,7 +1232,7 @@ export function StatsDashboard({
                                 summary={s} 
                                 rank={i+1} 
                                 metricValue={s.totalOverbreakMinutes === 0 ? "Perfeito" : `${s.totalOverbreakMinutes}m`} 
-                                metricLabel={s.totalOverbreakMinutes === 0 ? "" : "excedidos"} 
+                                metricLabel={s.totalOverbreakMinutes === 0 ? "" : t('overbreakExceeded')} 
                                 colorClass="text-emerald-700"
                                 hideTooltip={true}
                              />
@@ -1251,9 +1250,9 @@ export function StatsDashboard({
                   <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                     <CardHeader className="bg-slate-50/50 border-b border-slate-100/50 py-4 shrink-0 rounded-t-2xl">
                       <CardTitle className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2">
-                        <AlertCircle size={16} /> FORGOT STATUS
+                        <AlertCircle size={16} /> {t('forgotStatus')}
                       </CardTitle>
-                      <CardDescription className="text-xs text-slate-600/80 mt-1">Status longo após fim de turno</CardDescription>
+                      <CardDescription className="text-xs text-slate-600/80 mt-1">{t('forgotStatusDesc')}</CardDescription>
                     </CardHeader>
                     <CardContent className="p-0 flex-1">
                       <div className="divide-y divide-slate-50">
@@ -1278,9 +1277,9 @@ export function StatsDashboard({
                   <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                     <CardHeader className="bg-purple-50/50 border-b border-purple-100/50 py-4 shrink-0 rounded-t-2xl">
                       <CardTitle className="text-sm font-black uppercase tracking-widest text-purple-800 flex items-center gap-2">
-                        <AlertCircle size={16} /> TOP 10 R&A
+                        <AlertCircle size={16} /> {t('top10ReviewAppeal')}
                       </CardTitle>
-                      <CardDescription className="text-xs text-purple-600/80 mt-1">Mais tempo em Review and Appeal</CardDescription>
+                      <CardDescription className="text-xs text-purple-600/80 mt-1">{t('reviewAndAppealDesc')}</CardDescription>
                     </CardHeader>
                     <CardContent className="p-0 flex-1">
                       <div className="divide-y divide-slate-50">
@@ -1305,9 +1304,9 @@ export function StatsDashboard({
                   <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                     <CardHeader className="bg-indigo-50/50 border-b border-indigo-100/50 py-4 shrink-0 rounded-t-2xl">
                       <CardTitle className="text-sm font-black uppercase tracking-widest text-indigo-800 flex items-center gap-2">
-                        <AlertCircle size={16} /> TOP 10 AWAITING
+                        <AlertCircle size={16} /> {t('top10Awaiting')}
                       </CardTitle>
-                      <CardDescription className="text-xs text-indigo-600/80 mt-1">Mais tempo em Awaiting Tasks</CardDescription>
+                      <CardDescription className="text-xs text-indigo-600/80 mt-1">{t('awaitingTasksDesc')}</CardDescription>
                     </CardHeader>
                     <CardContent className="p-0 flex-1">
                       <div className="divide-y divide-slate-50">
@@ -1332,9 +1331,9 @@ export function StatsDashboard({
                   <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                     <CardHeader className="bg-teal-50/50 border-b border-teal-100/50 py-4 shrink-0 rounded-t-2xl">
                       <CardTitle className="text-sm font-black uppercase tracking-widest text-teal-800 flex items-center gap-2">
-                        <AlertCircle size={16} /> TOP 10 NON-MOD
+                        <AlertCircle size={16} /> {t('top10NonMod')}
                       </CardTitle>
-                      <CardDescription className="text-xs text-teal-600/80 mt-1">Mais tempo TOTAL em Non-Moderating</CardDescription>
+                      <CardDescription className="text-xs text-teal-600/80 mt-1">{t('totalNonModDesc')}</CardDescription>
                     </CardHeader>
                     <CardContent className="p-0 flex-1">
                       <div className="divide-y divide-slate-50">
@@ -1554,21 +1553,21 @@ export function StatsDashboard({
         <Card className="lg:col-span-12 rounded-2xl shadow-sm border border-slate-200 overflow-hidden bg-white">
           <CardHeader className="bg-slate-50/50 border-b border-slate-100 py-4">
             <CardTitle className="text-sm font-black uppercase tracking-widest text-slate-700">
-               {isCheckOnly ? 'DETALHES DE DIVERGÊNCIA DE HORÁRIO' :
-               isNonModOnly ? `Alertas Non-Moderating` : 
-               isWcOnly ? 'Alertas Organic' : 
-               isIdleOnly ? 'Alertas Idle' : 
-               isTardinessOnly ? 'Alertas de Atraso' :
-               isEarlyLeaveOnly ? 'Alertas de Early Leave' :
+               {isCheckOnly ? t('mismatchDetails') :
+               isNonModOnly ? t('nonModAlerts') : 
+               isWcOnly ? t('organicAlerts') : 
+               isIdleOnly ? t('idleAlertsTitle') : 
+               isTardinessOnly ? t('tardinessAlerts') :
+               isEarlyLeaveOnly ? t('earlyLeaveAlerts') :
                t('auditLogOverbreak')}
             </CardTitle>
             <CardDescription className="text-xs text-slate-500 mt-1">
-              {isCheckOnly ? 'Agentes que trabalharam em turnos diferentes dos programados' :
-               isNonModOnly ? `Detalhamento dos colaboradores em Non-Moderating` : 
-               isWcOnly ? 'Detalhamento dos colaboradores em uso de Organic' : 
-               isIdleOnly ? 'Detalhamento dos colaboradores em status Idle' : 
-               isTardinessOnly ? 'Detalhamento dos colaboradores com atrasos na jornada' :
-               isEarlyLeaveOnly ? 'Detalhamento dos colaboradores que saíram cedo da jornada' :
+              {isCheckOnly ? t('mismatchDesc') :
+               isNonModOnly ? t('nonModDesc') : 
+               isWcOnly ? t('organicDesc') : 
+               isIdleOnly ? t('idleDesc') : 
+               isTardinessOnly ? t('tardinessDesc') :
+               isEarlyLeaveOnly ? t('earlyLeaveDesc') :
                t('needAttentionDesc')}
             </CardDescription>
           </CardHeader>
@@ -1581,7 +1580,7 @@ export function StatsDashboard({
                     <div>
                       <span className="font-bold text-sm text-slate-800">{s.employeeName}</span>
                       <p className="text-[10px] text-slate-500 mt-0.5">
-                        {isCheckOnly ? "Trabalhou fora do horário programado." : isWcOnly ? "Uso de Organic contabilizado." : isIdleOnly ? "Apresentou ociosidade crítica." : isTardinessOnly ? "Registrou atraso na jornada." : isEarlyLeaveOnly ? "Registrou early leave na jornada." : s.idleAlerts > 0 ? "Apresentou ociosidade crítica." : s.wcAlerts > 0 ? "Uso excessivo de status (Organic)." : "Excedeu tempo de pausas."}
+                        {isCheckOnly ? t('workedOutsideShiftDesc') : isWcOnly ? t('organicUsedDesc') : isIdleOnly ? t('criticalIdleDesc') : isTardinessOnly ? t('tardinessRecordedDesc') : isEarlyLeaveOnly ? t('earlyLeaveRecordedDesc') : s.idleAlerts > 0 ? t('criticalIdleDesc') : s.wcAlerts > 0 ? t('organicExcessDesc') : t('exceededBreaksDesc')}
                       </p>
                     </div>
                   </div>
@@ -1697,22 +1696,22 @@ export function StatsDashboard({
                                       <div key={idx} className={`flex flex-col gap-2 bg-white p-4 rounded-xl border shadow-sm ${b.type === 'forgot_status' ? 'border-slate-200' : isWcOnly ? 'border-amber-100' : isIdleOnly ? 'border-rose-100' : 'border-rose-100'}`}>
                                         <div className="flex justify-between items-center w-full">
                                           <div>
-                                            <p className={`text-sm font-black uppercase tracking-tight ${b.type === 'forgot_status' ? 'text-slate-800' : isWcOnly ? 'text-amber-800' : isIdleOnly ? 'text-rose-800' : 'text-rose-800'}`} title={b.rawStatus}>{b.type === 'forgot_status' ? 'Esqueceu Status' : b.type === 'other' ? (b.rawStatus || b.type) : b.type}</p>
-                                            <p className="text-xs font-bold text-slate-500">{format(new Date(b.date), 'dd/MM/yyyy')} • das {format(new Date(b.startTime), 'HH:mm')} às {format(new Date(b.endTime), 'HH:mm')}</p>
+                                            <p className={`text-sm font-black uppercase tracking-tight ${b.type === 'forgot_status' ? 'text-slate-800' : isWcOnly ? 'text-amber-800' : isIdleOnly ? 'text-rose-800' : 'text-rose-800'}`} title={b.rawStatus}>{b.type === 'forgot_status' ? t('forgotStatusLabel') : b.type === 'other' ? (b.rawStatus || b.type) : b.type}</p>
+                                            <p className="text-xs font-bold text-slate-500">{format(new Date(b.date), 'dd/MM/yyyy')} • {t('fromLabel')} {format(new Date(b.startTime), 'HH:mm')} {t('toLabel')} {format(new Date(b.endTime), 'HH:mm')}</p>
                                           </div>
                                           <div className="text-right flex flex-col items-end">
                                             {isWcOnly || isIdleOnly || idealTime === 0 ? (
                                                <>
                                                  <p className={`text-xl font-black ${b.type === 'forgot_status' ? 'text-slate-700' : isWcOnly ? 'text-amber-600' : isIdleOnly ? 'text-rose-600' : 'text-rose-600'}`}>{Math.floor(b.durationMinutes / 60)}h {b.durationMinutes % 60}m</p>
-                                                 <p className={`text-[10px] font-bold uppercase ${b.type === 'forgot_status' ? 'text-slate-400' : isWcOnly ? 'text-amber-400' : isIdleOnly ? 'text-rose-400' : 'text-rose-400'}`}>{b.durationMinutes} minutos totais</p>
+                                                 <p className={`text-[10px] font-bold uppercase ${b.type === 'forgot_status' ? 'text-slate-400' : isWcOnly ? 'text-amber-400' : isIdleOnly ? 'text-rose-400' : 'text-rose-400'}`}>{b.durationMinutes} {t('totalMinutes')}</p>
                                                </>
                                             ) : (
                                                <>
                                                  <div className="flex items-baseline gap-2 justify-end">
-                                                   <p className="text-xs font-medium text-slate-400">{idealTime}m ideal</p>
+                                                   <p className="text-xs font-medium text-slate-400">{idealTime}m {t('ideal')}</p>
                                                    <p className={`text-xl font-black ${b.type === 'forgot_status' ? 'text-slate-700' : 'text-rose-600'}`}>+{exceededTime}m</p>
                                                  </div>
-                                                 <p className="text-[10px] font-bold uppercase text-slate-400 mt-0.5">({b.durationMinutes}m totais)</p>
+                                                 <p className="text-[10px] font-bold uppercase text-slate-400 mt-0.5">({b.durationMinutes}m {t('totalLabel')})</p>
                                                </>
                                             )}
                                           </div>
@@ -1725,7 +1724,7 @@ export function StatsDashboard({
                                           return isRelevantNote;
                                         })() && (
                                           <div className="mt-2 text-xs bg-slate-50 p-2 rounded border border-slate-100 italic text-slate-600">
-                                            <span className="font-bold not-italic text-[10px] uppercase text-slate-400 block mb-1">Observação do Agente:</span>
+                                            <span className="font-bold not-italic text-[10px] uppercase text-slate-400 block mb-1">{t('agentObservation')}</span>
                                             "{b.remarks.trim()}"
                                           </div>
                                         )}
@@ -1750,7 +1749,7 @@ export function StatsDashboard({
                                      }
                                      return false;
                                   }).length === 0 && (
-                                   <div className="text-center p-8 text-slate-400 font-bold text-sm">Nenhuma quebra de pausa detalhada individualmente.</div>
+                                   <div className="text-center p-8 text-slate-400 font-bold text-sm">{t('noDetailedBreaks')}</div>
                                )}
                             </div>
                          </div>
@@ -1763,7 +1762,7 @@ export function StatsDashboard({
             </div>
             {totalEmployees === 0 && (
               <div className="text-center py-20 text-slate-400 italic text-sm">
-                Aguardando importação de dados...
+                {t('waitingDataImport')}
               </div>
             )}
           </CardContent>

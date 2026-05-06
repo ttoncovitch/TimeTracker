@@ -209,7 +209,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
             <table className="w-full text-left border-collapse min-w-[800px]">
               <thead className="bg-slate-50/95 backdrop-blur border-b border-slate-200 text-[10px] uppercase font-black text-slate-500 tracking-widest sticky top-0 z-20">
                 <tr>
-                  <th className="py-4 pl-8 pr-4 font-black whitespace-nowrap">Agente ({filtered.length})</th>
+                  <th className="py-4 pl-8 pr-4 font-black whitespace-nowrap">{t('agentString')} ({filtered.length})</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('meal')}>Meal {sortBy === 'meal' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('short')}>Short {sortBy === 'short' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('wellness')}>Well. {sortBy === 'wellness' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
@@ -221,8 +221,8 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('idle')}>IDLE {sortBy === 'idle' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('tardiness')}>TARDINESS {sortBy === 'tardiness' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('earlyLeave')}>EARLY LEAVE {sortBy === 'earlyLeave' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('absences')}>FALTAS {sortBy === 'absences' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('short30Min')}>Short 30min (Dias) {sortBy === 'short30Min' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('absences')}>{t('absencesString').toUpperCase()} {sortBy === 'absences' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('short30Min')}>{t('shortBreaks30Title')} (Dias) {sortBy === 'short30Min' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('total')}>{t('total')} {sortBy === 'total' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 pl-4 pr-8 text-right font-black whitespace-nowrap">{t('status')}</th>
                 </tr>
@@ -268,7 +268,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                             {s.employeeName}
                           </p>
                           {hasShiftMismatch && (
-                            <div title="Este agente tem trabalhado num turno diferente do programado." className="flex items-center justify-center p-0.5 rounded-md bg-amber-100 text-amber-600 border border-amber-200 shadow-sm shrink-0">
+                            <div title={t('workedOutsideShiftDesc')} className="flex items-center justify-center p-0.5 rounded-md bg-amber-100 text-amber-600 border border-amber-200 shadow-sm shrink-0">
                               <Clock size={12} strokeWidth={3} />
                             </div>
                           )}
@@ -342,27 +342,27 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                         })()}
                       </td>
                       
-                      <td className="py-4 px-2 text-center" title={mealTotal > 0 ? `${mealTotal}m excedentes` : 'No overbreak'}>
+                      <td className="py-4 px-2 text-center" title={mealTotal > 0 ? `${mealTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
                         <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${hasMealOver ? 'bg-rose-100 text-rose-700 font-black' : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {mealTotal > 0 ? `${mealTotal}m` : 'OK'}
+                          {mealTotal > 0 ? `${mealTotal}m` : t('okShort')}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={shortTotal > 0 ? `${shortTotal}m excedentes` : 'No overbreak'}>
+                      <td className="py-4 px-2 text-center" title={shortTotal > 0 ? `${shortTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
                         <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${hasShortOver ? 'bg-rose-100 text-rose-700 font-black' : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {shortTotal > 0 ? `${shortTotal}m` : 'OK'}
+                          {shortTotal > 0 ? `${shortTotal}m` : t('okShort')}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={wellnessTotal > 0 ? `${wellnessTotal}m excedentes` : 'No overbreak'}>
+                      <td className="py-4 px-2 text-center" title={wellnessTotal > 0 ? `${wellnessTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
                         <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${hasWellnessOver ? 'bg-rose-100 text-rose-700 font-black' : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {wellnessTotal > 0 ? `${wellnessTotal}m` : 'OK'}
+                          {wellnessTotal > 0 ? `${wellnessTotal}m` : t('okShort')}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={prayingTotal > 0 ? `${prayingTotal}m excedentes` : 'No overbreak'}>
+                      <td className="py-4 px-2 text-center" title={prayingTotal > 0 ? `${prayingTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
                         <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${hasPrayingOver ? 'bg-rose-100 text-rose-700 font-black' : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {prayingTotal > 0 ? `${prayingTotal}m` : 'OK'}
+                          {prayingTotal > 0 ? `${prayingTotal}m` : t('okShort')}
                         </span>
                       </td>
 
@@ -384,15 +384,15 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={wcTotal > 0 ? `${wcTotal}m excedentes` : 'No overbreak'}>
+                      <td className="py-4 px-2 text-center" title={wcTotal > 0 ? `${wcTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
                         <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${hasWcExc ? 'bg-amber-100 text-amber-700 font-black border border-amber-200' : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {wcTotal > 0 ? `${wcTotal}m` : 'OK'}
+                          {wcTotal > 0 ? `${wcTotal}m` : t('okShort')}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={idleTotal > 0 ? `${idleTotal}m excedentes` : 'No overbreak'}>
+                      <td className="py-4 px-2 text-center" title={idleTotal > 0 ? `${idleTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
                         <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${hasIdleExc ? 'bg-red-100 text-red-700 font-black border border-red-200' : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {idleTotal > 0 ? `${idleTotal}m` : 'OK'}
+                          {idleTotal > 0 ? `${idleTotal}m` : t('okShort')}
                         </span>
                       </td>
 
@@ -408,7 +408,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={(s.totalAbsences || 0) > 0 ? `${s.totalAbsences} faltas no período` : 'Sem faltas'}>
+                      <td className="py-4 px-2 text-center" title={(s.totalAbsences || 0) > 0 ? `${s.totalAbsences} ${t('absencesString').toLowerCase()} no período` : t('withoutRecords')}>
                         <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${(s.totalAbsences || 0) > 0 ? 'bg-red-100 text-red-700 font-black border border-red-200' : 'text-slate-300 font-bold'}`}>
                           {(s.totalAbsences || 0) > 0 ? s.totalAbsences : '0'}
                         </span>
@@ -420,9 +420,9 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m ${isWcOnly ? 'Organic' : 'excedentes'}` : 'No overbreak'}>
+                      <td className="py-4 px-2 text-center" title={s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m ${isWcOnly ? 'Organic' : t('overbreakExceeded')}` : 'No overbreak'}>
                         <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${s.totalOverbreakMinutes > 0 ? (isWcOnly ? 'bg-amber-100 border border-amber-200 text-amber-600 font-black' : 'bg-rose-100 text-rose-700 font-black') : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m` : 'OK'}
+                          {s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m` : t('okShort')}
                         </span>
                       </td>
 
@@ -450,9 +450,9 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                         ) : s.totalOverbreakMinutes > 30 ? (
                           <span className="inline-block px-2 py-1 bg-rose-600 text-white rounded-md text-[10px] font-black uppercase tracking-tighter">OVERBREAK</span>
                         ) : s.totalOverbreakMinutes > 0 ? (
-                          <span className="inline-block px-2 py-1 bg-rose-100 text-rose-700 rounded-md text-[10px] font-black uppercase tracking-tighter">ALERTA</span>
+                          <span className="inline-block px-2 py-1 bg-rose-100 text-rose-700 rounded-md text-[10px] font-black uppercase tracking-tighter">{t('alert')}</span>
                         ) : (
-                          <span className="inline-block px-2 py-1 bg-emerald-100 text-emerald-700 rounded-md text-[10px] font-black uppercase tracking-tighter">ESTÁVEL</span>
+                          <span className="inline-block px-2 py-1 bg-emerald-100 text-emerald-700 rounded-md text-[10px] font-black uppercase tracking-tighter">{t('stable')}</span>
                         )}
                       </td>
                     </tr>
@@ -461,7 +461,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={8} className="text-center py-32">
-                      <p className="text-slate-400 font-bold uppercase tracking-widest text-xs italic">Nenhum agente correspondente</p>
+                      <p className="text-slate-400 font-bold uppercase tracking-widest text-xs italic">{t('noMatchAgent')}</p>
                     </td>
                   </tr>
                 )}
@@ -749,6 +749,7 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t
 }
 
 const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; isIdleOnly?: boolean; isTardinessOnly?: boolean; isMinorTardinessOnly?: boolean; filterNm?: boolean; includeWc?: boolean; includeIdle?: boolean; includeTardiness?: boolean; includeMinorTardiness?: boolean; includeEarlyLeave?: boolean; includeCheck?: boolean; globalFilterMajorOverbreaks: boolean; onlyExceptions?: boolean }> = ({ record, isWcOnly, isIdleOnly, isTardinessOnly, isMinorTardinessOnly, filterNm, includeWc, includeIdle, includeTardiness, includeMinorTardiness, includeEarlyLeave, includeCheck, globalFilterMajorOverbreaks, onlyExceptions }) => {
+    const { t } = useLanguage();
     if (record.isAbsence) {
         return (
             <div className="bg-red-50/50 border-2 border-red-200 rounded-2xl p-6 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
@@ -1105,7 +1106,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
 
             {visibleBreaks.some(b => b.originalRemark && b.originalRemark.trim().length > 0) && (
                 <div className="mt-4 bg-slate-50/70 rounded-xl p-3 border border-slate-100">
-                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-3">Anotações do Agente</p>
+                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-3">{t('agentNotes')}</p>
                     <div className="space-y-2.5">
                         {visibleBreaks
                             .filter(b => b.originalRemark && b.originalRemark.trim().length > 0)
