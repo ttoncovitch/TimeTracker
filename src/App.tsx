@@ -217,33 +217,56 @@ export default function App() {
                     
                     if (scheduleForDay) {
                         const schedUpper = scheduleForDay.toUpperCase();
+                        const isWorkingShift = /\d{1,2}:\d{2}/.test(schedUpper);
                         const isWorkday = !schedUpper.includes('OFF') && !schedUpper.includes('VAC') && !schedUpper.includes('FESTA') && !schedUpper.includes('HOLIDAY') && !schedUpper.includes('LOA') && !schedUpper.includes('PTO') && !schedUpper.includes('SL') && !schedUpper.includes('ATT') && !schedUpper.includes('SUSPP');
                         const latestDateStr = format(latestDate, 'yyyy-MM-dd');
                         
-                        newRecords.push({
-                           date: dateStr,
-                           totalWorkTimeMillis: 0,
-                           totalOfflineTimeMillis: 0,
-                           breaks: [],
-                           mealDuration: 0,
-                           mealOverbreak: 0,
-                           shortDuration: 0,
-                           shortOverbreak: 0,
-                           wellnessDuration: 0,
-                           wellnessOverbreak: 0,
-                           prayingDuration: 0,
-                           prayingOverbreak: 0,
-                           wcDuration: 0,
-                           wcOverbreak: 0,
-                           idleDuration: 0,
-                           idleOverbreak: 0,
-                           totalBreakMinutes: 0,
-                           tardinessMinutes: 0,
-                           earlyLeaveMinutes: 0,
-                           inferredShift: scheduleForDay,
-                           scheduledShift: scheduleForDay,
-                           isAbsence: isWorkday && dateStr < latestDateStr
-                        });
+                        let hasShiftStarted = true;
+                        
+                        if (isWorkday) {
+                          if (dateStr > latestDateStr) {
+                             hasShiftStarted = false;
+                          } else if (dateStr === latestDateStr && isWorkingShift) {
+                             const match = schedUpper.match(/(\d{1,2}):(\d{2})/);
+                             if (match) {
+                                const h = parseInt(match[1], 10);
+                                const m = parseInt(match[2], 10);
+                                const shiftStartMinutes = h * 60 + m;
+                                const currentMinutes = latestDate.getHours() * 60 + latestDate.getMinutes();
+                                
+                                if (shiftStartMinutes > currentMinutes) {
+                                   hasShiftStarted = false;
+                                }
+                             }
+                          }
+                        }
+
+                        if (!isWorkday || hasShiftStarted) {
+                            newRecords.push({
+                               date: dateStr,
+                               totalWorkTimeMillis: 0,
+                               totalOfflineTimeMillis: 0,
+                               breaks: [],
+                               mealDuration: 0,
+                               mealOverbreak: 0,
+                               shortDuration: 0,
+                               shortOverbreak: 0,
+                               wellnessDuration: 0,
+                               wellnessOverbreak: 0,
+                               prayingDuration: 0,
+                               prayingOverbreak: 0,
+                               wcDuration: 0,
+                               wcOverbreak: 0,
+                               idleDuration: 0,
+                               idleOverbreak: 0,
+                               totalBreakMinutes: 0,
+                               tardinessMinutes: 0,
+                               earlyLeaveMinutes: 0,
+                               inferredShift: scheduleForDay,
+                               scheduledShift: scheduleForDay,
+                               isAbsence: isWorkday && dateStr < latestDateStr
+                            });
+                        }
                     }
                  }
                  d.setDate(d.getDate() + 1);
@@ -319,6 +342,7 @@ export default function App() {
         if (timeFilter !== 'all') {
            const d = new Date(r.date + 'T12:00:00');
            const today = new Date();
+           today.setHours(today.getHours() - 6);
            
            if (timeFilter === 'month') {
               if (d.getMonth() !== today.getMonth() || d.getFullYear() !== today.getFullYear()) return false;
@@ -406,6 +430,7 @@ export default function App() {
         if (timeFilter !== 'all') {
            const d = new Date(r.date + 'T12:00:00');
            const today = new Date();
+           today.setHours(today.getHours() - 6);
            
            if (timeFilter === 'month') {
               if (d.getMonth() !== today.getMonth() || d.getFullYear() !== today.getFullYear()) return false;
@@ -565,6 +590,7 @@ export default function App() {
         if (timeFilter !== 'all') {
            const d = new Date(r.date + 'T12:00:00');
            const today = new Date();
+           today.setHours(today.getHours() - 6);
            
             if (timeFilter === 'month') {
                if (d.getMonth() !== today.getMonth() || d.getFullYear() !== today.getFullYear()) return false;
@@ -575,7 +601,6 @@ export default function App() {
             }
            if (timeFilter === 'week') {
               // Standard week check (Monday start)
-              const today = new Date();
               const day = today.getDay();
               const diffToMon = day === 0 ? -6 : 1 - day;
               
@@ -593,7 +618,7 @@ export default function App() {
               if (!(d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear())) return false;
            }
            if (timeFilter === 'yesterday') {
-              const yesterday = new Date();
+              const yesterday = new Date(today);
               yesterday.setDate(yesterday.getDate() - 1);
               if (!(d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear())) return false;
            }

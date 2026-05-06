@@ -52,7 +52,7 @@ export function HowTo() {
                 <strong>Atualizar Extract:</strong> O extrato deve ser gerado na aba <em>Calibration</em> do <strong>Byteworks</strong>. Selecione todos os departamentos exceto "Management", defina a data pretendida iniciando sempre pelo horário de 00:00, clique em "export statistics" e faça o download assim que estiver pronto em "My Export". A ferramenta formatará os horários e identificará rotinas, status, overbreaks, atrasos (tardiness) e early leaves.
               </li>
               <li>
-                <strong>Atualizar Calendário:</strong> (Opcional, porém recomendado). Trata-se do arquivo <strong>Bytedance Schedules</strong>. Basta fazer o download do arquivo que automaticamente a ferramenta irá processar o calendário até a última atualização. A ferramenta irá cruzar as informações, mapeando LOB, Língua, Turno Específico (Shift) e Faltas que não constam no extrato (e.g. quando alguém não logou).
+                <strong>Atualizar Calendário:</strong> (Opcional, porém recomendado). Trata-se do arquivo <strong>Bytedance Schedules</strong>. Faça o download do arquivo, e depois o upload no local indicado para processar o calendário até sua última atualização. A ferramenta irá cruzar as informações, mapeando LOB, Língua, Turno Específico (Shift) e Faltas que não constam no extrato (e.g. quando alguém não logou).
               </li>
             </ul>
           </div>
