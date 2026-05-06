@@ -69,7 +69,7 @@ export default function App() {
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
   const [calendarNote, setCalendarNote] = useState<string>('');
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'prev_month' | 'week' | 'day' | 'yesterday'>('month');
+  const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'prev_month' | 'week' | 'day' | 'yesterday'>('day');
   const [typeFilter, setTypeFilter] = useState<'all' | 'idle_overbreak_wc'>('all');
   const [shiftFilter, setShiftFilter] = useState<string[]>([]);
   const [includeWcGlobal, setIncludeWcGlobal] = useState(false);
@@ -91,6 +91,7 @@ export default function App() {
   const [includeCheckGlobal, setIncludeCheckGlobal] = useState(false);
   const [filterMinorOverbreaks, setFilterMinorOverbreaks] = useState(false);
   const [selectedDates, setSelectedDates] = useState<Date[] | undefined>();
+  const [showRealTime, setShowRealTime] = useState(false);
 
   const cleanShift = (shift: string) => {
     const match = shift.match(/\b(\d{2}:\d{2}-\d{2}:\d{2})\b/);
@@ -224,15 +225,17 @@ export default function App() {
                         let hasShiftStarted = true;
                         
                         if (isWorkday) {
-                          if (dateStr > latestDateStr) {
+                          const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+                          const todayStr = format(now, 'yyyy-MM-dd');
+                          if (dateStr > todayStr) {
                              hasShiftStarted = false;
-                          } else if (dateStr === latestDateStr && isWorkingShift) {
+                          } else if (dateStr === todayStr && isWorkingShift) {
                              const match = schedUpper.match(/(\d{1,2}):(\d{2})/);
                              if (match) {
                                 const h = parseInt(match[1], 10);
                                 const m = parseInt(match[2], 10);
                                 const shiftStartMinutes = h * 60 + m;
-                                const currentMinutes = latestDate.getHours() * 60 + latestDate.getMinutes();
+                                const currentMinutes = now.getHours() * 60 + now.getMinutes();
                                 
                                 if (shiftStartMinutes > currentMinutes) {
                                    hasShiftStarted = false;
@@ -331,52 +334,140 @@ export default function App() {
     return filtered;
   }, [summaries, calendarData, globalMinDate, globalMaxDate]);
 
-  const basePeriodSummaries = useMemo(() => {
-    return mergedSummaries.map(s => {
-      const records = s.dailyRecords.filter(r => {
-        if (selectedDates && selectedDates.length > 0) {
-           const selectedDateStrings = selectedDates.map(d => format(d, 'yyyy-MM-dd'));
+  const recordTimeFilterFn = useMemo(() => {
+    const selectedDateStrings = selectedDates && selectedDates.length > 0 ? selectedDates.map(d => format(d, 'yyyy-MM-dd')) : [];
+    
+    const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+    const tm = today.getMonth();
+    const ty = today.getFullYear();
+    const td = today.getDate();
+    
+    const pm = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const pmM = pm.getMonth();
+    const pmY = pm.getFullYear();
+    
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const ym = yesterday.getMonth();
+    const yy = yesterday.getFullYear();
+    const yd = yesterday.getDate();
+    
+    const dow = today.getDay();
+    const diffToMon = dow === 0 ? -6 : 1 - dow;
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() + diffToMon);
+    startOfWeek.setHours(0, 0, 0, 0);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    return (r: DailyRecord) => {
+        if (showRealTime) {
+           const d = new Date(r.date + 'T12:00:00');
+           const isToday = d.getDate() === td && d.getMonth() === tm && d.getFullYear() === ty;
+           const isYesterday = d.getDate() === yd && d.getMonth() === ym && d.getFullYear() === yy;
+           if (isToday || isYesterday) return true;
+           return false;
+        }
+
+        if (selectedDateStrings.length > 0) {
            if (!selectedDateStrings.includes(r.date)) return false;
         }
         
         if (timeFilter !== 'all') {
            const d = new Date(r.date + 'T12:00:00');
-           const today = new Date();
-           today.setHours(today.getHours() - 6);
-           
            if (timeFilter === 'month') {
-              if (d.getMonth() !== today.getMonth() || d.getFullYear() !== today.getFullYear()) return false;
+              if (d.getMonth() !== tm || d.getFullYear() !== ty) return false;
            }
            if (timeFilter === 'prev_month') {
-              const pm = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-              if (d.getMonth() !== pm.getMonth() || d.getFullYear() !== pm.getFullYear()) return false;
+              if (d.getMonth() !== pmM || d.getFullYear() !== pmY) return false;
            }
            if (timeFilter === 'week') {
-              const dow = today.getDay();
-              const diffToMon = dow === 0 ? -6 : 1 - dow;
-              
-              const startOfWeek = new Date(today);
-              startOfWeek.setDate(today.getDate() + diffToMon);
-              startOfWeek.setHours(0, 0, 0, 0);
-              
-              const endOfWeek = new Date(startOfWeek);
-              endOfWeek.setDate(startOfWeek.getDate() + 6);
-              endOfWeek.setHours(23, 59, 59, 999);
-
               if (d < startOfWeek || d > endOfWeek) return false;
            }
            if (timeFilter === 'day') {
-              const today = new Date();
-              if (!(d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear())) return false;
+              if (!(d.getDate() === td && d.getMonth() === tm && d.getFullYear() === ty)) return false;
            }
            if (timeFilter === 'yesterday') {
-              const yesterday = new Date();
-              yesterday.setDate(yesterday.getDate() - 1);
-              if (!(d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear())) return false;
+              if (!(d.getDate() === yd && d.getMonth() === ym && d.getFullYear() === yy)) return false;
            }
         }
+        return true;
+    };
+  }, [timeFilter, selectedDates, showRealTime]);
 
-        const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
+  const isAgentActiveNow = (records: DailyRecord[]) => {
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+    const todayDateStr = format(now, 'yyyy-MM-dd');
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = format(yesterday, 'yyyy-MM-dd');
+
+    let isActiveNow = false;
+
+    for (const r of records) {
+        if (r.date !== todayDateStr && r.date !== yesterdayStr) continue;
+
+        const shiftStr = r.scheduledShift || r.inferredShift;
+        if (!shiftStr) continue;
+
+        const cleaned = cleanShift(shiftStr);
+        const times = cleaned.split('-');
+        if (times.length === 2) {
+            const [sh, sm] = times[0].split(':').map(Number);
+            const [eh, em] = times[1].split(':').map(Number);
+            
+            if (!isNaN(sh) && !isNaN(eh)) {
+                let startTotal = sh * 60 + (sm || 0);
+                let endTotal = eh * 60 + (em || 0);
+                if (endTotal <= startTotal) endTotal += 24 * 60; // passes midnight
+
+                const curTotal = now.getHours() * 60 + now.getMinutes();
+                
+                let shiftMatchesNow = false;
+
+                if (r.date === yesterdayStr) {
+                    if (endTotal > 24 * 60) {
+                        if (curTotal <= (endTotal - 24 * 60) + 120) { 
+                            shiftMatchesNow = true;
+                        }
+                    }
+                } else if (r.date === todayDateStr) {
+                    if (endTotal > 24 * 60) {
+                        if (curTotal >= startTotal) shiftMatchesNow = true;
+                    } else {
+                        if (curTotal >= startTotal && curTotal <= endTotal + 120) shiftMatchesNow = true;
+                    }
+                }
+
+                if (shiftMatchesNow) {
+                    let latestBreak: any = null;
+                    if (r.breaks && r.breaks.length > 0) {
+                        for (const b of r.breaks) {
+                            if (!latestBreak || b.endTime.getTime() > latestBreak.endTime.getTime()) {
+                                latestBreak = b;
+                            }
+                        }
+                    }
+
+                    if (!latestBreak || latestBreak.type !== 'offline') {
+                        isActiveNow = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    return isActiveNow;
+  };
+
+  const basePeriodSummaries = useMemo(() => {
+    const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
+    
+    return mergedSummaries.map(s => {
+      const records = s.dailyRecords.filter(r => {
+        if (!recordTimeFilterFn(r)) return false;
+
         if (otherShifts.length > 0) {
             const activeShift = r.scheduledShift ? cleanShift(r.scheduledShift) : (r.inferredShift ? cleanShift(r.inferredShift) : null);
             const isShiftMatch = activeShift ? otherShifts.includes(activeShift) : false;
@@ -385,6 +476,9 @@ export default function App() {
 
         return true;
       });
+
+      if (showRealTime && !isAgentActiveNow(records)) return null;
+
       const isATTInfo = records.some(r => r.isATT) || s.isOffboarded;
       const isLOAInfo = records.some(r => r.isLOA);
       const isPTOInfo = records.some(r => r.isPTO);
@@ -392,7 +486,7 @@ export default function App() {
       const isSUSPPInfo = records.some(r => r.isSUSPP);
       const isOFFInfo = records.some(r => r.isOFF);
 
-      const isGlobalView = (timeFilter === 'month' || timeFilter === 'all') && (!selectedDates || selectedDates.length === 0);
+      const isGlobalView = !showRealTime && (timeFilter === 'month' || timeFilter === 'all') && (!selectedDates || selectedDates.length === 0);
 
       const finalIsATT = isGlobalView ? (s.dailyRecords.some(r => r.isATT) || s.isOffboarded) : isATTInfo;
       const finalIsLOA = isGlobalView ? s.dailyRecords.some(r => r.isLOA) : isLOAInfo;
@@ -417,56 +511,17 @@ export default function App() {
           isOFF: finalIsOFF
       } : null;
     }).filter(Boolean) as EmployeeSummary[];
-  }, [mergedSummaries, timeFilter, shiftFilter, selectedDates]);
+  }, [mergedSummaries, timeFilter, shiftFilter, selectedDates, showRealTime]);
 
   const periodSummaries = useMemo(() => {
+    const hasCheck = shiftFilter.includes('CHECK');
+    const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
+
     return mergedSummaries.map(s => {
       const records = s.dailyRecords.filter(r => {
-        if (selectedDates && selectedDates.length > 0) {
-           const selectedDateStrings = selectedDates.map(d => format(d, 'yyyy-MM-dd'));
-           if (!selectedDateStrings.includes(r.date)) return false;
-        }
-        
-        if (timeFilter !== 'all') {
-           const d = new Date(r.date + 'T12:00:00');
-           const today = new Date();
-           today.setHours(today.getHours() - 6);
-           
-           if (timeFilter === 'month') {
-              if (d.getMonth() !== today.getMonth() || d.getFullYear() !== today.getFullYear()) return false;
-           }
-           if (timeFilter === 'prev_month') {
-              const pm = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-              if (d.getMonth() !== pm.getMonth() || d.getFullYear() !== pm.getFullYear()) return false;
-           }
-           if (timeFilter === 'week') {
-              const dow = today.getDay();
-              const diffToMon = dow === 0 ? -6 : 1 - dow;
-              
-              const startOfWeek = new Date(today);
-              startOfWeek.setDate(today.getDate() + diffToMon);
-              startOfWeek.setHours(0, 0, 0, 0);
-              
-              const endOfWeek = new Date(startOfWeek);
-              endOfWeek.setDate(startOfWeek.getDate() + 6);
-              endOfWeek.setHours(23, 59, 59, 999);
-
-              if (d < startOfWeek || d > endOfWeek) return false;
-           }
-           if (timeFilter === 'day') {
-              const today = new Date();
-              if (!(d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear())) return false;
-           }
-           if (timeFilter === 'yesterday') {
-              const yesterday = new Date();
-              yesterday.setDate(yesterday.getDate() - 1);
-              if (!(d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear())) return false;
-           }
-        }
+        if (!recordTimeFilterFn(r)) return false;
 
         if (shiftFilter.length > 0) {
-            const hasCheck = shiftFilter.includes('CHECK');
-            const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
             
             const isCheckMatch = r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim();
             const activeShift = r.scheduledShift ? cleanShift(r.scheduledShift) : (r.inferredShift ? cleanShift(r.inferredShift) : null);
@@ -483,6 +538,9 @@ export default function App() {
 
         return true;
       });
+
+      if (showRealTime && !isAgentActiveNow(records)) return null;
+
       const isATTInfo = records.some(r => r.isATT) || s.isOffboarded;
       const isLOAInfo = records.some(r => r.isLOA);
       const isPTOInfo = records.some(r => r.isPTO);
@@ -490,7 +548,7 @@ export default function App() {
       const isSUSPPInfo = records.some(r => r.isSUSPP);
       const isOFFInfo = records.some(r => r.isOFF);
 
-      const isGlobalView = (timeFilter === 'month' || timeFilter === 'all') && (!selectedDates || selectedDates.length === 0);
+      const isGlobalView = !showRealTime && (timeFilter === 'month' || timeFilter === 'all') && (!selectedDates || selectedDates.length === 0);
 
       const finalIsATT = isGlobalView ? (s.dailyRecords.some(r => r.isATT) || s.isOffboarded) : isATTInfo;
       const finalIsLOA = isGlobalView ? s.dailyRecords.some(r => r.isLOA) : isLOAInfo;
@@ -515,11 +573,13 @@ export default function App() {
           isOFF: finalIsOFF
       } : null;
     }).filter(Boolean) as EmployeeSummary[];
-  }, [mergedSummaries, timeFilter, shiftFilter, selectedDates, includeCheckGlobal]);
+  }, [mergedSummaries, timeFilter, shiftFilter, selectedDates, includeCheckGlobal, showRealTime]);
 
   const processedSummaries = useMemo(() => {
-    const today = new Date();
+    const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
     const todayStr = format(today, 'yyyy-MM-dd');
+    const hasCheck = shiftFilter.includes('CHECK') || includeCheckGlobal;
+    const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
 
       let filtered = periodSummaries.map(s => {
         const records = s.dailyRecords.map(r => {
@@ -582,52 +642,9 @@ export default function App() {
           idleOverbreak 
         };
       }).filter(r => {
-        if (selectedDates && selectedDates.length > 0) {
-           const selectedDateStrings = selectedDates.map(d => format(d, 'yyyy-MM-dd'));
-           if (!selectedDateStrings.includes(r.date)) return false;
-        }
-        
-        if (timeFilter !== 'all') {
-           const d = new Date(r.date + 'T12:00:00');
-           const today = new Date();
-           today.setHours(today.getHours() - 6);
-           
-            if (timeFilter === 'month') {
-               if (d.getMonth() !== today.getMonth() || d.getFullYear() !== today.getFullYear()) return false;
-            }
-            if (timeFilter === 'prev_month') {
-               const pm = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-               if (d.getMonth() !== pm.getMonth() || d.getFullYear() !== pm.getFullYear()) return false;
-            }
-           if (timeFilter === 'week') {
-              // Standard week check (Monday start)
-              const day = today.getDay();
-              const diffToMon = day === 0 ? -6 : 1 - day;
-              
-              const startOfWeek = new Date(today);
-              startOfWeek.setDate(today.getDate() + diffToMon);
-              startOfWeek.setHours(0, 0, 0, 0);
-              
-              const endOfWeek = new Date(startOfWeek);
-              endOfWeek.setDate(startOfWeek.getDate() + 6);
-              endOfWeek.setHours(23, 59, 59, 999);
-
-              if (d < startOfWeek || d > endOfWeek) return false;
-           }
-           if (timeFilter === 'day') {
-              if (!(d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear())) return false;
-           }
-           if (timeFilter === 'yesterday') {
-              const yesterday = new Date(today);
-              yesterday.setDate(yesterday.getDate() - 1);
-              if (!(d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear())) return false;
-           }
-        }
+        if (!recordTimeFilterFn(r)) return false;
 
         if (shiftFilter.length > 0 || includeCheckGlobal) {
-            const hasCheck = shiftFilter.includes('CHECK') || includeCheckGlobal;
-            const otherShifts = shiftFilter.filter(s => s !== 'CHECK');
-            
             const isCheckMatch = r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim();
             const activeShift = r.scheduledShift ? cleanShift(r.scheduledShift) : (r.inferredShift ? cleanShift(r.inferredShift) : null);
             const isShiftMatch = activeShift ? otherShifts.includes(activeShift) : false;
@@ -720,6 +737,7 @@ export default function App() {
 
       return {
         ...s,
+        isOFF: showRealTime ? false : s.isOFF,
         dailyRecords: records,
         totalWorkMinutes: Math.round(totalWorkMinutes),
         totalBreakMinutes: Math.round(totalBreakMinutes),
@@ -741,12 +759,30 @@ export default function App() {
     }).filter(Boolean) as EmployeeSummary[];
 
     return filtered;
-  }, [periodSummaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, includeTardinessGlobal, includeMinorTardinessGlobal, includeEarlyLeaveGlobal, filterMinorOverbreaks, includeShort30MinGlobal, includeAbsencesGlobal, includeOffboardedGlobal, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeCheckGlobal]);
+  }, [periodSummaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, includeTardinessGlobal, includeMinorTardinessGlobal, includeEarlyLeaveGlobal, filterMinorOverbreaks, includeShort30MinGlobal, includeAbsencesGlobal, includeOffboardedGlobal, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeCheckGlobal, showRealTime]);
 
   const activeAnyStatus = includeATTGlobal || includeLOAGlobal || includePTOGlobal || includeSLGlobal || includeSUSPPGlobal || includeOFFGlobal || includeOffboardedGlobal || includeAbsencesGlobal;
 
   const filteredSummaries = useMemo(() => {
-    if (!activeAnyStatus) return processedSummaries;
+    let base = processedSummaries;
+    
+    if (!activeAnyStatus) {
+       base = processedSummaries.filter(s => {
+          return s.dailyRecords.some(r => {
+             const isPureNotWorkingStatus = r.isOFF || r.isPTO || r.isLOA || r.isSL || r.isSUSPP || r.isATT;
+             if (isPureNotWorkingStatus) {
+                 return r.totalWorkTimeMillis > 0 || r.totalOfflineTimeMillis > 0 || r.breaks.length > 0;
+             }
+             return true;
+          });
+       });
+       if (!includeSupportStaff) {
+          base = base.filter(s => !isSupportRole(s.lob || ''));
+       } else {
+          base = base.filter(s => isSupportRole(s.lob || ''));
+       }
+       return base;
+    }
     
     return processedSummaries.map(s => {
        const isSupport = isSupportRole(s.lob || '');
@@ -859,15 +895,6 @@ export default function App() {
       wcAlertCount: filteredSummaries.reduce((acc, s) => acc + s.wcAlerts, 0)
     };
   }, [filteredSummaries]);
-
-  const workingSummaries = useMemo(() => {
-    return processedSummaries.filter(s => {
-      // Allow if they have daily records (they worked during the filtered period).
-      if (s.dailyRecords.length > 0) return true;
-      // If they have no records, and they have an absence/offboard status, exclude them.
-      return false;
-    });
-  }, [processedSummaries]);
 
   const clearExtraStatuses = () => {
     setIncludeATTGlobal(false);
@@ -1313,19 +1340,29 @@ export default function App() {
               >
                 <div className="sticky lg:top-[72px] top-[72px] z-[50] bg-slate-50/95 backdrop-blur-md border-b border-slate-200 pb-4 pt-4 px-8 -mx-8 -mt-8 mb-8 shadow-sm">
                   <div className="flex flex-col gap-3">
-                    <h3 className="text-slate-500 text-xs font-bold uppercase tracking-widest leading-none">{t('realtimeMetrics')}</h3>
-                    <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 justify-between w-full">
+                    <div className="flex flex-col gap-2 items-start">
+                      <h3 className="text-slate-500 text-xs font-bold uppercase tracking-widest leading-none">{t('realtimeMetrics')}</h3>
+                      <button 
+                         onClick={() => setShowRealTime(!showRealTime)}
+                         className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 min-w-max shadow-sm w-fit ${showRealTime ? 'bg-red-500 text-white border-red-500' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
+                       >
+                         <div className={`w-2 h-2 rounded-full ${showRealTime ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
+                         REAL TIME
+                       </button>
+                    </div>
+                    <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 justify-between w-full mt-2">
                       <p className="text-2xl font-black text-slate-900 hidden sm:block whitespace-nowrap">{t('auditResults')}</p>
                       <div className="flex flex-col items-end gap-2 w-full">
                         {/* Top Filter Row: Shift Select */}
-                        <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm overflow-x-auto w-full sm:w-auto">
-                          <span className="text-[10px] font-black uppercase text-slate-400 px-2">Shift:</span>
-                          <button 
-                             onClick={() => setShiftFilter([])}
-                             className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${shiftFilter.length === 0 ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
-                           >
-                             Todos
-                          </button>
+                        <div className="flex gap-1 items-center overflow-x-auto w-full sm:w-auto">
+                           <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm min-w-max">
+                             <span className="text-[10px] font-black uppercase text-slate-400 px-2">Shift:</span>
+                             <button 
+                                onClick={() => setShiftFilter([])}
+                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${shiftFilter.length === 0 ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                              >
+                                Todos
+                             </button>
                           {availableShifts.map(shift => (
                              <button 
                                key={shift}
@@ -1353,7 +1390,8 @@ export default function App() {
                            >
                              CHECK
                           </button>
-                        </div>
+                           </div>
+                         </div>
 
                         {/* Bottom Filter Row: Calendars and Options */}
                         <div className="flex gap-2 flex-wrap justify-end w-full">
@@ -1373,7 +1411,7 @@ export default function App() {
                                        size="sm" 
                                        className="text-[10px] font-bold uppercase h-7 px-2 border-slate-200 rounded-full"
                                        onClick={() => {
-                                          const now = new Date();
+                                          const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
                                           const start = new Date(now.getFullYear(), now.getMonth(), 1);
                                           const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
                                           const days = [];
@@ -1391,7 +1429,7 @@ export default function App() {
                                        size="sm" 
                                        className="text-[10px] font-bold uppercase h-7 px-2 border-slate-200 rounded-full"
                                        onClick={() => {
-                                          const now = new Date();
+                                          const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
                                           const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
                                           const end = new Date(now.getFullYear(), now.getMonth(), 0);
                                           const days = [];
@@ -1624,7 +1662,7 @@ export default function App() {
                 <div className="min-h-[600px]">
                   {activeTab === 'dashboard' ? (
                     <StatsDashboard 
-                      summaries={activeAnyStatus ? filteredSummaries : workingSummaries} 
+                      summaries={filteredSummaries} 
                       allSummaries={mergedSummaries} 
                       periodSummaries={periodSummaries} 
                       basePeriodCount={basePeriodSummaries.length} 

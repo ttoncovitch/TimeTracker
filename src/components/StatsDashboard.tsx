@@ -91,7 +91,7 @@ export function StatsDashboard({
   const specificShifts = globalShiftFilter.filter(s => s !== 'CHECK');
   const isCheckAndShift = hasCheckFilter && specificShifts.length > 0;
 
-  const filteredPeriodSummaries = useMemo(() => periodSummaries.filter(s => s.dailyRecords.length > 0), [periodSummaries]);
+  const filteredPeriodSummaries = useMemo(() => periodSummaries.filter(s => s.dailyRecords.some(r => (!r.isOFF && !r.isPTO && !r.isLOA && !r.isSL && !r.isSUSPP && !r.isATT) || r.isAbsence)), [periodSummaries]);
 
   const cleanShift = (shift: string) => {
     const match = shift.match(/\b(\d{2}:\d{2}-\d{2}:\d{2})\b/);

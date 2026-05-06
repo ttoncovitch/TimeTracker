@@ -41,7 +41,7 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
   let tableData: any[][] = [];
 
   if (options.isTardiness) {
-    head = [['Agent', 'Date', 'Scheduled Shift', 'Actual Start', 'Tardiness (Mins)']];
+    head = [['Agent', 'Date', 'Scheduled Shift', 'Effective Shift', 'Started at:', 'Tardiness (Mins)']];
     summaries.forEach(s => {
       s.dailyRecords.filter(r => (r.tardinessMinutes || 0) >= 15).forEach(r => {
         let actualStart = 'Unknown';
@@ -51,17 +51,25 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
             const breakFirst = [...r.breaks].sort((a,b) => String(a.startTime).localeCompare(String(b.startTime)))[0];
             actualStart = breakFirst ? (breakFirst.startTime ? format(new Date(breakFirst.startTime), 'HH:mm') : 'Unknown') : 'Unknown';
         }
+        let effectiveShift = '-';
+        if (r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) {
+            effectiveShift = r.inferredShift;
+        } else if (!r.scheduledShift && r.inferredShift) {
+            effectiveShift = r.inferredShift;
+        }
+
         tableData.push([
           s.employeeName,
           r.date,
           r.scheduledShift || r.inferredShift || 'Unknown',
+          effectiveShift,
           actualStart,
           `${r.tardinessMinutes}m`
         ]);
       });
     });
   } else if (options.isMinorTardiness) {
-    head = [['Agent', 'Date', 'Scheduled Shift', 'Actual Start', 'Tardiness (Mins)']];
+    head = [['Agent', 'Date', 'Scheduled Shift', 'Effective Shift', 'Started at:', 'Tardiness (Mins)']];
     summaries.forEach(s => {
       s.dailyRecords.filter(r => (r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15).forEach(r => {
         let actualStart = 'Unknown';
@@ -71,10 +79,18 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
             const breakFirst = [...r.breaks].sort((a,b) => String(a.startTime).localeCompare(String(b.startTime)))[0];
             actualStart = breakFirst ? (breakFirst.startTime ? format(new Date(breakFirst.startTime), 'HH:mm') : 'Unknown') : 'Unknown';
         }
+        let effectiveShift = '-';
+        if (r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) {
+            effectiveShift = r.inferredShift;
+        } else if (!r.scheduledShift && r.inferredShift) {
+            effectiveShift = r.inferredShift;
+        }
+
         tableData.push([
           s.employeeName,
           r.date,
           r.scheduledShift || r.inferredShift || 'Unknown',
+          effectiveShift,
           actualStart,
           `${r.tardinessMinutes}m`
         ]);

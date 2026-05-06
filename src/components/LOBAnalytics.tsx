@@ -24,6 +24,10 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
     const lobs: Record<string, EmployeeSummary[]> = {};
     
     summaries.forEach(s => {
+      // Exclude agents who don't have any active working records in the period
+      const hasWorkingSchedule = s.dailyRecords.some(r => (!r.isOFF && !r.isPTO && !r.isLOA && !r.isSL && !r.isSUSPP && !r.isATT) || r.isAbsence);
+      if (!hasWorkingSchedule) return;
+
       const lob = (s.lob && s.lob.trim() !== '') ? s.lob : 'Unknown';
       if (isSupportRole(lob)) return; // Exclude QA, RTA, etc.
       if (lob.toUpperCase() === 'LEG') return; // Exclude LEG
@@ -63,7 +67,13 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
     
     lobScores.sort((a, b) => b.score - a.score);
     if (lobScores[0].score === 0) return null;
-    return lobScores[0];
+    
+    // If exact match 'Unknown' we fallback to the second biggest if it exists
+    const biggest = lobScores[0];
+    if (biggest.name === 'Unknown' && lobScores.length > 1 && lobScores[1].score > 0) {
+      return lobScores[1];
+    }
+    return biggest;
   }, [lobsData, lobNames]);
 
   return (
@@ -83,7 +93,7 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
           <div className="flex items-center gap-3 bg-rose-50 border border-rose-200/60 rounded-2xl p-3 px-4 shadow-sm">
              <AlertTriangle className="w-5 h-5 text-rose-500" />
              <div className="flex flex-col">
-               <span className="text-[10px] font-black uppercase text-rose-500 tracking-widest">Maior Ofensor (No Filtro)</span>
+               <span className="text-[10px] font-black uppercase text-rose-500 tracking-widest">Maior Infrator (No Filtro)</span>
                <span className="text-sm font-black text-rose-800">{mostCriticalLOB.name}</span>
              </div>
           </div>
@@ -265,7 +275,7 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
           {/* Top Agents List */}
           <div className="mt-auto pt-5 border-t border-slate-100">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3 flex items-center gap-1">
-              <Globe className="w-3 h-3" /> Maiores Ofensores ({selectedLang === 'ALL' ? 'Todas as Línguas' : selectedLang})
+              <Globe className="w-3 h-3" /> Maiores Infratores ({selectedLang === 'ALL' ? 'Todas as Línguas' : selectedLang})
             </span>
             <div className="space-y-2">
               {stats.topAgents.length === 0 ? (
