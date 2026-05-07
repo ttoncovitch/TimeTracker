@@ -1122,7 +1122,7 @@ export function StatsDashboard({
                                key={`${s.employeeName}-${i}`} 
                                summary={s} 
                                rank={i+1} 
-                               metricValue={`${Math.round(s.totalOverbreakMinutes)}m`} 
+                               metricValue={s.totalOverbreakMinutes >= 60 ? `${Math.floor(s.totalOverbreakMinutes / 60)}h ${Math.round(s.totalOverbreakMinutes % 60)}m` : `${Math.round(s.totalOverbreakMinutes)}m`} 
                                metricLabel="total" 
                                colorClass="text-emerald-700"
                             />
@@ -1144,9 +1144,9 @@ export function StatsDashboard({
                                key={`${s.employeeName}-${i}`} 
                                summary={s} 
                                rank={i+1} 
-                               metricValue={isTardinessOnly ? `${Math.round(s.totalTardinessMinutes)}m` : isEarlyLeaveOnly ? `${Math.round(s.totalEarlyLeaveMinutes)}m` : `${Math.round(s.totalOverbreakMinutes)}m`} 
-                               metricLabel={isTardinessOnly ? t('delays').toLowerCase() : isEarlyLeaveOnly ? "early leave" : t('overbreakExceeded')} 
-                               colorClass={isTardinessOnly || isEarlyLeaveOnly ? "text-orange-700" : "text-rose-700"}
+                               metricValue={s.totalOverbreakMinutes >= 60 ? `${Math.floor(s.totalOverbreakMinutes / 60)}h ${Math.round(s.totalOverbreakMinutes % 60)}m` : `${Math.round(s.totalOverbreakMinutes)}m`} 
+                               metricLabel={(isTardinessOnly || isMinorTardinessOnly) ? t('delays').toLowerCase() : isEarlyLeaveOnly ? "early leave" : t('overbreakExceeded')} 
+                               colorClass={(isTardinessOnly || isMinorTardinessOnly) || isEarlyLeaveOnly ? "text-orange-700" : "text-rose-700"}
                             />
                          ))
                       )}
@@ -1603,7 +1603,7 @@ export function StatsDashboard({
                                <span className="opacity-40 font-normal">|</span>
                                <span className="text-rose-600">EXC: <span className="font-bold">{Math.floor((s.wcTotalOverbreak || 0) / 60)}h {(s.wcTotalOverbreak || 0) % 60}m</span></span>
                              </span>
-                           ) : isTardinessOnly ? (
+                           ) : (isTardinessOnly || isMinorTardinessOnly) ? (
                              <span>{Math.floor(s.totalOverbreakMinutes / 60)}h {s.totalOverbreakMinutes % 60}m ATRASO</span>
                            ) : isEarlyLeaveOnly ? (
                              <span>{Math.floor(s.totalOverbreakMinutes / 60)}h {s.totalOverbreakMinutes % 60}m EARLY LEAVE</span>
@@ -1656,6 +1656,48 @@ export function StatsDashboard({
                                         </div>
                                       </div>
                                    ))}
+                             </div>
+                          </div>
+                         ) : isTardinessOnly || isMinorTardinessOnly || isEarlyLeaveOnly ? (
+                          <div className="flex-1 overflow-y-auto w-full bg-slate-50">
+                             <div className="space-y-3 p-6 min-h-max">
+                                {s.dailyRecords
+                                   .filter(r => (isTardinessOnly || isMinorTardinessOnly) ? (r.tardinessMinutes || 0) > 0 : (r.earlyLeaveMinutes || 0) > 0)
+                                   .map((r, idx) => {
+                                      const shiftParts = (r.inferredShift || r.scheduledShift || '').split('-');
+                                      const expectedTime = (isTardinessOnly || isMinorTardinessOnly) ? shiftParts[0] : (shiftParts[1] || shiftParts[0] || 'N/A');
+                                      return (
+                                      <div key={idx} className="flex justify-between items-center bg-white p-4 rounded-xl border border-orange-200 shadow-sm">
+                                        <div>
+                                          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{format(new Date(r.date + 'T12:00:00'), 'dd/MM/yyyy')}</p>
+                                          <div className="flex items-center gap-3 mt-1.5">
+                                            <div className="flex flex-col">
+                                              <span className="text-[9px] uppercase font-bold text-slate-400">Previsto</span>
+                                              <span className="text-sm font-black text-slate-700">{expectedTime}</span>
+                                            </div>
+                                            <span className="text-slate-300 font-bold">→</span>
+                                            <div className="flex flex-col">
+                                              <span className="text-[9px] uppercase font-black text-orange-500">Real</span>
+                                              <span className="text-sm font-black text-orange-600">
+                                                {(isTardinessOnly || isMinorTardinessOnly)
+                                                  ? (r.actualStartTime ? format(r.actualStartTime, 'HH:mm') : 'N/A') 
+                                                  : (r.actualEndTime ? format(r.actualEndTime, 'HH:mm') : 'N/A')}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="text-right flex items-center">
+                                           <span className="font-black text-orange-600 bg-orange-50 px-3 py-1.5 rounded-lg text-lg">
+                                               +{(() => {
+                                                   const min = (isTardinessOnly || isMinorTardinessOnly) ? (r.tardinessMinutes || 0) : (r.earlyLeaveMinutes || 0);
+                                                   const h = Math.floor(min / 60);
+                                                   const m = min % 60;
+                                                   return h > 0 ? `${h}h ${m}m` : `${m}m`;
+                                               })()}
+                                           </span>
+                                        </div>
+                                      </div>
+                                   )})}
                              </div>
                           </div>
                          ) : (

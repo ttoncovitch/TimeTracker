@@ -515,37 +515,36 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
   const [includeShort30Min, setIncludeShort30Min] = useState(globalIncludeShort30Min || false);
   const [includeCheck, setIncludeCheck] = useState(globalIncludeCheck || false);
 
-  let records = s.dailyRecords;
+  const fullSummary = allSummaries.find(as => as.employeeName === s.employeeName) || s;
+  
+  let records = fullSummary.dailyRecords;
   
   if (view === 'month') {
-    records = s.dailyRecords.filter(r => {
+    records = fullSummary.dailyRecords.filter(r => {
       const d = new Date(r.date + 'T12:00:00');
-      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      return d.getMonth() === lastMonthDate.getMonth() && d.getFullYear() === lastMonthDate.getFullYear();
+      return d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
     });
   } else if (view === 'week') {
-    records = s.dailyRecords.filter(r => {
+    const dow = today.getDay();
+    const diffToMon = dow === 0 ? -6 : 1 - dow;
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() + diffToMon);
+    startOfWeek.setHours(0, 0, 0, 0);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+    
+    records = fullSummary.dailyRecords.filter(r => {
       const d = new Date(r.date + 'T12:00:00');
-      const dNormalized = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-      
-      const referenceDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const dayOfWeek = referenceDate.getDay();
-      
-      const lastSaturday = new Date(referenceDate);
-      lastSaturday.setDate(referenceDate.getDate() - dayOfWeek - 1);
-      
-      const lastSunday = new Date(lastSaturday);
-      lastSunday.setDate(lastSaturday.getDate() - 6);
-      
-      return dNormalized >= lastSunday.getTime() && dNormalized <= lastSaturday.getTime();
+      return d >= startOfWeek && d <= endOfWeek;
     });
   } else if (view === 'today') {
-    records = s.dailyRecords.filter(r => {
+    records = fullSummary.dailyRecords.filter(r => {
       const d = new Date(r.date + 'T12:00:00');
       return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
     });
   } else if (view === 'yesterday') {
-    records = s.dailyRecords.filter(r => {
+    records = fullSummary.dailyRecords.filter(r => {
       const d = new Date(r.date + 'T12:00:00');
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
