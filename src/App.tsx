@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Calendar as CalendarIcon, Upload, FileDown, LogOut, FileSpreadsheet, LayoutDashboard, ListFilter, Trash2, Target, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar"
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
+import { isShiftMismatch } from './lib/shiftUtils';
 import { format } from 'date-fns';
 import { useLanguage } from './contexts/LanguageContext';
 import { EmployeeSummary, EmployeeDayRecord } from './types';
@@ -64,6 +65,14 @@ export default function App() {
     return language === 'en' ? en[foundIndex] : pt[foundIndex];
   };
   const [summaries, setSummaries] = useState<EmployeeSummary[]>([]);
+  const [lastExtractTime, setLastExtractTime] = useState<Date | null>(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  
   const [calendarData, setCalendarData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
@@ -142,36 +151,11 @@ export default function App() {
       if (d > max) max = d;
     }));
 
-    calendarData.forEach(c => {
-       if (c.schedule) {
-           Object.keys(c.schedule).forEach(k => {
-               let d: Date | null = null;
-               if (k.includes('-')) {
-                  d = new Date(k + 'T12:00:00');
-               } else if (k.includes('/')) {
-                  const parts = k.split('/');
-                  if (parts.length === 3 && parts[2] && parts[2].length === 4) {
-                     if (parseInt(parts[0]) > 12) {
-                        d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
-                     } else {
-                        d = new Date(`${parts[2]}-${parts[0]}-${parts[1]}T12:00:00`);
-                     }
-                  }
-               }
-               
-               if (d && !isNaN(d.getTime())) {
-                   if (d < min) min = d;
-                   if (d > max) max = d;
-               }
-           });
-       }
-    });
-
     if (min.getFullYear() === 2099) min = new Date();
     if (max.getFullYear() === 2000) max = new Date();
 
     return { globalMinDate: min, globalMaxDate: max };
-  }, [summaries, calendarData]);
+  }, [summaries]);
 
   const mergedSummaries = useMemo(() => {
     if (calendarData.length === 0) return summaries;
@@ -227,20 +211,40 @@ export default function App() {
                         if (isWorkday) {
                           const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
                           const todayStr = format(now, 'yyyy-MM-dd');
-                          if (dateStr > todayStr) {
+                          
+                          // 1) Never consider shifts that haven't occurred in the provided extract yet
+                          if (dateStr > latestDateStr) {
                              hasShiftStarted = false;
-                          } else if (dateStr === todayStr && isWorkingShift) {
+                          } else if (dateStr === latestDateStr && isWorkingShift) {
                              const match = schedUpper.match(/(\d{1,2}):(\d{2})/);
                              if (match) {
                                 const h = parseInt(match[1], 10);
                                 const m = parseInt(match[2], 10);
                                 const shiftStartMinutes = h * 60 + m;
-                                const currentMinutes = now.getHours() * 60 + now.getMinutes();
-                                
-                                if (shiftStartMinutes > currentMinutes) {
+                                const latestMinutes = latestDate.getHours() * 60 + latestDate.getMinutes();
+                                if (shiftStartMinutes > latestMinutes) {
                                    hasShiftStarted = false;
                                 }
                              }
+                          }
+                          
+                          // 2) Also never consider shifts that haven't occurred in real time yet
+                          if (hasShiftStarted) {
+                              if (dateStr > todayStr) {
+                                 hasShiftStarted = false;
+                              } else if (dateStr === todayStr && isWorkingShift) {
+                                 const match = schedUpper.match(/(\d{1,2}):(\d{2})/);
+                                 if (match) {
+                                    const h = parseInt(match[1], 10);
+                                    const m = parseInt(match[2], 10);
+                                    const shiftStartMinutes = h * 60 + m;
+                                    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                                    
+                                    if (shiftStartMinutes > currentMinutes) {
+                                       hasShiftStarted = false;
+                                    }
+                                 }
+                              }
                           }
                         }
 
@@ -333,6 +337,63 @@ export default function App() {
 
     return filtered;
   }, [summaries, calendarData, globalMinDate, globalMaxDate]);
+
+  const availableFilters = useMemo(() => {
+    const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+    const tm = today.getMonth();
+    const ty = today.getFullYear();
+    const td = today.getDate();
+    
+    const pm = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const pmM = pm.getMonth();
+    const pmY = pm.getFullYear();
+    
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const ym = yesterday.getMonth();
+    const yy = yesterday.getFullYear();
+    const yd = yesterday.getDate();
+    
+    const dow = today.getDay();
+    const diffToMon = dow === 0 ? -6 : 1 - dow;
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() + diffToMon);
+    startOfWeek.setHours(0, 0, 0, 0);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    const filters = new Set<string>();
+    const distinctMonths = new Set<string>();
+
+    if (summaries) {
+        summaries.forEach(s => {
+            if (s.dailyRecords) {
+                s.dailyRecords.forEach(r => {
+                    const d = new Date(r.date + 'T12:00:00');
+                    distinctMonths.add(`${d.getFullYear()}-${d.getMonth()}`);
+                    if (d >= startOfWeek && d <= endOfWeek) filters.add('week');
+                    if (d.getDate() === td && d.getMonth() === tm && d.getFullYear() === ty) filters.add('day');
+                    if (d.getDate() === yd && d.getMonth() === ym && d.getFullYear() === yy) filters.add('yesterday');
+                });
+            }
+        });
+
+        if (distinctMonths.size > 1) {
+            summaries.forEach(s => {
+                if (s.dailyRecords) {
+                    s.dailyRecords.forEach(r => {
+                        const d = new Date(r.date + 'T12:00:00');
+                        if (d.getMonth() === tm && d.getFullYear() === ty) filters.add('month');
+                        if (d.getMonth() === pmM && d.getFullYear() === pmY) filters.add('prev_month');
+                    });
+                }
+            });
+        }
+    }
+    
+    return Array.from(filters);
+  }, [summaries]);
 
   const recordTimeFilterFn = useMemo(() => {
     const selectedDateStrings = selectedDates && selectedDates.length > 0 ? selectedDates.map(d => format(d, 'yyyy-MM-dd')) : [];
@@ -428,7 +489,7 @@ export default function App() {
 
                 if (r.date === yesterdayStr) {
                     if (endTotal > 24 * 60) {
-                        if (curTotal <= (endTotal - 24 * 60) + 120) { 
+                        if (curTotal <= (endTotal - 24 * 60)) { 
                             shiftMatchesNow = true;
                         }
                     }
@@ -436,7 +497,7 @@ export default function App() {
                     if (endTotal > 24 * 60) {
                         if (curTotal >= startTotal) shiftMatchesNow = true;
                     } else {
-                        if (curTotal >= startTotal && curTotal <= endTotal + 120) shiftMatchesNow = true;
+                        if (curTotal >= startTotal && curTotal <= endTotal) shiftMatchesNow = true;
                     }
                 }
 
@@ -450,7 +511,7 @@ export default function App() {
                         }
                     }
 
-                    if (!latestBreak || latestBreak.type !== 'offline') {
+                    if (!latestBreak || (latestBreak.type !== 'offline' && latestBreak.type !== 'forgot_status')) {
                         isActiveNow = true;
                         break;
                     }
@@ -523,7 +584,7 @@ export default function App() {
 
         if (shiftFilter.length > 0 || includeCheckGlobal) {
             
-            const isCheckMatch = r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim();
+            const isCheckMatch = isShiftMismatch(r.scheduledShift, r.inferredShift);
             const activeShift = r.scheduledShift ? cleanShift(r.scheduledShift) : (r.inferredShift ? cleanShift(r.inferredShift) : null);
             const isShiftMatch = activeShift ? otherShifts.includes(activeShift) : false;
 
@@ -583,7 +644,7 @@ export default function App() {
       // If Real Time is on, only count mismatches for agents that are currently active
       if (showRealTime && !isAgentActiveNow(records)) return false;
 
-      return records.some(r => !!(r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()));
+      return records.some(r => isShiftMismatch(r.scheduledShift, r.inferredShift));
     });
   }, [mergedSummaries, recordTimeFilterFn, showRealTime]);
 
@@ -657,7 +718,7 @@ export default function App() {
         if (!recordTimeFilterFn(r)) return false;
 
         if (shiftFilter.length > 0 || includeCheckGlobal) {
-            const isCheckMatch = r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim();
+            const isCheckMatch = isShiftMismatch(r.scheduledShift, r.inferredShift);
             const activeShift = r.scheduledShift ? cleanShift(r.scheduledShift) : (r.inferredShift ? cleanShift(r.inferredShift) : null);
             const isShiftMatch = activeShift ? otherShifts.includes(activeShift) : false;
 
@@ -999,6 +1060,7 @@ export default function App() {
       loading: t('processingFile'),
       success: (data) => {
         setSummaries(data);
+        setLastExtractTime(new Date());
         setIsLoading(false);
         return `${data.length} ${t('agentsProcessed')}`;
       },
@@ -1189,12 +1251,12 @@ export default function App() {
               <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-lg shadow-lg">LO</div>
               <div className="flex flex-col">
                 <h1 className="text-[17px] font-bold tracking-tight">Live <span className="text-blue-400">Overview</span></h1>
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest -mt-1">Beta v1</span>
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest -mt-1">Beta v1</span>
               </div>
             </div>
             <button 
               onClick={() => setLang(lang === 'pt' ? 'en' : 'pt')}
-              className="bg-slate-800 text-[10px] font-black uppercase text-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-700 transition-colors w-auto"
+              className="bg-slate-800 text-[9px] font-black uppercase text-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-700 transition-colors w-auto"
             >
               {lang === 'pt' ? t('switchToEnglish') : t('switchToPortuguese')}
             </button>
@@ -1203,7 +1265,7 @@ export default function App() {
 
         <nav className="flex-1 space-y-6">
           <div className="space-y-1">
-            <label className="text-[10px] uppercase font-bold text-slate-500 block px-2 mb-2">{t('viewMode')}</label>
+            <label className="text-[9px] uppercase font-bold text-slate-500 block px-2 mb-2">{t('viewMode')}</label>
             <button 
               onClick={() => setActiveTab('dashboard')}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
@@ -1246,7 +1308,7 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-y-auto">
         {/* Header - Geometric Balance */}
-        <header className="sticky top-0 z-[60] flex justify-between items-center py-4 px-8 bg-white/95 backdrop-blur-md border-b border-slate-200">
+        <header className="sticky top-0 z-[60] flex justify-between items-center py-3 px-4 sm:px-6 bg-white/95 backdrop-blur-md border-b border-slate-200">
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold text-slate-900 hidden sm:block">
               {summaries.length > 0 ? (activeTab === 'howto' ? t('howtoMenu') : activeTab === 'dashboard' ? t('overview') : activeTab === 'lobs' ? t('lobsPerformance') : t('agents')) : ''}
@@ -1258,18 +1320,18 @@ export default function App() {
 
           <div className="flex items-center gap-3">
             {summaries.length > 0 && (
-              <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-bold flex items-center gap-2 h-10 px-4 shadow-sm cursor-pointer transition-colors relative">
-                 <Upload size={18} className="text-emerald-600" /> 
+              <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative">
+                 <Upload size={14} className="text-emerald-600" /> 
                  <span className="hidden sm:inline">{summaries.length > 0 ? t('updateExtract') : t('addExtract')}</span>
                  <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
               </label>
             )}
             {summaries.length > 0 && (
-              <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-bold flex items-center gap-2 h-10 px-4 shadow-sm cursor-pointer transition-colors relative">
-                 <CalendarIcon size={18} className="text-blue-600" /> 
+              <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative">
+                 <CalendarIcon size={14} className="text-blue-600" /> 
                  <span className="hidden sm:inline">{calendarData.length > 0 ? t('updateCalendar') : t('addCalendar')}</span>
                  {calendarData.length > 0 && calendarNote && (
-                    <span className="absolute -top-2.5 -right-2 bg-indigo-500 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full shadow-sm border border-indigo-600">
+                    <span className="absolute -top-2 -right-2 bg-indigo-500 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm border border-indigo-600">
                        {calendarNote}
                     </span>
                  )}
@@ -1277,9 +1339,19 @@ export default function App() {
               </label>
             )}
             {summaries.length > 0 && (
-              <Button onClick={handleExport} className="bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-sm font-bold flex items-center gap-2 h-10 px-5 shadow-lg shadow-slate-200">
-                <FileDown size={18} /> <span className="hidden sm:inline">{t('exportPdf')}</span>
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button onClick={handleExport} className="bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-xs font-bold flex items-center gap-1.5 h-8 px-4 shadow-sm shadow-slate-200">
+                  <FileDown size={14} /> <span className="hidden sm:inline">{t('exportPdf')}</span>
+                </Button>
+                <div className="hidden md:flex flex-col items-center justify-center bg-slate-900 text-white px-3 h-8 rounded-lg shadow-sm border border-slate-700">
+                  <span className="text-[12px] font-black tracking-widest font-mono text-emerald-400">
+                    {format(currentTime, 'HH:mm:ss')}
+                  </span>
+                  <span className="text-[7px] font-bold uppercase tracking-wider text-slate-400 -mt-1">
+                    Update: {lastExtractTime ? format(lastExtractTime, 'HH:mm:ss') : '--:--:--'}
+                  </span>
+                </div>
+              </div>
             )}
                 <div className="flex lg:hidden gap-1 bg-white border border-slate-200 rounded-lg p-1">
                   <Button variant="ghost" size="sm" onClick={() => setActiveTab('dashboard')} className={`h-8 w-8 p-0 ${activeTab === 'dashboard' ? 'bg-slate-100' : ''}`}>
@@ -1299,7 +1371,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="p-8">
+        <div className="p-4 sm:p-6">
           <AnimatePresence mode="wait">
             {summaries.length === 0 ? (
               activeTab === 'howto' ? (
@@ -1362,7 +1434,7 @@ export default function App() {
                 className="space-y-8"
               >
                 {activeTab !== 'howto' && (
-                  <div className="sticky lg:top-[72px] top-[72px] z-[50] bg-slate-50/95 backdrop-blur-md border-b border-slate-200 pb-4 pt-4 px-8 -mx-8 -mt-8 mb-8 shadow-sm">
+                  <div className="sticky lg:top-[56px] top-[56px] z-[50] bg-slate-50/95 backdrop-blur-md border-b border-slate-200 pb-4 pt-4 sm:pt-6 px-4 sm:px-6 -mx-4 sm:-mx-6 -mt-4 sm:-mt-6 mb-8 shadow-sm">
                     <div className="flex flex-col gap-3">
                     <div className="flex flex-col gap-2 items-start">
                       <h3 className="text-slate-500 text-xs font-bold uppercase tracking-widest leading-none">{t('realtimeMetrics')}</h3>
@@ -1374,9 +1446,27 @@ export default function App() {
                              setTimeFilter('day');
                              setShiftFilter([]);
                              setSelectedDates([]);
+                             // Desativar TODOS os filtros de ocorrência e extras
+                             setIncludeCheckGlobal(false);
+                             setIncludeWcGlobal(false);
+                             setIncludeIdleGlobal(false);
+                             setIncludeNonModGlobal(false);
+                             setIncludeTardinessGlobal(false);
+                             setIncludeMinorTardinessGlobal(false);
+                             setIncludeEarlyLeaveGlobal(false);
+                             setIncludeAbsencesGlobal(false);
+                             setIncludeShort30MinGlobal(false);
+                             setIncludeOffboardedGlobal(false);
+                             setTypeFilter('all');
+                             setIncludeATTGlobal(false);
+                             setIncludeLOAGlobal(false);
+                             setIncludePTOGlobal(false);
+                             setIncludeSLGlobal(false);
+                             setIncludeSUSPPGlobal(false);
+                             setIncludeOFFGlobal(false);
                            }
                          }}
-                         className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 min-w-max shadow-sm w-fit ${showRealTime ? 'bg-red-500 text-white border-red-500' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
+                         className={`px-2 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 min-w-max shadow-sm w-fit ${showRealTime ? 'bg-red-500 text-white border-red-500' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
                        >
                          <div className={`w-2 h-2 rounded-full ${showRealTime ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
                          {t('realTime')}
@@ -1387,11 +1477,14 @@ export default function App() {
                       <div className="flex flex-col items-end gap-2 w-full">
                         {/* Top Filter Row: Shift Select */}
                         <div className="flex gap-1 items-center overflow-x-auto w-full sm:w-auto">
-                           <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-xl shadow-sm min-w-max">
-                             <span className="text-[10px] font-black uppercase text-slate-400 px-2">{t('shift')}:</span>
+                           <div className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded-xl shadow-sm min-w-max">
+                             <span className="text-[9px] font-black uppercase text-slate-400 px-2">{t('shift')}:</span>
                              <button 
-                                onClick={() => setShiftFilter([])}
-                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${shiftFilter.length === 0 ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                                onClick={() => {
+                                   setShowRealTime(false);
+                                   setShiftFilter([]);
+                                }}
+                                className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${shiftFilter.length === 0 ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
                               >
                                 {t('all')}
                              </button>
@@ -1399,13 +1492,14 @@ export default function App() {
                              <button 
                                key={shift}
                                onClick={() => {
+                                 setShowRealTime(false);
                                  if (shiftFilter.includes(shift)) {
                                    setShiftFilter(shiftFilter.filter(s => s !== shift));
                                  } else {
                                    setShiftFilter([...shiftFilter, shift]);
                                  }
                                }}
-                               className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${shiftFilter.includes(shift) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                               className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${shiftFilter.includes(shift) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
                              >
                                {shift}
                              </button>
@@ -1416,11 +1510,11 @@ export default function App() {
 
                         {/* Bottom Filter Row: Calendars and Options */}
                         <div className="flex gap-2 flex-wrap justify-end w-full">
-                          <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto">
-                            <span className="text-[10px] font-black uppercase text-slate-400 px-2">{t('period')}:</span>
+                          <div className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto">
+                            <span className="text-[9px] font-black uppercase text-slate-400 px-2">{t('period')}:</span>
                             <Popover>
                               <PopoverTrigger
-                                   className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 bg-amber-500 text-white shadow-md hover:bg-amber-600`}
+                                   className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${selectedDates && selectedDates.length > 0 ? 'bg-amber-500 text-white shadow-md hover:bg-amber-600' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
                                  >
                                    <CalendarIcon size={12} />
                                    {t('calendar')} {selectedDates && selectedDates.length > 0 ? `(${selectedDates.length})` : ''}
@@ -1430,8 +1524,9 @@ export default function App() {
                                      <Button 
                                        variant="outline" 
                                        size="sm" 
-                                       className="text-[10px] font-bold uppercase h-7 px-2 border-slate-200 rounded-full"
+                                       className="text-[9px] font-bold uppercase h-7 px-2 border-slate-200 rounded-full"
                                        onClick={() => {
+                                          setShowRealTime(false);
                                           const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
                                           const start = new Date(now.getFullYear(), now.getMonth(), 1);
                                           const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -1448,8 +1543,9 @@ export default function App() {
                                      <Button 
                                        variant="outline" 
                                        size="sm" 
-                                       className="text-[10px] font-bold uppercase h-7 px-2 border-slate-200 rounded-full"
+                                       className="text-[9px] font-bold uppercase h-7 px-2 border-slate-200 rounded-full"
                                        onClick={() => {
+                                          setShowRealTime(false);
                                           const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
                                           const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
                                           const end = new Date(now.getFullYear(), now.getMonth(), 0);
@@ -1466,26 +1562,30 @@ export default function App() {
                                      <Button 
                                        variant="ghost" 
                                        size="sm" 
-                                       className="text-[10px] font-bold uppercase h-7 px-2 text-rose-500 hover:text-rose-600 rounded-full"
+                                       className="text-[9px] font-bold uppercase h-7 px-2 text-rose-500 hover:text-rose-600 rounded-full"
                                        onClick={() => setSelectedDates(undefined)}
                                      >
                                        {t('clearBtn')}
                                      </Button>
                                   </div>
                                   <CustomCalendar
-                                      summaries={mergedSummaries}
+                                      summaries={summaries}
                                       selectedDates={selectedDates}
                                       onSelectDates={(dates) => {
+                                          setShowRealTime(false);
                                           setSelectedDates(dates);
                                           if (dates && dates.length > 0) setTimeFilter('all');
                                       }}
                                   />
                               </PopoverContent>
                             </Popover>
-                            {(['month', 'prev_month', 'week', 'yesterday', 'day'] as const).map(filter => (
+                            {(['month', 'prev_month', 'week', 'yesterday', 'day'] as const)
+                               .filter(filter => availableFilters.includes(filter))
+                               .map(filter => (
                                <button 
                                  key={filter}
                                  onClick={() => {
+                                     setShowRealTime(false);
                                      if (timeFilter === filter) {
                                          setTimeFilter('all');
                                      } else {
@@ -1493,60 +1593,60 @@ export default function App() {
                                          setSelectedDates(undefined);
                                      }
                                  }}
-                                 className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${timeFilter === filter && (!selectedDates || selectedDates.length === 0) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                                 className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${timeFilter === filter && (!selectedDates || selectedDates.length === 0) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
                                >
                                  {filter === 'month' ? t('filterMonth') : filter === 'prev_month' ? t('filterPrevMonth') : filter === 'week' ? t('filterWeek') : filter === 'yesterday' ? t('filterYesterday') : t('filterDay')}
                                </button>
                             ))}
                           </div>
                           
-                          <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto">
-                             <span className="text-[10px] font-black uppercase text-slate-400 px-2 shrink-0">Status:</span>
+                          <div className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto">
+                             <span className="text-[9px] font-black uppercase text-slate-400 px-2 shrink-0">Status:</span>
                              <button 
                                onClick={() => { setTypeFilter(typeFilter === 'all' ? 'idle_overbreak_wc' : 'all'); clearExtraStatuses(); }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${typeFilter === 'idle_overbreak_wc' ? 'bg-rose-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${typeFilter === 'idle_overbreak_wc' ? 'bg-rose-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                {t('overbreaks').toUpperCase()}
                              </button>
                              <button
                                onClick={() => { setIncludeShort30MinGlobal(!includeShort30MinGlobal); clearExtraStatuses(); }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${includeShort30MinGlobal ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border ${includeShort30MinGlobal ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-100'}`}
                              >
                                {t('short30Min')}
                              </button>
                              <button
                                onClick={() => { setIncludeWcGlobal(!includeWcGlobal); clearExtraStatuses(); }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeWcGlobal ? 'bg-amber-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeWcGlobal ? 'bg-amber-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                Organic
                              </button>
                              <button
                                onClick={() => { setIncludeIdleGlobal(!includeIdleGlobal); clearExtraStatuses(); }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeIdleGlobal ? 'bg-rose-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeIdleGlobal ? 'bg-rose-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                IDLE
                              </button>
                              <button
                                onClick={() => { setIncludeNonModGlobal(!includeNonModGlobal); clearExtraStatuses(); }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeNonModGlobal ? 'bg-teal-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeNonModGlobal ? 'bg-teal-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                NON-MOD
                              </button>
                              <button
                                onClick={() => { setIncludeTardinessGlobal(!includeTardinessGlobal); clearExtraStatuses(); }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeTardinessGlobal ? 'bg-orange-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeTardinessGlobal ? 'bg-orange-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                TARDINESS
                              </button>
                              <button
                                onClick={() => { setIncludeEarlyLeaveGlobal(!includeEarlyLeaveGlobal); clearExtraStatuses(); }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeEarlyLeaveGlobal ? 'bg-orange-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeEarlyLeaveGlobal ? 'bg-orange-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                EARLY LEAVE
                              </button>
                              <button
                                onClick={() => { setIncludeAbsencesGlobal(!includeAbsencesGlobal); clearExtraStatuses(); }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap overflow-hidden relative flex items-center gap-2 ${includeAbsencesGlobal ? 'bg-red-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap overflow-hidden relative flex items-center gap-2 ${includeAbsencesGlobal ? 'bg-red-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                <span className="relative z-10 hidden sm:inline">{t('absences')}</span>
                                <span className="relative z-10 sm:hidden">{t('absences')}</span>
@@ -1561,7 +1661,7 @@ export default function App() {
                              </button>
                              <button
                                onClick={() => { setIncludeOffboardedGlobal(!includeOffboardedGlobal); clearExtraStatuses(); }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap overflow-hidden relative flex items-center gap-2 ${includeOffboardedGlobal ? 'bg-slate-700 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap overflow-hidden relative flex items-center gap-2 ${includeOffboardedGlobal ? 'bg-slate-700 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                 <span className="relative z-10 hidden sm:inline">{t('offboarded')}</span>
                                 <span className="relative z-10 sm:hidden">{t('offboarded')}</span>
@@ -1571,21 +1671,21 @@ export default function App() {
                              </button>
                              <button
                                onClick={() => { setIncludeCheckGlobal(!includeCheckGlobal); clearExtraStatuses(); }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeCheckGlobal ? 'bg-amber-500 text-white shadow-md' : (hasMismatchesInSelection ? 'bg-amber-100 text-amber-700 animate-pulse border border-amber-300' : 'bg-transparent text-slate-500 hover:bg-slate-100')}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeCheckGlobal ? 'bg-amber-500 text-white shadow-md' : (hasMismatchesInSelection ? 'bg-amber-100 text-amber-700 animate-pulse border border-amber-300' : 'bg-transparent text-slate-500 hover:bg-slate-100')}`}
                              >
                                {t('check')}
                              </button>
                              <button
                                onClick={() => { setFilterMinorOverbreaks(!filterMinorOverbreaks); clearExtraStatuses(); }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${filterMinorOverbreaks ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${filterMinorOverbreaks ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                                title="Mostra apenas agentes com total de 2 minutos ou menos"
                              >
                                2min or less
                              </button>
                            </div>
                            
-                           <div className="flex gap-1 items-center bg-white border border-slate-200 p-1.5 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto mt-1">
-                             <span className="text-[10px] font-black uppercase text-slate-400 px-2 shrink-0">{t('additionalStatus')}:</span>
+                           <div className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto mt-1">
+                             <span className="text-[9px] font-black uppercase text-slate-400 px-2 shrink-0">{t('additionalStatus')}:</span>
                              <AnimatePresence>
                                {includeTardinessGlobal && (
                                  <motion.button
@@ -1593,7 +1693,7 @@ export default function App() {
                                    animate={{ opacity: 1, scale: 1 }}
                                    exit={{ opacity: 0, scale: 0.8 }}
                                    onClick={() => setIncludeMinorTardinessGlobal(!includeMinorTardinessGlobal)}
-                                   className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeMinorTardinessGlobal ? 'bg-orange-600 text-white shadow-md' : 'bg-transparent animate-pulse text-orange-500 border border-orange-300 hover:bg-orange-50'}`}
+                                   className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeMinorTardinessGlobal ? 'bg-orange-600 text-white shadow-md' : 'bg-transparent animate-pulse text-orange-500 border border-orange-300 hover:bg-orange-50'}`}
                                  >
                                    &lt; 15min
                                  </motion.button>
@@ -1605,7 +1705,7 @@ export default function App() {
                                  clearNormalStatuses();
                                  if (!includeATTGlobal) { setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); }
                                }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeATTGlobal ? 'bg-slate-800 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeATTGlobal ? 'bg-slate-800 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                {t('statusAtt')}
                              </button>
@@ -1615,7 +1715,7 @@ export default function App() {
                                  clearNormalStatuses();
                                  if (!includeLOAGlobal) { setIncludeATTGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); }
                                }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeLOAGlobal ? 'bg-indigo-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeLOAGlobal ? 'bg-indigo-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                {t('statusLoa')}
                              </button>
@@ -1625,7 +1725,7 @@ export default function App() {
                                  clearNormalStatuses();
                                  if (!includePTOGlobal) { setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); }
                                }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includePTOGlobal ? 'bg-cyan-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includePTOGlobal ? 'bg-cyan-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                {t('statusPto')}
                              </button>
@@ -1635,7 +1735,7 @@ export default function App() {
                                  clearNormalStatuses();
                                  if (!includeSLGlobal) { setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); }
                                }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeSLGlobal ? 'bg-rose-400 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeSLGlobal ? 'bg-rose-400 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                {t('statusSl')}
                              </button>
@@ -1645,7 +1745,7 @@ export default function App() {
                                  clearNormalStatuses();
                                  if (!includeSUSPPGlobal) { setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeOFFGlobal(false); }
                                }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeSUSPPGlobal ? 'bg-red-700 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeSUSPPGlobal ? 'bg-red-700 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                {t('statusSuspp')}
                              </button>
@@ -1655,7 +1755,7 @@ export default function App() {
                                  clearNormalStatuses();
                                  if (!includeOFFGlobal) { setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); }
                                }}
-                               className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeOFFGlobal ? 'bg-slate-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeOFFGlobal ? 'bg-slate-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                {t('statusOff')}
                              </button>
@@ -1667,7 +1767,7 @@ export default function App() {
                                    animate={{ opacity: 1, scale: 1 }}
                                    exit={{ opacity: 0, scale: 0.8 }}
                                    onClick={() => setIncludeSupportStaff(!includeSupportStaff)}
-                                   className={`px-3 py-1.5 w-full sm:w-auto rounded-full text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap relative flex items-center gap-2 ${includeSupportStaff ? 'bg-fuchsia-600 text-white shadow-md' : 'bg-fuchsia-50 text-fuchsia-600 border border-fuchsia-200 hover:bg-fuchsia-100 shadow-[0_0_12px_rgba(192,38,211,0.5)] animate-pulse'}`}
+                                   className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap relative flex items-center gap-2 ${includeSupportStaff ? 'bg-fuchsia-600 text-white shadow-md' : 'bg-fuchsia-50 text-fuchsia-600 border border-fuchsia-200 hover:bg-fuchsia-100 shadow-[0_0_12px_rgba(192,38,211,0.5)] animate-pulse'}`}
                                  >
                                    {t('supportStaff')}
                                  </motion.button>
@@ -1713,7 +1813,7 @@ export default function App() {
                   ) : activeTab === 'howto' ? (
                     <HowTo />
                   ) : (
-                    <EmployeeList summaries={filteredSummaries} allSummaries={mergedSummaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalIncludeCheck={includeCheckGlobal} globalShiftFilter={shiftFilter} globalFilterMajorOverbreaks={false} />
+                    <EmployeeList availableFilters={availableFilters} summaries={filteredSummaries} allSummaries={mergedSummaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalIncludeCheck={includeCheckGlobal} globalShiftFilter={shiftFilter} globalFilterMajorOverbreaks={false} />
                   )}
                 </div>
               </motion.div>
@@ -1727,23 +1827,23 @@ export default function App() {
                 initial={{ y: 100, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: 100, opacity: 0 }}
-                className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 px-6 py-3 rounded-full shadow-2xl shadow-indigo-500/20"
+                className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 px-5 py-2 rounded-full shadow-2xl shadow-indigo-500/20"
               >
                 <div className="flex items-center gap-4">
-                  <div className="flex flex-col border-r border-slate-700 pr-4">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-tight">{t('agents')}</span>
+                  <div className="flex flex-col border-r border-slate-700 pr-3">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight">{t('agents')}</span>
                     <span className="text-sm font-black text-white">{filteredSummaries.length}</span>
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-tight">{t('totalOverbreak')}</span>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight">{t('totalOverbreak')}</span>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-black text-rose-400">
                         {Math.floor(dashboardStats.totalOverbreakMinutes / 60)}h {dashboardStats.totalOverbreakMinutes % 60}m
                       </span>
                     </div>
                   </div>
-                  <div className="flex flex-col border-l border-slate-700 pl-4">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-tight">{t('avgOverbreak')}</span>
+                  <div className="flex flex-col border-l border-slate-700 pl-3">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight">{t('avgOverbreak')}</span>
                     <span className="text-sm font-black text-indigo-400">
                       {summaries.length > 0 ? Math.round(dashboardStats.totalOverbreakMinutes / summaries.length) : 0}m
                     </span>

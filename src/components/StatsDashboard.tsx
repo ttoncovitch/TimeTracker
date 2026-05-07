@@ -6,6 +6,7 @@ import { AlertCircle, Users, CheckCircle2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useLanguage } from '../contexts/LanguageContext';
 import { format } from 'date-fns';
+import { isShiftMismatch } from '../lib/shiftUtils';
 import { PaginatedAgentList } from './PaginatedAgentList';
 
 interface StatsDashboardProps {
@@ -386,7 +387,7 @@ export function StatsDashboard({
      if (distinctDaysInPeriod === 0) return 0;
      let totalMismatches = 0;
      filteredSummaries.forEach(s => {
-        totalMismatches += s.dailyRecords.filter(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()).length;
+        totalMismatches += s.dailyRecords.filter(r => isShiftMismatch(r.scheduledShift, r.inferredShift)).length;
      });
      return Math.round(totalMismatches / distinctDaysInPeriod);
   }, [filteredSummaries, distinctDaysInPeriod]);
@@ -413,7 +414,7 @@ export function StatsDashboard({
     if (daysWorked > 0) {
       let metricTotal = 0;
       if (isCheckOnly) {
-          metricTotal = s.dailyRecords.filter(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()).length;
+          metricTotal = s.dailyRecords.filter(r => isShiftMismatch(r.scheduledShift, r.inferredShift)).length;
       } else if (isOnlyOrganic) {
           metricTotal = s.dailyRecords.reduce((acc, r) => acc + (r.wcDuration || 0), 0);
       } else if (isOnlyIdle) {
@@ -465,7 +466,7 @@ export function StatsDashboard({
         if (!stats[shiftLabel]) stats[shiftLabel] = { minutes: 0, occurrences: 0 };
         
         if (isCheckOnly) {
-           const mismatch = r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim();
+           const mismatch = isShiftMismatch(r.scheduledShift, r.inferredShift);
            if (mismatch && !recordedShiftsForAgent.has(shiftLabel)) {
              stats[shiftLabel].occurrences += 1;
              recordedShiftsForAgent.add(shiftLabel);
@@ -594,7 +595,7 @@ export function StatsDashboard({
   // Top Mismatch
   const topCheck = [...filteredSummaries]
     .map(s => {
-      const mismatchCount = s.dailyRecords.filter(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()).length;
+      const mismatchCount = s.dailyRecords.filter(r => isShiftMismatch(r.scheduledShift, r.inferredShift)).length;
       return { ...s, mismatchCount };
     })
     .filter(s => s.mismatchCount > 0)
@@ -1091,7 +1092,7 @@ export function StatsDashboard({
                     <div className="divide-y divide-slate-50">
                       {isCheckOnly ? (
                          topCheck.map((s, i) => {
-                            const mismatchRecord = s.dailyRecords.find(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim());
+                            const mismatchRecord = s.dailyRecords.find(r => isShiftMismatch(r.scheduledShift, r.inferredShift));
                             return (
                                <AgentLine 
                                   key={`${s.employeeName}-${i}`} 
@@ -1590,7 +1591,7 @@ export function StatsDashboard({
                            {isCheckOnly ? (
                              globalTimeFilter === 'day' ? (
                                 (() => {
-                                   const mmr = s.dailyRecords.find(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim());
+                                   const mmr = s.dailyRecords.find(r => isShiftMismatch(r.scheduledShift, r.inferredShift));
                                    return <span>{mmr ? `${mmr.scheduledShift} ➔ ${mmr.inferredShift}` : "VER DETALHES"}</span>;
                                 })()
                              ) : (
@@ -1636,7 +1637,7 @@ export function StatsDashboard({
                           <div className="flex-1 overflow-y-auto w-full bg-slate-50">
                              <div className="space-y-3 p-6 min-h-max">
                                 {s.dailyRecords
-                                   .filter(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim())
+                                   .filter(r => isShiftMismatch(r.scheduledShift, r.inferredShift))
                                    .map((r, idx) => (
                                       <div key={idx} className="flex justify-between items-center bg-white p-4 rounded-xl border border-amber-200 shadow-sm">
                                         <div>
@@ -1660,13 +1661,46 @@ export function StatsDashboard({
                          ) : (
                          <div className="flex-1 overflow-y-auto w-full bg-slate-50">
                             <div className="space-y-3 p-6 min-h-max">
-                               {s.dailyRecords
-                                  .flatMap(r => r.breaks.map(b => ({ ...b, date: r.date })))
-                                  .filter(b => b.type !== 'forgot_status' && b.type !== 'offline')
-                                  .filter(b => {
-                                      if (isNonModOnly) {
-                                          return b.type === 'non_moderating';
-                                      }
+                               {(() => {
+                                   const taggedAll = s.dailyRecords.flatMap(r => {
+                                       const typeSums: Record<string, number> = {};
+                                       const sorted = r.breaks ? [...r.breaks].sort((a: any, b: any) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()) : [];
+                                       return sorted.map(b => {
+                                          const prevSum = typeSums[b.type] || 0;
+                                          const newSum = prevSum + b.durationMinutes;
+                                          typeSums[b.type] = newSum;
+                                          
+                                          let idealTime = (b.type === 'meal') ? 60 : (b.type === 'short') ? 30 : (b.type === 'wellness' || b.type === 'praying') ? 15 : (b.type === 'wc') ? 10 : 0;
+                                          let isOverbreak = false;
+                                          let excessTime = 0;
+                                          let usedIdeal = 0;
+
+                                          if (b.type === 'idle' || b.type === 'forgot_status') {
+                                             if (!globalFilterMajorOverbreaks || b.durationMinutes > 2) {
+                                                isOverbreak = true;
+                                                excessTime = b.durationMinutes;
+                                                usedIdeal = 0;
+                                             }
+                                          } else if (idealTime > 0) {
+                                             if (newSum > idealTime) {
+                                                const excess = Math.min(b.durationMinutes, newSum - idealTime);
+                                                if (b.type === 'wc' || b.type === 'praying' || b.type === 'wellness') {
+                                                    isOverbreak = true;
+                                                } else {
+                                                    if (!globalFilterMajorOverbreaks || excess > 2) isOverbreak = true;
+                                                }
+                                                if (isOverbreak) {
+                                                    excessTime = excess;
+                                                    usedIdeal = b.durationMinutes - excess;
+                                                }
+                                             }
+                                          }
+                                          return { ...b, date: r.date, isOverbreak, allowed: usedIdeal, excess: excessTime, total: b.durationMinutes };
+                                       });
+                                   }).filter((b: any) => b.type !== 'forgot_status' && b.type !== 'offline');
+
+                                   const filteredTagged = taggedAll.filter((b: any) => {
+                                      if (isNonModOnly) return b.type === 'non_moderating';
                                       
                                       const isWcOnlyFilt = globalIncludeWc && !globalIncludeIdle && !globalIncludeNonMod && globalTypeFilter === 'all';
                                       const isIdleOnlyFilt = globalIncludeIdle && !globalIncludeWc && !globalIncludeNonMod && globalTypeFilter === 'all';
@@ -1678,79 +1712,51 @@ export function StatsDashboard({
                                       if (b.type === 'idle') return globalIncludeIdle && (!globalFilterMajorOverbreaks || b.durationMinutes > 2);
                                       if (b.type === 'non_moderating') return globalIncludeNonMod;
                                       
-                                      // Standard Overbreaks
-                                      let idealTime = (b.type === 'meal') ? 60 : (b.type === 'short') ? 30 : (b.type === 'wellness' || b.type === 'praying') ? 15 : 0;
-                                      if (idealTime > 0 && b.durationMinutes > idealTime) {
-                                         const diff = b.durationMinutes - idealTime;
-                                         if (b.type === 'wellness' || b.type === 'praying') return true;
-                                         if (!globalFilterMajorOverbreaks || diff > 2) return true;
-                                         return false;
-                                      }
-                                      return false;
-                                   })
-                                  .sort((a,b) => detailsSortMode === 'duration' ? b.durationMinutes - a.durationMinutes : new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-                                   .map((b, idx) => {
-                                    const idealTime = (b.type === 'meal') ? 60 : (b.type === 'short') ? 30 : (b.type === 'wellness' || b.type === 'praying') ? 15 : (b.type === 'wc') ? 10 : 0;
-                                    const exceededTime = b.durationMinutes - idealTime;
-                                    return (
-                                      <div key={idx} className={`flex flex-col gap-2 bg-white p-4 rounded-xl border shadow-sm ${b.type === 'forgot_status' ? 'border-slate-200' : isWcOnly ? 'border-amber-100' : isIdleOnly ? 'border-rose-100' : 'border-rose-100'}`}>
-                                        <div className="flex justify-between items-center w-full">
-                                          <div>
-                                            <p className={`text-sm font-black uppercase tracking-tight ${b.type === 'forgot_status' ? 'text-slate-800' : isWcOnly ? 'text-amber-800' : isIdleOnly ? 'text-rose-800' : 'text-rose-800'}`} title={b.rawStatus}>{b.type === 'forgot_status' ? t('forgotStatusLabel') : b.type === 'other' ? (b.rawStatus || b.type) : b.type}</p>
-                                            <p className="text-xs font-bold text-slate-500">{format(new Date(b.date), 'dd/MM/yyyy')} • {t('fromLabel')} {format(new Date(b.startTime), 'HH:mm')} {t('toLabel')} {format(new Date(b.endTime), 'HH:mm')}</p>
-                                          </div>
-                                          <div className="text-right flex flex-col items-end">
-                                            {isWcOnly || isIdleOnly || idealTime === 0 ? (
-                                               <>
-                                                 <p className={`text-xl font-black ${b.type === 'forgot_status' ? 'text-slate-700' : isWcOnly ? 'text-amber-600' : isIdleOnly ? 'text-rose-600' : 'text-rose-600'}`}>{Math.floor(b.durationMinutes / 60)}h {b.durationMinutes % 60}m</p>
-                                                 <p className={`text-[10px] font-bold uppercase ${b.type === 'forgot_status' ? 'text-slate-400' : isWcOnly ? 'text-amber-400' : isIdleOnly ? 'text-rose-400' : 'text-rose-400'}`}>{b.durationMinutes} {t('totalMinutes')}</p>
-                                               </>
-                                            ) : (
-                                               <>
-                                                 <div className="flex items-baseline gap-2 justify-end">
-                                                   <p className="text-xs font-medium text-slate-400">{idealTime}m {t('ideal')}</p>
-                                                   <p className={`text-xl font-black ${b.type === 'forgot_status' ? 'text-slate-700' : 'text-rose-600'}`}>+{exceededTime}m</p>
+                                      return b.isOverbreak;
+                                   }).sort((a: any, b: any) => detailsSortMode === 'duration' ? b.durationMinutes - a.durationMinutes : new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+                                   if (filteredTagged.length === 0) {
+                                       return <div className="text-center p-8 text-slate-400 font-bold text-sm">{t('noDetailedBreaks')}</div>;
+                                   }
+
+                                   return filteredTagged.map((b: any, idx: number) => {
+                                      const isOvb = b.isOverbreak;
+                                      return (
+                                          <div key={idx} className={`flex flex-col gap-2 bg-white p-4 rounded-xl border shadow-sm ${b.type === 'forgot_status' ? 'border-slate-200' : isWcOnly ? 'border-amber-100' : isIdleOnly ? 'border-rose-100' : 'border-rose-100'}`}>
+                                            <div className="flex justify-between items-center w-full min-h-[44px]">
+                                              <div>
+                                                <p className={`text-sm font-black uppercase tracking-tight ${b.type === 'forgot_status' ? 'text-slate-800' : isWcOnly ? 'text-amber-800' : isIdleOnly ? 'text-rose-800' : 'text-rose-800'}`} title={b.rawStatus}>{b.type === 'forgot_status' ? t('forgotStatusLabel') : b.type === 'other' ? (b.rawStatus || b.type) : b.type}</p>
+                                                <p className="text-xs font-bold text-slate-500">{format(new Date(b.date), 'dd/MM/yyyy')} • {t('fromLabel')} {format(new Date(b.startTime), 'HH:mm')} {t('toLabel')} {format(new Date(b.endTime), 'HH:mm')}</p>
+                                              </div>
+                                              <div className="text-right flex flex-col items-end gap-1">
+                                                 <div className="flex items-center gap-1.5 justify-end">
+                                                    {isOvb ? (
+                                                       <>
+                                                          {b.allowed > 0 && <span className="font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded shadow-sm text-sm" title="Tempo permitido">{b.allowed}m</span>}
+                                                          {b.excess > 0 && <span className="font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded shadow-sm text-sm" title="Tempo excedido">+{b.excess}m</span>}
+                                                       </>
+                                                    ) : (
+                                                       <span className="font-black text-slate-700 text-lg">{b.durationMinutes}m</span>
+                                                    )}
                                                  </div>
-                                                 <p className="text-[10px] font-bold uppercase text-slate-400 mt-0.5">({b.durationMinutes}m {t('totalLabel')})</p>
-                                               </>
+                                              </div>
+                                            </div>
+                                            {(() => {
+                                              if (!b.remarks || b.remarks.trim().length === 0) return false;
+                                              const lowRemark = b.remarks.toLowerCase();
+                                              if (lowRemark.includes("system changes state to idle") || lowRemark.includes("系统切换空闲状态")) return false;
+                                              const isRelevantNote = b.type === 'non_moderating' || b.type === 'short' || b.type === 'meeting' || b.type === 'training' || b.rawStatus.toLowerCase().includes('coaching') || (b.subType || '').toLowerCase().includes('coaching') || lowRemark.includes('coaching');
+                                              return isRelevantNote;
+                                            })() && (
+                                              <div className="mt-2 text-xs bg-slate-50 p-2 rounded border border-slate-100 italic text-slate-600">
+                                                <span className="font-bold not-italic text-[10px] uppercase text-slate-400 block mb-1">{t('agentObservation')}</span>
+                                                "{b.remarks.trim()}"
+                                              </div>
                                             )}
                                           </div>
-                                        </div>
-                                        {(() => {
-                                          if (!b.remarks || b.remarks.trim().length === 0) return false;
-                                          const lowRemark = b.remarks.toLowerCase();
-                                          if (lowRemark.includes("system changes state to idle") || lowRemark.includes("系统切换空闲状态")) return false;
-                                          const isRelevantNote = b.type === 'non_moderating' || b.type === 'short' || b.type === 'meeting' || b.type === 'training' || b.rawStatus.toLowerCase().includes('coaching') || (b.subType || '').toLowerCase().includes('coaching') || lowRemark.includes('coaching');
-                                          return isRelevantNote;
-                                        })() && (
-                                          <div className="mt-2 text-xs bg-slate-50 p-2 rounded border border-slate-100 italic text-slate-600">
-                                            <span className="font-bold not-italic text-[10px] uppercase text-slate-400 block mb-1">{t('agentObservation')}</span>
-                                            "{b.remarks.trim()}"
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                               {s.dailyRecords.flatMap(r => r.breaks).filter(b => b.type !== 'forgot_status' && b.type !== 'offline').filter(b => {
-                                     if (isNonModOnly) {
-                                         return b.type === 'non_moderating';
-                                     }
-                                     if (b.type === 'wc') return globalIncludeWc;
-                                     if (b.type === 'idle') return globalIncludeIdle;
-                                     let idealTime = (b.type === 'meal') ? 60 : (b.type === 'short') ? 30 : (b.type === 'wellness' || b.type === 'praying') ? 15 : 0;
-                                     if (idealTime > 0 && b.durationMinutes > idealTime) {
-                                        const diff = b.durationMinutes - idealTime;
-                                        if (b.type === 'wellness' || b.type === 'praying') return true;
-                                        if (!globalFilterMajorOverbreaks || diff > 2) return true;
-                                        return false;
-                                     } else if (b.type === 'idle' || b.type === 'forgot_status') {
-                                        if (!globalFilterMajorOverbreaks || b.durationMinutes > 2) return true;
-                                        return false;
-                                     }
-                                     return false;
-                                  }).length === 0 && (
-                                   <div className="text-center p-8 text-slate-400 font-bold text-sm">{t('noDetailedBreaks')}</div>
-                               )}
+                                      );
+                                   });
+                                })()}
                             </div>
                          </div>
                          )}

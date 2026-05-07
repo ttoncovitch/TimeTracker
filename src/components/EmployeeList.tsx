@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { EmployeeSummary, EmployeeDayRecord } from '../types';
 import { format } from 'date-fns';
+import { isShiftMismatch } from '../lib/shiftUtils';
 import { Calendar as CalendarIcon, Search, ChevronRight, AlertTriangle, Info, ArrowUpDown, Clock } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -13,6 +14,7 @@ interface EmployeeListProps {
   allSummaries: EmployeeSummary[];
   latestDate?: Date;
   initialFilter?: 'all' | 'month' | 'week' | 'day';
+  availableFilters: string[];
   globalTypeFilter: 'all' | 'idle_overbreak_wc';
   globalIncludeWc: boolean;
   globalIncludeIdle: boolean;
@@ -128,7 +130,7 @@ function isLeaveShift(sh: string) {
   return upper === 'PTO' || upper.includes('VAC') || upper.includes('FÉRIAS') || upper === 'SL' || upper.includes('SICK') || upper.includes('MEDICO') || upper.includes('ATESTADO') || upper === 'LOA' || upper.includes('LICENÇA');
 }
 
-export function EmployeeList({ summaries, allSummaries, latestDate, initialFilter = 'all', globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeMinorTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalShiftFilter, globalFilterMajorOverbreaks }: EmployeeListProps) {
+export function EmployeeList({ summaries, allSummaries, latestDate, initialFilter = 'all', availableFilters, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeMinorTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalShiftFilter, globalFilterMajorOverbreaks }: EmployeeListProps) {
   const { t } = useLanguage();
   const isWcOnly = globalTypeFilter === 'all' && globalIncludeWc && !globalIncludeShort30Min && !globalIncludeNonMod && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave;
   const isShort30MinOnly = globalTypeFilter === 'all' && globalIncludeShort30Min && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave;
@@ -180,13 +182,14 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+    <>
+    <div className="h-[calc(100vh-240px)] min-h-[600px] bg-white rounded-[2rem] shadow-2xl shadow-slate-200/40 border border-slate-200 flex flex-col overflow-hidden">
+      <div className="flex flex-col sm:flex-row gap-4 items-center justify-between shrink-0 p-4 border-b border-slate-100 bg-slate-50/80 z-20">
         <div className="relative w-full max-w-md">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <Input 
             placeholder={t('searchAgent')} 
-            className="pl-11 h-11 bg-white border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 text-sm font-medium" 
+            className="pl-11 h-11 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 text-sm font-medium shadow-sm" 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -203,11 +206,9 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
         </select>
       </div>
 
-      <div className="bg-white rounded-[2rem] shadow-2xl shadow-slate-200/40 border border-slate-200 flex flex-col overflow-hidden">
-        <div className="overflow-x-auto">
-          <div className="max-h-[600px] overflow-y-auto custom-scrollbar relative">
-            <table className="w-full text-left border-collapse min-w-[800px]">
-              <thead className="bg-slate-50/95 backdrop-blur border-b border-slate-200 text-[10px] uppercase font-black text-slate-500 tracking-widest sticky top-0 z-20">
+      <div className="flex-1 overflow-auto custom-scrollbar relative">
+          <table className="w-full text-left border-collapse min-w-[800px]">
+            <thead className="bg-slate-50/95 backdrop-blur border-b border-slate-200 text-[10px] uppercase font-black text-slate-500 tracking-widest sticky top-0 z-30 outline outline-1 outline-slate-200 shadow-sm">
                 <tr>
                   <th className="py-4 pl-8 pr-4 font-black whitespace-nowrap">{t('agentString')} ({filtered.length})</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('meal')}>Meal {sortBy === 'meal' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
@@ -252,7 +253,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                   const earlyLeaveTotal = s.dailyRecords.reduce((acc, r) => acc + (r.earlyLeaveMinutes || 0), 0);
                   
                   const hasShiftMismatch = (!globalShiftFilter || globalShiftFilter.length === 0) 
-                    ? s.dailyRecords.some(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) 
+                    ? s.dailyRecords.some(r => isShiftMismatch(r.scheduledShift, r.inferredShift)) 
                     : false;
 
                   return (
@@ -309,7 +310,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                           }
 
                           // Check if any specific day has a shift discrepancy
-                          if (s.dailyRecords.some(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim())) {
+                          if (s.dailyRecords.some(r => isShiftMismatch(r.scheduledShift, r.inferredShift))) {
                               shiftDiffers = true;
                           }
 
@@ -467,7 +468,6 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                 )}
               </tbody>
             </table>
-          </div>
         </div>
 
         <div className="p-5 bg-slate-50 border-t border-slate-200 flex justify-between items-center px-8 shrink-0">
@@ -479,22 +479,26 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
 
       <Dialog open={!!selectedEmp} onOpenChange={(open) => !open && setSelectedEmp(null)}>
         <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] flex flex-col rounded-[2rem] border-slate-200 p-0 overflow-hidden shadow-2xl">
-           {selectedEmp && <EmployeeDetail summary={selectedEmp} allSummaries={allSummaries} latestDate={latestDate || new Date()} initialFilter={initialFilter} t={t} globalTypeFilter={globalTypeFilter} globalIncludeWc={globalIncludeWc} globalIncludeIdle={globalIncludeIdle} globalIncludeNonMod={globalIncludeNonMod} globalIncludeTardiness={globalIncludeTardiness} globalIncludeMinorTardiness={globalIncludeMinorTardiness} globalIncludeEarlyLeave={globalIncludeEarlyLeave} globalIncludeShort30Min={globalIncludeShort30Min} globalIncludeCheck={globalIncludeCheck} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} />}
+           {selectedEmp && <EmployeeDetail summary={selectedEmp} allSummaries={allSummaries} latestDate={latestDate || new Date()} initialFilter={initialFilter} availableFilters={availableFilters} t={t} globalTypeFilter={globalTypeFilter} globalIncludeWc={globalIncludeWc} globalIncludeIdle={globalIncludeIdle} globalIncludeNonMod={globalIncludeNonMod} globalIncludeTardiness={globalIncludeTardiness} globalIncludeMinorTardiness={globalIncludeMinorTardiness} globalIncludeEarlyLeave={globalIncludeEarlyLeave} globalIncludeShort30Min={globalIncludeShort30Min} globalIncludeCheck={globalIncludeCheck} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} />}
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
 
-function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeMinorTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalFilterMajorOverbreaks }: { summary: EmployeeSummary; allSummaries: EmployeeSummary[]; latestDate: Date, initialFilter: string, t: any, globalTypeFilter: 'all' | 'idle_overbreak_wc', globalIncludeWc: boolean, globalIncludeIdle: boolean, globalIncludeNonMod: boolean, globalIncludeTardiness: boolean, globalIncludeMinorTardiness?: boolean, globalIncludeEarlyLeave: boolean, globalIncludeShort30Min?: boolean, globalIncludeCheck?: boolean, globalFilterMajorOverbreaks: boolean }) {
+function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, availableFilters, t, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeMinorTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalFilterMajorOverbreaks }: { summary: EmployeeSummary; allSummaries: EmployeeSummary[]; latestDate: Date, initialFilter: string, availableFilters: string[], t: any, globalTypeFilter: 'all' | 'idle_overbreak_wc', globalIncludeWc: boolean, globalIncludeIdle: boolean, globalIncludeNonMod: boolean, globalIncludeTardiness: boolean, globalIncludeMinorTardiness?: boolean, globalIncludeEarlyLeave: boolean, globalIncludeShort30Min?: boolean, globalIncludeCheck?: boolean, globalFilterMajorOverbreaks: boolean }) {
   const today = latestDate;
   
-  // Start with the initialFilter mapped to 'today', 'week', or 'month'
-  // If initialFilter is 'all' or 'day', we'll default it smartly
   const getInitialView = () => {
-    if (initialFilter === 'month') return 'month';
-    if (initialFilter === 'week') return 'week';
-    if (initialFilter === 'yesterday') return 'yesterday';
+    if (initialFilter === 'month' && availableFilters.includes('month')) return 'month';
+    if (initialFilter === 'week' && availableFilters.includes('week')) return 'week';
+    if (initialFilter === 'yesterday' && availableFilters.includes('yesterday')) return 'yesterday';
+    if (initialFilter === 'day' && availableFilters.includes('day')) return 'today';
+    
+    if (availableFilters.includes('day')) return 'today';
+    if (availableFilters.includes('yesterday')) return 'yesterday';
+    if (availableFilters.includes('week')) return 'week';
+    if (availableFilters.includes('month')) return 'month';
     return 'today';
   };
 
@@ -568,7 +572,7 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t
       }
       if (includeEarlyLeave && (r.earlyLeaveMinutes || 0) > 0) keep = true;
       if (includeShort30Min && r.hasSingleShort30m) keep = true;
-      if (includeCheck && r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) keep = true;
+      if (includeCheck && isShiftMismatch(r.scheduledShift, r.inferredShift)) keep = true;
       
       return keep;
     });
@@ -630,7 +634,7 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t
                        <div className="flex flex-wrap gap-1">
                          {s.lob && <span className="bg-blue-50/10 text-blue-300 border border-blue-500/30 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.lob}</span>}
                          {s.language && <span className="bg-purple-50/10 text-purple-300 border border-purple-500/30 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.language}</span>}
-                         {dispShift && !isLeaveShift(dispShift) && <span className={`border text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest ${s.dailyRecords.some(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) ? 'bg-amber-500/20 text-amber-300 border-amber-500/50' : 'bg-emerald-50/10 text-emerald-300 border-emerald-500/30'}`}>{dispShift} {s.dailyRecords.some(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) && '(CHECK)'}</span>}
+                         {dispShift && !isLeaveShift(dispShift) && <span className={`border text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest ${s.dailyRecords.some(r => isShiftMismatch(r.scheduledShift, r.inferredShift)) ? 'bg-amber-500/20 text-amber-300 border-amber-500/50' : 'bg-emerald-50/10 text-emerald-300 border-emerald-500/30'}`}>{dispShift} {s.dailyRecords.some(r => isShiftMismatch(r.scheduledShift, r.inferredShift)) && '(CHECK)'}</span>}
                          {s.supervisor && <span className="bg-slate-800 text-slate-300 border border-slate-600 text-[9px] px-1.5 py-0.5 rounded font-bold">TL: {s.supervisor}</span>}
                        </div>
                        {overrideStatus && (
@@ -653,13 +657,18 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, t
              <div className="flex flex-wrap flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-3 border-t border-slate-800">
                 <div className="flex flex-col w-full gap-2">
                   <div className="flex flex-wrap bg-slate-800 rounded-md p-1 border border-slate-700 w-full gap-1">
-                    {(['today', 'yesterday', 'week', 'month'] as const).map(v => (
+                    {(['today', 'yesterday', 'week', 'month'] as const)
+                      .filter(v => {
+                        if (v === 'today') return availableFilters.includes('day');
+                        return availableFilters.includes(v);
+                      })
+                      .map(v => (
                       <button
                         key={v}
                         onClick={() => setView(v)}
-                        className={`flex-1 min-w-[70px] px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider transition-colors flex justify-center items-center gap-1.5 ${view === v ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+                        className={`flex-1 min-w-[60px] px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-colors flex justify-center items-center gap-1.5 ${view === v ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
                       >
-                        {v === 'today' ? t('filterDay') : v === 'yesterday' ? t('filterYesterday') : v === 'week' ? "SEMANA PASSADA" : "MÊS PASSADO"}
+                        {v === 'today' ? t('filterDay') : v === 'yesterday' ? t('filterYesterday') : v === 'week' ? t('filterWeek') : t('filterMonth')}
                       </button>
                     ))}
                   </div>
@@ -802,7 +811,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
             if (includeMinorTardiness && (record.tardinessMinutes || 0) > 0 && (record.tardinessMinutes || 0) < 15) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-2'; }
             else if (!includeMinorTardiness && (record.tardinessMinutes || 0) >= 15) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-2'; }
         }
-        else if (includeCheck && record.scheduledShift && record.inferredShift && record.scheduledShift.trim() !== record.inferredShift.trim()) { isHighlighted = true; borderColor = 'border-amber-200 ring-amber-50/50 ring-2'; }
+        else if (includeCheck && isShiftMismatch(record.scheduledShift, record.inferredShift)) { isHighlighted = true; borderColor = 'border-amber-200 ring-amber-50/50 ring-2'; }
         else if (includeEarlyLeave && (record.earlyLeaveMinutes || 0) > 0) { isHighlighted = true; borderColor = 'border-orange-200 ring-orange-50/50 ring-2'; }
     } else {
         // Fallback for global or no filters
@@ -831,8 +840,15 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
         else if (b.type === 'wc') idealTime = 10;
         
         let isOverbreak = false;
+        let excessTime = 0;
+        let usedIdeal = 0;
+
         if (b.type === 'idle' || b.type === 'forgot_status') {
-            if (!globalFilterMajorOverbreaks || b.durationMinutes > 2) isOverbreak = true;
+            if (!globalFilterMajorOverbreaks || b.durationMinutes > 2) {
+                isOverbreak = true;
+                excessTime = b.durationMinutes;
+                usedIdeal = 0;
+            }
         } else if (idealTime > 0) {
             if (newSum > idealTime) {
                 const excess = Math.min(b.durationMinutes, newSum - idealTime);
@@ -841,10 +857,14 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                 } else {
                     if (!globalFilterMajorOverbreaks || excess > 2) isOverbreak = true;
                 }
+                if (isOverbreak) {
+                    excessTime = excess;
+                    usedIdeal = b.durationMinutes - excess;
+                }
             }
         }
         
-        return { ...b, isOverbreak };
+        return { ...b, isOverbreak, allowed: usedIdeal, excess: excessTime, total: b.durationMinutes };
     });
 
     // Filter breaks to only show WC if isWcOnly is true
@@ -882,7 +902,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                     <span className={`text-base font-black tracking-tight ${textColor}`}>{format(new Date(record.date + 'T12:00:00'), 'dd/MM/yyyy')}</span>
                     {(record.scheduledShift || record.inferredShift) && (
                        <div className="flex gap-2 items-center">
-                           {record.scheduledShift && record.inferredShift && record.scheduledShift.trim() !== record.inferredShift.trim() ? (
+                           {isShiftMismatch(record.scheduledShift, record.inferredShift) ? (
                               <>
                                 <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-blue-50 text-blue-700 border-blue-100">
                                    {record.scheduledShift}
@@ -920,8 +940,8 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                 {filterNm ? (
                     <div title={`Total: ${Math.floor(nmTotalDuration/60)}h ${nmTotalDuration%60}m`}>
                         <p className="text-[10px] text-teal-600 uppercase font-bold tracking-widest leading-none mb-0.5">Non-Moderating</p>
-                        <div className="flex items-center gap-2">
-                            <span className="text-base font-black text-teal-700">{Math.floor(nmTotalDuration/60)}h {nmTotalDuration%60}m</span>
+                        <div className="flex items-center gap-1 font-black text-sm">
+                            <span className="text-teal-700">{Math.floor(nmTotalDuration/60)}h {nmTotalDuration%60}m</span>
                         </div>
                     </div>
                 ) : (
@@ -929,42 +949,38 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                         {!isWcOnly && (
                             <>
                                 <div title={`Total: ${Math.floor(record.mealDuration/60)}h ${record.mealDuration%60}m`}>
-                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Meal (1h)</p>
-                                    <div className="flex items-center gap-2">
-                                        {record.mealOverbreak > 0 ? (
-                                            <span className="text-base font-black text-rose-600">+{record.mealOverbreak}m</span>
-                                        ) : (
-                                            <span className="text-base font-black text-emerald-500">OK</span>
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Meal</p>
+                                    <div className="flex items-center gap-1 font-black text-sm">
+                                        <span className="text-emerald-500">60m</span>
+                                        {record.mealOverbreak > 0 && (
+                                            <span className="text-amber-500">+{record.mealOverbreak}m</span>
                                         )}
                                     </div>
                                 </div>
                                 <div title={`Total: ${Math.floor(record.shortDuration/60)}h ${record.shortDuration%60}m`}>
-                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Short (30m)</p>
-                                    <div className="flex items-center gap-2">
-                                        {record.shortOverbreak > 0 ? (
-                                            <span className="text-base font-black text-rose-600">+{record.shortOverbreak}m</span>
-                                        ) : (
-                                            <span className="text-base font-black text-emerald-500">OK</span>
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Short</p>
+                                    <div className="flex items-center gap-1 font-black text-sm">
+                                        <span className="text-emerald-500">30m</span>
+                                        {record.shortOverbreak > 0 && (
+                                            <span className="text-amber-500">+{record.shortOverbreak}m</span>
                                         )}
                                     </div>
                                 </div>
                                 <div title={`Total: ${Math.floor(record.wellnessDuration/60)}h ${record.wellnessDuration%60}m`}>
-                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Well. (15m)</p>
-                                    <div className="flex items-center gap-2">
-                                        {record.wellnessOverbreak > 0 ? (
-                                            <span className="text-base font-black text-rose-600">+{record.wellnessOverbreak}m</span>
-                                        ) : (
-                                            <span className="text-base font-black text-emerald-500">OK</span>
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Well.</p>
+                                    <div className="flex items-center gap-1 font-black text-sm">
+                                        <span className="text-emerald-500">15m</span>
+                                        {record.wellnessOverbreak > 0 && (
+                                            <span className="text-amber-500">+{record.wellnessOverbreak}m</span>
                                         )}
                                     </div>
                                 </div>
                                 <div title={`Total: ${Math.floor(record.prayingDuration/60)}h ${record.prayingDuration%60}m`}>
-                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Pray. (15m)</p>
-                                    <div className="flex items-center gap-2">
-                                        {record.prayingOverbreak > 0 ? (
-                                            <span className="text-base font-black text-rose-600">+{record.prayingOverbreak}m</span>
-                                        ) : (
-                                            <span className="text-base font-black text-emerald-500">OK</span>
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Pray.</p>
+                                    <div className="flex items-center gap-1 font-black text-sm">
+                                        <span className="text-emerald-500">15m</span>
+                                        {record.prayingOverbreak > 0 && (
+                                            <span className="text-amber-500">+{record.prayingOverbreak}m</span>
                                         )}
                                     </div>
                                 </div>
@@ -972,14 +988,17 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                         )}
                         
                         <div title={`Total: ${Math.floor(record.wcDuration/60)}h ${record.wcDuration%60}m`}>
-                            <p className="text-[10px] text-amber-500 uppercase font-bold tracking-widest leading-none mb-0.5">Organic {isWcOnly ? '' : '(10m)'}</p>
-                            <div className="flex items-center gap-2">
+                            <p className="text-[10px] text-amber-500 uppercase font-bold tracking-widest leading-none mb-0.5">Organic</p>
+                            <div className="flex items-center gap-1 font-black text-sm">
                                 {isWcOnly ? (
-                                    <span className="text-base font-black text-amber-600">{Math.floor(record.wcDuration/60)}h {record.wcDuration%60}m</span>
-                                ) : isWcAlert ? (
-                                    <span className="text-base font-black text-amber-600">+{record.wcOverbreak}m</span>
+                                    <span className="text-amber-600">{Math.floor(record.wcDuration/60)}h {record.wcDuration%60}m</span>
                                 ) : (
-                                    <span className="text-base font-black text-emerald-500">OK</span>
+                                    <>
+                                        <span className="text-emerald-500">10m</span>
+                                        {isWcAlert && (
+                                            <span className="text-amber-500">+{record.wcOverbreak}m</span>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         </div>
@@ -987,11 +1006,11 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                         {!isWcOnly && (
                             <div title={`Total: ${Math.floor(record.idleDuration/60)}h ${record.idleDuration%60}m`}>
                                 <p className="text-[10px] text-red-400 uppercase font-bold tracking-widest leading-none mb-0.5">IDLE</p>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1 font-black text-sm">
                                     {record.idleDuration > 0 ? (
-                                        <span className="text-base font-black text-red-600">+{record.idleDuration}m</span>
+                                        <span className="text-red-500">+{record.idleDuration}m</span>
                                     ) : (
-                                        <span className="text-base font-black text-emerald-500">OK</span>
+                                        <span className="text-emerald-500">OK</span>
                                     )}
                                 </div>
                             </div>
@@ -1003,11 +1022,11 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                                 <div className="flex flex-col">
                                     {(record.tardinessMinutes || 0) > 0 ? (
                                         <>
-                                            <span className="text-base font-black text-orange-600">+{record.tardinessMinutes}m</span>
-                                            {record.actualStartTime && <span className="text-[10px] text-orange-500/80 font-bold -mt-1">{format(record.actualStartTime, 'HH:mm')}</span>}
+                                            <span className="font-black text-sm text-orange-600">+{record.tardinessMinutes}m</span>
+                                            {record.actualStartTime && <span className="text-[9px] text-orange-500/80 font-bold">{format(record.actualStartTime, 'HH:mm')}</span>}
                                         </>
                                     ) : (
-                                        <span className="text-base font-black text-emerald-500">OK</span>
+                                        <span className="font-black text-sm text-emerald-500">OK</span>
                                     )}
                                 </div>
                             </div>
@@ -1019,11 +1038,11 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                                 <div className="flex flex-col">
                                     {(record.earlyLeaveMinutes || 0) > 0 ? (
                                         <>
-                                            <span className="text-base font-black text-orange-600">+{record.earlyLeaveMinutes}m</span>
-                                            {record.actualEndTime && <span className="text-[10px] text-orange-500/80 font-bold -mt-1">{format(record.actualEndTime, 'HH:mm')}</span>}
+                                            <span className="font-black text-sm text-orange-600">+{record.earlyLeaveMinutes}m</span>
+                                            {record.actualEndTime && <span className="text-[9px] text-orange-500/80 font-bold">{format(record.actualEndTime, 'HH:mm')}</span>}
                                         </>
                                     ) : (
-                                        <span className="text-base font-black text-emerald-500">OK</span>
+                                        <span className="font-black text-sm text-emerald-500">OK</span>
                                     )}
                                 </div>
                             </div>
@@ -1094,9 +1113,19 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                                         <span className={`font-normal mx-0.5 ${isOverbreak ? 'text-rose-400' : 'text-slate-400'}`}>a</span> 
                                         {format(b.endTime, 'HH:mm')}
                                     </span>
-                                    <span className={`text-[9px] font-black uppercase ml-1 ${textColor}`} title={b.rawStatus}>
-                                        {label} ({durFormat})
+                                    <span className={`text-[9px] font-black uppercase ml-1 flex-1 ${textColor}`} title={b.rawStatus}>
+                                        {label}
                                     </span>
+                                    <div className="flex items-center gap-1 justify-end">
+                                        {isOverbreak ? (
+                                           <>
+                                              {b.allowed > 0 && <span className="font-black text-emerald-600 bg-emerald-50 px-1 rounded shadow-sm">{b.allowed}m</span>}
+                                              {b.excess > 0 && <span className="font-black text-amber-600 bg-amber-50 px-1 rounded shadow-sm">+{b.excess}m</span>}
+                                           </>
+                                        ) : (
+                                           <span className="font-black text-slate-700 text-right">{durFormat}</span>
+                                        )}
+                                    </div>
                                 </div>
                             );
                         })}
@@ -1162,7 +1191,16 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                                             </div>
                                             <div className="flex items-center gap-1.5 ml-auto">
                                                 <span className={`font-bold ${textClass}`}>{format(b.startTime, 'HH:mm')} - {format(b.endTime, 'HH:mm')}</span>
-                                                <span className={`text-[10px] ${textClass} font-bold px-1.5 py-0.5 rounded ${fillClass}`}>({durFormat})</span>
+                                                <div className="flex items-center gap-1">
+                                                    {isOvb ? (
+                                                       <>
+                                                          {b.allowed > 0 && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${fillClass}`}>{b.allowed}m</span>}
+                                                          {b.excess > 0 && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded text-amber-700 bg-amber-100/50`}>+{b.excess}m</span>}
+                                                       </>
+                                                    ) : (
+                                                       <span className={`text-[10px] ${textClass} font-bold px-1.5 py-0.5 rounded ${fillClass}`}>({durFormat})</span>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                         <p className={`italic text-slate-700 leading-snug font-medium pl-2.5 border-l-[3px] py-0.5 mt-2 ${borderClass}`}>"{b.originalRemark}"</p>

@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { EmployeeSummary } from '../types';
 import { translations, Language } from './i18n';
+import { isShiftMismatch } from './shiftUtils';
 
 export interface PDFOptions {
   isTardiness?: boolean;
@@ -62,7 +63,7 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
             actualStart = breakFirst ? (breakFirst.startTime ? format(new Date(breakFirst.startTime), 'HH:mm') : t('pdfUnknown')) : t('pdfUnknown');
         }
         let effectiveShift = '-';
-        if (r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()) {
+        if (isShiftMismatch(r.scheduledShift, r.inferredShift)) {
             effectiveShift = r.inferredShift;
         } else if (!r.scheduledShift && r.inferredShift) {
             effectiveShift = r.inferredShift;
@@ -113,7 +114,7 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
   } else if (options.isCheck) {
     head = [[t('pdfAgent'), t('pdfDate'), t('pdfScheduledShift'), t('pdfWorkedShift')]];
     summaries.forEach(s => {
-      s.dailyRecords.filter(r => r.scheduledShift && r.inferredShift && r.scheduledShift.trim() !== r.inferredShift.trim()).forEach(r => {
+      s.dailyRecords.filter(r => isShiftMismatch(r.scheduledShift, r.inferredShift)).forEach(r => {
         tableData.push([
           s.employeeName,
           r.date,

@@ -47,14 +47,13 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           
           let date = '';
           if (row[0] instanceof Date) {
-            date = format(row[0], 'yyyy-MM-dd');
+            date = row[0].toISOString().split('T')[0];
           } else if (typeof row[0] === 'number') {
             if (row[0] > 100000) {
-              date = format(new Date(row[0]), 'yyyy-MM-dd');
+              date = new Date(row[0]).toISOString().split('T')[0];
             } else {
               const d = new Date(Math.round((row[0] - 25569) * 86400 * 1000));
-              d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
-              date = format(d, 'yyyy-MM-dd');
+              date = d.toISOString().split('T')[0];
             }
           } else if (row[0]) {
             const dateStr = String(row[0]).trim();
@@ -94,6 +93,16 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
             employeeMap.set(email, []);
           }
           employeeMap.get(email)!.push(row);
+        });
+
+        let globalMinDateStr = '9999-12-31';
+        employeeMap.forEach(allRows => {
+           allRows.forEach(row => {
+               const d = String(row[0] || '');
+               if (d && d < globalMinDateStr) {
+                   globalMinDateStr = d;
+               }
+           });
         });
 
         const summaries: EmployeeSummary[] = [];
@@ -257,7 +266,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              
              const hasSignificantActivity = record.totalWorkTimeMillis > 0 || record.breaks.some(b => b.type !== 'offline') || record.isOFF || record.isPTO || record.isLOA || record.isSL || record.isSUSPP || record.isATT;
              
-             if (hasSignificantActivity) {
+             if (hasSignificantActivity && record.date >= globalMinDateStr) {
               dailyRecords.push(record);
               totalWorkMinutes += record.totalWorkTimeMillis / (1000 * 60);
               totalBreakMinutes += (record.mealDuration + record.shortDuration + record.wellnessDuration + record.wcDuration + record.prayingDuration + record.idleDuration);
@@ -361,27 +370,48 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
   // 2. Identify Shift
   const minWorkTime = events.reduce((min, e) => (e.startTime < min ? e.startTime : min), events[0].startTime);
 
-  let closestShift = SHIFTS[0];
-  let minDiff = Infinity;
-  SHIFTS.forEach(shift => {
-    // Check diff against today's shift start
-    const d = new Date(minWorkTime);
-    d.setHours(shift.startHour, shift.startMinute, 0, 0);
-    let diff = Math.abs(d.getTime() - minWorkTime.getTime());
-    
-    // Check diff against yesterday's shift start (relevant for early morning logs belonging to nightshift)
-    const dYesterday = new Date(minWorkTime);
-    dYesterday.setDate(dYesterday.getDate() - 1);
-    dYesterday.setHours(shift.startHour, shift.startMinute, 0, 0);
-    const diffYesterday = Math.abs(dYesterday.getTime() - minWorkTime.getTime());
-    
-    diff = Math.min(diff, diffYesterday);
+  let explicitShift = null;
+  for (const e of events) {
+      const s1 = String(e.row[11] || '').trim();
+      const s2 = String(e.row[12] || '').trim();
+      const match = s1.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/) || s2.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+      if (match) {
+         let startH = parseInt(match[1]);
+         let startM = parseInt(match[2]);
+         let endH = parseInt(match[3]);
+         let endM = parseInt(match[4]);
+         explicitShift = {
+             startHour: startH, startMinute: startM, endHour: endH, endMinute: endM,
+             label: `${String(startH).padStart(2,'0')}:${String(startM).padStart(2,'0')}-${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}`,
+             crossesMidnight: (startH > endH || (startH === endH && startM > endM))
+         };
+         break;
+      }
+  }
 
-    if (diff < minDiff) {
-       minDiff = diff;
-       closestShift = shift;
-    }
-  });
+  let closestShift = explicitShift || SHIFTS[0];
+  if (!explicitShift) {
+      let minDiff = Infinity;
+      SHIFTS.forEach(shift => {
+        // Check diff against today's shift start
+        const d = new Date(minWorkTime);
+        d.setHours(shift.startHour, shift.startMinute, 0, 0);
+        let diff = Math.abs(d.getTime() - minWorkTime.getTime());
+        
+        // Check diff against yesterday's shift start (relevant for early morning logs belonging to nightshift)
+        const dYesterday = new Date(minWorkTime);
+        dYesterday.setDate(dYesterday.getDate() - 1);
+        dYesterday.setHours(shift.startHour, shift.startMinute, 0, 0);
+        const diffYesterday = Math.abs(dYesterday.getTime() - minWorkTime.getTime());
+        
+        diff = Math.min(diff, diffYesterday);
+
+        if (diff < minDiff) {
+           minDiff = diff;
+           closestShift = shift;
+        }
+      });
+  }
 
   const shiftStartLimit = new Date(minWorkTime);
   shiftStartLimit.setHours(closestShift.startHour, closestShift.startMinute, 0, 0);

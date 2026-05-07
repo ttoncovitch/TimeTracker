@@ -236,6 +236,32 @@ export function HowTo() {
           </div>
         </motion.div>
 
+        {/* Updates / Excedentes */}
+        <motion.div variants={item} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-fuchsia-100 p-2 rounded-lg">
+              <AlertTriangle className="w-5 h-5 text-fuchsia-600" />
+            </div>
+            <h3 className="text-lg font-black text-slate-800">{t('howtoUpdatesTitle')}</h3>
+          </div>
+          <div className="text-slate-600 space-y-4 leading-relaxed text-sm">
+             <p>{t('howtoUpdatesIntro')}</p>
+             
+             <div className="bg-fuchsia-50 p-4 rounded-xl border border-fuchsia-100">
+               <h4 className="font-bold text-fuchsia-800 mb-2 flex items-center gap-2">
+                 Somente Excedentes
+               </h4>
+               <p className="text-fuchsia-900/80 mb-2">{t('howtoUpdatesExceedesc')}</p>
+               <ul className="list-disc pl-5 space-y-1 text-fuchsia-800">
+                 <li><strong>Meal:</strong> {t('howtoMealLimit')}</li>
+                 <li><strong>Short:</strong> {t('howtoShortLimit')}</li>
+                 <li><strong>Wellness / Praying:</strong> {t('howtoWellLimit')}</li>
+                 <li><strong>Organic:</strong> {t('howtoOrgLimit')}</li>
+               </ul>
+             </div>
+          </div>
+        </motion.div>
+
       </div>
     </motion.div>
   );

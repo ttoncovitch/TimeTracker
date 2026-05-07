@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { EmployeeSummary } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Users, AlertTriangle, Clock, CalendarX, TrendingDown, Target, Globe } from 'lucide-react';
+import { Users, AlertTriangle, Clock, CalendarX, TrendingDown, Target, Globe, ChevronDown, ChevronUp } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { format } from 'date-fns';
 
 interface LOBAnalyticsProps {
   summaries: EmployeeSummary[];
@@ -46,14 +47,6 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
 
   const lobNames = Object.keys(lobsData).sort();
 
-  if (lobNames.length === 0) {
-     return (
-        <div className="mt-12 mb-24 px-4 text-center">
-           <h2 className="text-xl font-bold text-slate-500">{t('noLobFound')}</h2>
-        </div>
-     );
-  }
-
   const mostCriticalLOB = useMemo(() => {
     if (lobNames.length === 0) return null;
     
@@ -78,6 +71,14 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
     }
     return biggest;
   }, [lobsData, lobNames]);
+
+  if (lobNames.length === 0) {
+     return (
+        <div className="mt-12 mb-24 px-4 text-center">
+           <h2 className="text-xl font-bold text-slate-500">{t('noLobFound')}</h2>
+        </div>
+     );
+  }
 
   return (
     <div className="mt-12 mb-24">
@@ -163,8 +164,9 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
                 name: s.employeeName,
                 overbreak: s.totalOverbreakMinutes || 0,
                 absences: s.totalAbsences || 0,
-                lang: (s.language && s.language.trim() !== '') ? s.language.toUpperCase().trim() : 'N/A'
-             });
+                lang: (s.language && s.language.trim() !== '') ? s.language.toUpperCase().trim() : 'N/A',
+                summary: s
+             } as any);
          }
       });
 
@@ -279,34 +281,17 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
 
           {/* Top Agents List */}
           <div className="mt-auto pt-5 border-t border-slate-100">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3 flex items-center gap-1">
-              <Globe className="w-3 h-3" /> {t('biggestInfractors')} ({selectedLang === 'ALL' ? t('allLangs') : selectedLang})
-            </span>
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                <Globe className="w-3 h-3" /> {t('biggestInfractors')} ({selectedLang === 'ALL' ? t('allLangs') : selectedLang})
+              </span>
+              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest leading-none">{t('onlyExceeded')}</span>
+            </div>
             <div className="space-y-2">
               {stats.topAgents.length === 0 ? (
                  <div className="text-[11px] text-slate-400 font-bold py-2 bg-slate-50/50 rounded-lg text-center border border-slate-100/50">{t('noCriticalAgent')}</div>
               ) : stats.topAgents.map((agent, aIdx) => (
-                <div key={`${agent.name}-${aIdx}`} className="flex items-center justify-between text-left bg-slate-50/80 p-2.5 rounded-xl border border-transparent hover:border-slate-200 transition-all">
-                  <div className="flex items-center gap-2 overflow-hidden flex-1">
-                    <span className="text-[10px] font-black text-slate-300 w-4 shrink-0 text-center">#{aIdx + 1}</span>
-                    <span className="text-[11px] font-bold text-slate-700 truncate">{agent.name}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                    {selectedLang === 'ALL' && agent.lang !== 'N/A' && (
-                       <span className="text-[9px] font-black text-indigo-500 bg-indigo-50 px-1.5 py-0.5 border border-indigo-100 rounded flex items-center gap-0.5">
-                         {agent.lang}
-                       </span>
-                    )}
-                    {agent.absences > 0 && (
-                      <span className="text-[9px] font-black text-red-600 bg-red-50/80 px-1.5 py-0.5 border border-red-100 rounded shadow-sm">{t('absencesLabel')}: {agent.absences}</span>
-                    )}
-                    {agent.overbreak > 0 && (
-                      <span className="text-[9px] font-black text-rose-600 bg-rose-50/80 px-1.5 py-0.5 border border-rose-100 rounded shadow-sm">
-                        {t('exceededLabel')}: {agent.overbreak}m
-                      </span>
-                    )}
-                  </div>
-                </div>
+                 <AgentVarianceRow key={`${agent.name}-${aIdx}`} agent={agent} aIdx={aIdx} selectedLang={selectedLang} t={t} />
               ))}
             </div>
           </div>
@@ -314,4 +299,155 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
         </div>
       </motion.div>
    );
+}
+
+const AgentVarianceRow: React.FC<{ agent: any, aIdx: number, selectedLang: string, t: any }> = ({ agent, aIdx, selectedLang, t }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const exceptions = useMemo(() => {
+    if (!agent.summary || !agent.summary.dailyRecords) return [];
+    
+    const results: any[] = [];
+    agent.summary.dailyRecords.forEach((r: any) => {
+      if (r.isAbsence) {
+        results.push({ date: r.date, type: 'FALTA', duration: '-', time: '-', isOverbreakType: false });
+      }
+      if ((r.tardinessMinutes || 0) >= 15) {
+        results.push({ date: r.date, type: 'ATRASO', duration: `${r.tardinessMinutes}m`, time: r.actualStartTime ? format(r.actualStartTime, 'HH:mm') : '-', isOverbreakType: false });
+      }
+      if ((r.earlyLeaveMinutes || 0) > 0) {
+        results.push({ date: r.date, type: 'SAÍDA ANTECIPADA', duration: `${r.earlyLeaveMinutes}m`, time: r.actualEndTime ? format(r.actualEndTime, 'HH:mm') : '-', isOverbreakType: false });
+      }
+
+      const typeSums: Record<string, number> = {};
+      const sortedBreaks = r.breaks ? [...r.breaks].sort((a: any, b: any) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()) : [];
+
+      sortedBreaks.forEach((b: any) => {
+        const prevSum = typeSums[b.type] || 0;
+        const newSum = prevSum + b.durationMinutes;
+        typeSums[b.type] = newSum;
+
+        let idealTime = 0;
+        if (b.type === 'meal') idealTime = 60;
+        else if (b.type === 'short') idealTime = 30;
+        else if (b.type === 'wellness' || b.type === 'praying') idealTime = 15;
+        else if (b.type === 'wc') idealTime = 10;
+        
+        let isOverbreak = false;
+        let excessTime = 0;
+        let usedIdeal = 0;
+
+        if (b.type === 'idle' || b.type === 'forgot_status') {
+           if (b.durationMinutes > 2) {
+               isOverbreak = true;
+               excessTime = b.durationMinutes;
+               usedIdeal = 0;
+           }
+        } else if (idealTime > 0) {
+           if (newSum > idealTime) {
+              const excess = Math.min(b.durationMinutes, newSum - idealTime);
+              if (b.type === 'wc' || b.type === 'praying' || b.type === 'wellness') {
+                  isOverbreak = true;
+              } else {
+                  if (excess > 2) isOverbreak = true;
+              }
+              if (isOverbreak) {
+                  excessTime = excess;
+                  usedIdeal = b.durationMinutes - excess;
+              }
+           }
+        }
+
+        if (isOverbreak) {
+           let typeLabel = b.type.toUpperCase();
+           if (b.type === 'wc') typeLabel = 'ORGANIC';
+           results.push({
+             date: r.date,
+             type: typeLabel,
+             duration: `${b.durationMinutes}m`,
+             isOverbreakType: true,
+             allowed: usedIdeal,
+             excess: excessTime,
+             total: b.durationMinutes,
+             time: (b.startTime && b.endTime) ? `${format(new Date(b.startTime), 'HH:mm')} - ${format(new Date(b.endTime), 'HH:mm')}` : '-'
+           });
+        }
+      });
+    });
+
+    results.sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+    return results;
+  }, [agent]);
+
+  return (
+    <div className="flex flex-col bg-slate-50/80 rounded-xl border border-transparent hover:border-slate-200 transition-all overflow-hidden">
+      <div 
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center justify-between p-2.5 cursor-pointer select-none"
+      >
+        <div className="flex items-center gap-2 overflow-hidden flex-1">
+          <span className="text-[10px] font-black text-slate-300 w-4 shrink-0 text-center">#{aIdx + 1}</span>
+          <span className="text-[11px] font-bold text-slate-700 truncate">{agent.name}</span>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+          {selectedLang === 'ALL' && agent.lang !== 'N/A' && (
+             <span className="text-[9px] font-black text-indigo-500 bg-indigo-50 px-1.5 py-0.5 border border-indigo-100 rounded flex items-center gap-0.5">
+               {agent.lang}
+             </span>
+          )}
+          {agent.absences > 0 && (
+            <span className="text-[9px] font-black text-red-600 bg-red-50/80 px-1.5 py-0.5 border border-red-100 rounded shadow-sm">{t('absencesLabel')}: {agent.absences}</span>
+          )}
+          {agent.overbreak > 0 && (
+            <span className="text-[9px] font-black text-rose-600 bg-rose-50/80 px-1.5 py-0.5 border border-rose-100 rounded shadow-sm">
+              {t('exceededLabel')}: {agent.overbreak}m
+            </span>
+          )}
+          <div className="text-slate-400 ml-1">
+            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </div>
+        </div>
+      </div>
+      
+      <AnimatePresence>
+        {isExpanded && exceptions.length > 0 && (
+          <motion.div
+             initial={{ height: 0, opacity: 0 }}
+             animate={{ height: "auto", opacity: 1 }}
+             exit={{ height: 0, opacity: 0 }}
+             className="overflow-hidden bg-white border-t border-slate-100"
+          >
+            <div className="p-2 space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
+               {exceptions.map((exc, i) => (
+                 <div key={i} className="flex items-center justify-between py-1 px-2 hover:bg-slate-50 rounded border border-transparent hover:border-slate-100 transition-colors">
+                   <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-black text-slate-400">{format(new Date(exc.date + "T12:00:00"), 'dd/MM')}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${exc.type === 'ORGANIC' || exc.type === 'IDLE' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                        {exc.type}
+                      </span>
+                   </div>
+                   <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-bold text-slate-500">{exc.time}</span>
+                      <div className="flex items-center gap-1 justify-end">
+                         {exc.isOverbreakType ? (
+                            <>
+                               {exc.allowed > 0 && <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1 rounded shadow-sm" title="Tempo permitido">{exc.allowed}m</span>}
+                               {exc.excess > 0 && <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-1 rounded shadow-sm" title="Tempo excedido">+{exc.excess}m</span>}
+                            </>
+                         ) : (
+                            <span className="text-[10px] font-black text-slate-700 text-right">{exc.duration}</span>
+                         )}
+                      </div>
+                   </div>
+                 </div>
+               ))}
+               {exceptions.length === 0 && (
+                 <div className="p-2 text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest">Sem detalhes disponíveis</div>
+               )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
