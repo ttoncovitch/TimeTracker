@@ -66,6 +66,7 @@ export interface CalendarData {
   lob?: string;
   language?: string;
   supervisor?: string;
+  role?: string;
   shift?: string; // If fixed shift, or schedule per date
   schedule?: Record<string, string>; // date -> shift mapping
   lobSchedule?: Record<string, string>; // date -> lob mapping
@@ -78,6 +79,7 @@ export interface EmployeeSummary {
   lob?: string;
   language?: string;
   supervisor?: string;
+  role?: string;
   shift?: string; // from calendar
   calendarName?: string; // overriding inferred name
   isTraining: boolean;

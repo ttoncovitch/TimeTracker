@@ -4,13 +4,14 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { Calendar as CalendarIcon, Upload, FileDown, LogOut, FileSpreadsheet, LayoutDashboard, ListFilter, Trash2, Target, HelpCircle } from 'lucide-react';
+import { Calendar as CalendarIcon, Upload, FileDown, LogOut, FileSpreadsheet, LayoutDashboard, ListFilter, Trash2, Target, HelpCircle, Users, UserX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { Toaster } from '@/components/ui/sonner';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toast } from 'sonner';
 import { isShiftMismatch } from './lib/shiftUtils';
 import { format } from 'date-fns';
@@ -25,6 +26,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 import { CustomCalendar } from './components/CustomCalendar';
 import { LOBAnalytics, isSupportRole } from './components/LOBAnalytics';
+import { SupportSchedule } from './components/SupportSchedule';
 import { HowTo } from './components/HowTo';
 
 // LOB exclusion removed per user request
@@ -101,10 +103,11 @@ export default function App() {
   const [filterMinorOverbreaks, setFilterMinorOverbreaks] = useState(false);
   const [selectedDates, setSelectedDates] = useState<Date[] | undefined>();
   const [showRealTime, setShowRealTime] = useState(false);
+  const [isStaffInChargeOpen, setIsStaffInChargeOpen] = useState(false);
 
   const cleanShift = (shift: string) => {
-    const match = shift.match(/\b(\d{2}:\d{2}-\d{2}:\d{2})\b/);
-    return match ? match[1] : shift;
+    const match = shift.match(/\b(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\b/);
+    return match ? `${match[1]}-${match[2]}` : shift;
   };
 
   const availableShifts = useMemo(() => {
@@ -151,16 +154,54 @@ export default function App() {
       if (d > max) max = d;
     }));
 
+    // Also include calendar dates
+    calendarData.forEach(c => {
+      if (c.schedule) {
+        Object.keys(c.schedule).forEach(dateStr => {
+          // calendar keys are either yyyy-MM-dd or dd/MM/yyyy
+          let d: Date | null = null;
+          if (dateStr.includes('-')) {
+             const parts = dateStr.split('-');
+             if (parts.length === 3) {
+                // Check if YYYY-MM-DD
+                if (parts[0].length === 4) {
+                   d = new Date(dateStr + 'T12:00:00');
+                } else if (parts[2].length === 4) {
+                   // DD-MM-YYYY
+                   d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+                }
+             }
+          } else if (dateStr.includes('/')) {
+             const parts = dateStr.split('/');
+             if (parts.length === 3) {
+                if (parts[2].length === 4) {
+                  d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+                } else if (parts[0].length === 4) {
+                  d = new Date(`${parts[0]}-${parts[1]}-${parts[2]}T12:00:00`);
+                }
+             }
+          }
+          if (d && !isNaN(d.getTime())) {
+             if (d < min) min = d;
+             if (d > max) max = d;
+          }
+        });
+      }
+    });
+
     if (min.getFullYear() === 2099) min = new Date();
     if (max.getFullYear() === 2000) max = new Date();
 
     return { globalMinDate: min, globalMaxDate: max };
-  }, [summaries]);
+  }, [summaries, calendarData]);
 
   const mergedSummaries = useMemo(() => {
     if (calendarData.length === 0) return summaries;
 
-    const filtered = summaries.map(s => {
+    const matchedCalendarNames = new Set<string>();
+
+    // 1. Map existing summaries and find matches
+    const updatedByteworks = summaries.map(s => {
        let calEntry = calendarData.find(c => c.email && c.email.toLowerCase() === s.email?.toLowerCase());
 
        if (!calEntry) {
@@ -184,9 +225,8 @@ export default function App() {
            }
        }
        
-       // Filter out excluded LOBs removed
-       
        if (calEntry) {
+          matchedCalendarNames.add(calEntry.name.toLowerCase().trim());
           const existingDates = new Set(s.dailyRecords.map(r => r.date));
           const newRecords = [...s.dailyRecords];
           
@@ -201,7 +241,7 @@ export default function App() {
                     const scheduleForDay = calEntry.schedule[dateStr] || calEntry.schedule[dateKey] || calEntry.schedule[dateKeyAlt];
                     
                     if (scheduleForDay) {
-                        const schedUpper = scheduleForDay.toUpperCase();
+                        const schedUpper = String(scheduleForDay).toUpperCase();
                         const isWorkingShift = /\d{1,2}:\d{2}/.test(schedUpper);
                         const isWorkday = !schedUpper.includes('OFF') && !schedUpper.includes('VAC') && !schedUpper.includes('FESTA') && !schedUpper.includes('HOLIDAY') && !schedUpper.includes('LOA') && !schedUpper.includes('PTO') && !schedUpper.includes('SL') && !schedUpper.includes('ATT') && !schedUpper.includes('SUSPP');
                         const latestDateStr = format(latestDate, 'yyyy-MM-dd');
@@ -212,7 +252,6 @@ export default function App() {
                           const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
                           const todayStr = format(now, 'yyyy-MM-dd');
                           
-                          // 1) Never consider shifts that haven't occurred in the provided extract yet
                           if (dateStr > latestDateStr) {
                              hasShiftStarted = false;
                           } else if (dateStr === latestDateStr && isWorkingShift) {
@@ -228,7 +267,6 @@ export default function App() {
                              }
                           }
                           
-                          // 2) Also never consider shifts that haven't occurred in real time yet
                           if (hasShiftStarted) {
                               if (dateStr > todayStr) {
                                  hasShiftStarted = false;
@@ -298,7 +336,6 @@ export default function App() {
               const currentLob = specificLob || calEntry?.lob || s.lob;
               
               const shiftUpper = (scheduledShift || inferredShift || '').toUpperCase();
-              
               const isWorkingShift = /\d{1,2}:\d{2}/.test(shiftUpper);
               const isOffShift = shiftUpper.includes('OFF') || shiftUpper.includes('FOLGA');
               const isVacationShift = (shiftUpper.includes('VAC') || shiftUpper.includes('PTO') || shiftUpper.includes('FÉRIAS')) && !isWorkingShift;
@@ -325,18 +362,171 @@ export default function App() {
 
            return {
               ...s,
-              shift: calEntry.shift,
-              lob: calEntry.lob,
-              language: calEntry.language,
+              calendarName: calEntry.name,
               totalAbsences,
               dailyRecords: updatedDailyRecords
            };
        }
        return s;
-    }).filter((s): s is EmployeeSummary => s !== null);
+    });
 
-    return filtered;
-  }, [summaries, calendarData, globalMinDate, globalMaxDate]);
+    // 2. Add agents ONLY in calendar (unmatched ones)
+    const calendarOnlySummaries: EmployeeSummary[] = [];
+    calendarData.forEach(calEntry => {
+       const normName = calEntry.name.toLowerCase().trim();
+       if (matchedCalendarNames.has(normName)) return;
+
+       const dailyRecords: EmployeeDayRecord[] = [];
+       if (globalMinDate <= globalMaxDate && calEntry.schedule) {
+          let d = new Date(globalMinDate);
+          while (d <= globalMaxDate) {
+             const dateStr = format(d, 'yyyy-MM-dd');
+             const dateKey = format(d, 'dd/MM/yyyy');
+             const dateKeyAlt = format(d, 'MM/dd/yyyy');
+             const scheduleForDay = calEntry.schedule[dateStr] || calEntry.schedule[dateKey] || calEntry.schedule[dateKeyAlt];
+             
+             if (scheduleForDay) {
+                const schedUpper = String(scheduleForDay).toUpperCase();
+                const isWorkingShift = /\d{1,2}:\d{2}/.test(schedUpper);
+                const isWorkday = !schedUpper.includes('OFF') && !schedUpper.includes('VAC') && !schedUpper.includes('FESTA') && !schedUpper.includes('HOLIDAY') && !schedUpper.includes('LOA') && !schedUpper.includes('PTO') && !schedUpper.includes('SL') && !schedUpper.includes('ATT') && !schedUpper.includes('SUSPP');
+                
+                const shiftUpper = (scheduleForDay || '').toUpperCase();
+                const isOffShift = shiftUpper.includes('OFF') || shiftUpper.includes('FOLGA');
+                const isVacationShift = (shiftUpper.includes('VAC') || shiftUpper.includes('PTO') || shiftUpper.includes('FÉRIAS')) && !isWorkingShift;
+                const isSickShift = (shiftUpper.includes('SL') || shiftUpper.includes('SICK') || shiftUpper.includes('MEDICO') || shiftUpper.includes('ATESTADO')) && !isWorkingShift;
+                const isLoaShift = (shiftUpper.includes('LOA') || shiftUpper.includes('LICENÇA')) && !isWorkingShift;
+                const isSusppShift = (shiftUpper.includes('SUSPP') || shiftUpper.includes('SUSPENSÃO')) && !isWorkingShift;
+                const isAttShift = (shiftUpper.includes('ATT') || shiftUpper.includes('ATTRITION') || shiftUpper.includes('RESIGN') || shiftUpper.includes('SAÍDA')) && !isWorkingShift;
+
+                dailyRecords.push({
+                  date: dateStr,
+                  employeeName: calEntry.name,
+                  totalWorkTimeMillis: 0,
+                  breaks: [],
+                  mealDuration: 0,
+                  mealOverbreak: 0,
+                  shortDuration: 0,
+                  shortOverbreak: 0,
+                  wellnessDuration: 0,
+                  wellnessOverbreak: 0,
+                  prayingDuration: 0,
+                  prayingOverbreak: 0,
+                  wcDuration: 0,
+                  wcOverbreak: 0,
+                  idleDuration: 0,
+                  idleOverbreak: 0,
+                  totalOverbreak: 0,
+                  tardinessMinutes: 0,
+                  earlyLeaveMinutes: 0,
+                  scheduledShift: scheduleForDay,
+                  inferredShift: scheduleForDay,
+                  lob: calEntry.lob,
+                  isOFF: isOffShift,
+                  isPTO: isVacationShift,
+                  isSL: isSickShift,
+                  isLOA: isLoaShift,
+                  isSUSPP: isSusppShift,
+                  isATT: isAttShift,
+                  isAbsence: isWorkday && dateStr < format(latestDate, 'yyyy-MM-dd')
+                });
+             }
+             d.setDate(d.getDate() + 1);
+          }
+       }
+
+       calendarOnlySummaries.push({
+          employeeName: calEntry.name,
+          email: calEntry.email || '',
+          department: '',
+          lob: calEntry.lob,
+          language: calEntry.language,
+          supervisor: calEntry.supervisor,
+          role: calEntry.role,
+          shift: calEntry.shift,
+          calendarName: calEntry.name,
+          isTraining: false,
+          totalWorkMinutes: 0,
+          totalBreakMinutes: 0,
+          totalOverbreakMinutes: 0,
+          totalTardinessMinutes: 0,
+          totalEarlyLeaveMinutes: 0,
+          totalNonModMinutes: 0,
+          totalReviewAndAppealMinutes: 0,
+          totalAwaitingTasksMinutes: 0,
+          totalForgotStatusMinutes: 0,
+          totalAbsences: dailyRecords.filter(r => r.isAbsence).length,
+          wcAlerts: 0,
+          idleAlerts: 0,
+          dailyRecords: dailyRecords.sort((a, b) => a.date.localeCompare(b.date))
+       });
+    });
+
+    return updatedByteworks;
+  }, [summaries, calendarData, globalMinDate, globalMaxDate, latestDate]);
+
+  // Data exclusively for the "OS - Schedule" tab
+  const supportScheduleData = useMemo(() => {
+    // Per user: this tab should only use information from the schedule file
+    return calendarData.filter(c => isSupportRole({ role: c.role, lob: c.lob }))
+      .map(c => {
+         const dailyRecords: EmployeeDayRecord[] = [];
+         if (globalMinDate <= globalMaxDate && c.schedule) {
+            let d = new Date(globalMinDate);
+            while (d <= globalMaxDate) {
+               const dateStr = format(d, 'yyyy-MM-dd');
+               const dateKey = format(d, 'dd/MM/yyyy');
+               const dateKeyAlt = format(d, 'MM/dd/yyyy');
+               const schedule = c.schedule[dateStr] || c.schedule[dateKey] || c.schedule[dateKeyAlt];
+               if (schedule) {
+                  const shiftUpper = String(schedule).toUpperCase();
+                  dailyRecords.push({
+                     date: dateStr,
+                     employeeName: c.name,
+                     totalWorkTimeMillis: 0,
+                     breaks: [],
+                     mealDuration: 0,
+                     mealOverbreak: 0,
+                     shortDuration: 0,
+                     shortOverbreak: 0,
+                     wellnessDuration: 0,
+                     wellnessOverbreak: 0,
+                     prayingDuration: 0,
+                     prayingOverbreak: 0,
+                     wcDuration: 0,
+                     wcOverbreak: 0,
+                     idleDuration: 0,
+                     idleOverbreak: 0,
+                     totalOverbreak: 0,
+                     tardinessMinutes: 0,
+                     earlyLeaveMinutes: 0,
+                     scheduledShift: schedule,
+                     inferredShift: schedule,
+                     lob: c.lob,
+                     isOFF: shiftUpper.includes('OFF') || shiftUpper.includes('FOLGA'),
+                     isPTO: shiftUpper.includes('VAC') || shiftUpper.includes('PTO') || shiftUpper.includes('FÉRIAS'),
+                     isSL: shiftUpper.includes('SL') || shiftUpper.includes('SICK'),
+                     isLOA: shiftUpper.includes('LOA'),
+                     isSUSPP: shiftUpper.includes('SUSPP'),
+                     isATT: shiftUpper.includes('ATT'),
+                     isAbsence: false
+                  });
+               }
+               d.setDate(d.getDate() + 1);
+            }
+         }
+
+         return {
+            employeeName: c.name,
+            email: c.email || '',
+            lob: c.lob,
+            role: c.role,
+            shift: c.shift,
+            language: c.language,
+            calendarName: c.name,
+            dailyRecords: dailyRecords.sort((a, b) => a.date.localeCompare(b.date))
+         } as EmployeeSummary;
+      });
+  }, [calendarData, globalMinDate, globalMaxDate]);
 
   const availableFilters = useMemo(() => {
     const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
@@ -636,6 +826,23 @@ export default function App() {
     }).filter(Boolean) as EmployeeSummary[];
   }, [mergedSummaries, timeFilter, shiftFilter, selectedDates, includeCheckGlobal, showRealTime]);
 
+  const supportStaffSummaries = useMemo(() => {
+    return supportScheduleData.map(s => {
+       const records = s.dailyRecords.filter(r => {
+          if (!recordTimeFilterFn(r)) return false;
+          
+          if (shiftFilter.length > 0) {
+             const activeShift = r.scheduledShift ? cleanShift(r.scheduledShift) : null;
+             const isShiftMatch = activeShift ? shiftFilter.includes(activeShift) : false;
+             if (!isShiftMatch) return false;
+          }
+          return true;
+       });
+
+       return { ...s, dailyRecords: records };
+    }).filter(s => s.dailyRecords.length > 0 || (s.dailyRecords.length === 0 && (s as any).isOFF));
+  }, [supportScheduleData, recordTimeFilterFn, shiftFilter]);
+
   const hasMismatchesInSelection = useMemo(() => {
     return mergedSummaries.some(s => {
       const records = s.dailyRecords.filter(r => recordTimeFilterFn(r));
@@ -850,15 +1057,15 @@ export default function App() {
           });
        });
        if (!includeSupportStaff) {
-          base = base.filter(s => !isSupportRole(s.lob || ''));
+          base = base.filter(s => !isSupportRole(s));
        } else {
-          base = base.filter(s => isSupportRole(s.lob || ''));
+          base = base.filter(s => isSupportRole(s));
        }
        return base;
     }
     
     return processedSummaries.map(s => {
-       const isSupport = isSupportRole(s.lob || '');
+       const isSupport = isSupportRole(s);
        if (includeSupportStaff && !isSupport) return null;
        if (!includeSupportStaff && isSupport) return null;
 
@@ -918,7 +1125,7 @@ export default function App() {
     if (!activeAnyStatus) return false;
     
     return processedSummaries.some(s => {
-       if (!isSupportRole(s.lob || '')) return false;
+       if (!isSupportRole(s)) return false;
 
        let recs = s.dailyRecords;
 
@@ -1016,9 +1223,10 @@ export default function App() {
         setCalendarData(data);
         setIsCalendarLoading(false);
         let finalNote = getFullMonthName(note, lang);
-        if (finalNote === note.toUpperCase() || finalNote === "SHEET1") {
-           const fileMonth = getFullMonthName(file.name, lang);
-           if (fileMonth !== file.name.toUpperCase()) {
+        if (finalNote === String(note || '').toUpperCase() || finalNote === "SHEET1") {
+           const fileName = file.name || '';
+           const fileMonth = getFullMonthName(fileName, lang);
+           if (fileMonth !== fileName.toUpperCase()) {
               finalNote = fileMonth;
            } else {
               finalNote = "OK";
@@ -1143,8 +1351,8 @@ export default function App() {
         fileSuffix += "_only_overbreaks";
     }
 
-    const nonSupportExport = sortedForExport.filter(s => !isSupportRole(s.lob || ''));
-    const totalAgentsCount = periodSummaries.filter(s => !isSupportRole(s.lob || '')).length;
+    const nonSupportExport = sortedForExport.filter(s => !isSupportRole(s));
+    const totalAgentsCount = periodSummaries.filter(s => !isSupportRole(s)).length;
     const affectedAgentsCount = nonSupportExport.length;
 
     exportToPDF(nonSupportExport, titleStr, `Report_${fileSuffix}`, {
@@ -1284,6 +1492,12 @@ export default function App() {
             >
               <Target size={16} /> {t('lobsPerformance')}
             </button>
+            <button 
+              onClick={() => setActiveTab('support_schedule')}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'support_schedule' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+            >
+              <Users size={16} /> Staff Schedule
+            </button>
             
             <div className="my-3 border-t border-slate-800/80 mx-2"></div>
             
@@ -1311,7 +1525,7 @@ export default function App() {
         <header className="sticky top-0 z-[60] flex justify-between items-center py-3 px-4 sm:px-6 bg-white/95 backdrop-blur-md border-b border-slate-200">
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold text-slate-900 hidden sm:block">
-              {summaries.length > 0 ? (activeTab === 'howto' ? t('howtoMenu') : activeTab === 'dashboard' ? t('overview') : activeTab === 'lobs' ? t('lobsPerformance') : t('agents')) : ''}
+              {summaries.length > 0 ? (activeTab === 'howto' ? t('howtoMenu') : activeTab === 'dashboard' ? t('overview') : activeTab === 'lobs' ? t('lobsPerformance') : activeTab === 'support_schedule' ? 'Staff Schedule' : t('agents')) : ''}
             </h2>
             <div className="lg:hidden flex items-center gap-2">
               <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white">SC</div>
@@ -1363,6 +1577,9 @@ export default function App() {
                   <Button variant="ghost" size="sm" onClick={() => setActiveTab('lobs')} className={`h-8 w-8 p-0 ${activeTab === 'lobs' ? 'bg-slate-100' : ''}`}>
                     <Target size={14} />
                   </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('support_schedule')} className={`h-8 w-8 p-0 ${activeTab === 'support_schedule' ? 'bg-slate-100' : ''}`}>
+                    <Users size={14} />
+                  </Button>
                   <div className="w-px bg-slate-200 mx-0.5"></div>
                   <Button variant="ghost" size="sm" onClick={() => setActiveTab('howto')} className={`h-8 w-8 p-0 ${activeTab === 'howto' ? 'bg-indigo-50 text-indigo-600' : ''}`}>
                     <HelpCircle size={14} />
@@ -1397,19 +1614,6 @@ export default function App() {
                 </div>
 
                 <div className="w-full flex flex-col sm:flex-row gap-6">
-                  <label className="relative group flex flex-col items-center justify-center w-full sm:w-1/2 h-80 border-2 border-dashed border-slate-300 rounded-[2.5rem] bg-white hover:bg-slate-50 hover:border-blue-400 transition-all cursor-pointer overflow-hidden shadow-2xl shadow-slate-200/50 p-6">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6 gap-6 z-10 text-center">
-                      <div className="p-5 bg-slate-900 text-white rounded-2xl group-hover:bg-blue-600 transition-colors shadow-lg">
-                        <Upload size={32} />
-                      </div>
-                      <div>
-                        <p className="mb-1 text-2xl font-bold text-slate-800">{t('homeExtractTitle')}</p>
-                        <p className="text-slate-500 font-medium text-[13px] leading-tight" dangerouslySetInnerHTML={{ __html: t('homeExtractDesc') }}></p>
-                      </div>
-                    </div>
-                    <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
-                  </label>
-
                   <label className="relative group flex flex-col items-center justify-center w-full sm:w-1/2 h-80 border-2 border-dashed border-slate-300 rounded-[2.5rem] bg-white hover:bg-slate-50 hover:border-green-400 transition-all cursor-pointer overflow-hidden shadow-xl shadow-slate-200/50 p-6">
                     <div className="flex flex-col items-center justify-center pt-5 pb-6 gap-6 z-10 text-center">
                       <div className="p-5 bg-slate-900 text-white rounded-2xl group-hover:bg-green-600 transition-colors shadow-lg">
@@ -1422,6 +1626,23 @@ export default function App() {
                     </div>
                     <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleCalendarUpload} />
                   </label>
+
+                  <label className="relative group flex flex-col items-center justify-center w-full sm:w-1/2 h-80 border-2 border-dashed border-slate-300 rounded-[2.5rem] bg-white hover:bg-slate-50 hover:border-blue-400 transition-all cursor-pointer overflow-hidden shadow-2xl shadow-slate-200/50 p-6">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6 gap-6 z-10 text-center">
+                      <div className="p-5 bg-slate-900 text-white rounded-2xl group-hover:bg-blue-600 transition-colors shadow-lg">
+                        <Upload size={32} />
+                      </div>
+                      <div>
+                        <p className="mb-1 text-2xl font-bold text-slate-800">{t('homeExtractTitle')}</p>
+                        <p className="text-slate-500 font-medium text-[13px] leading-tight" dangerouslySetInnerHTML={{ __html: t('homeExtractDesc') }}></p>
+                      </div>
+                    </div>
+                    <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
+                  </label>
+                </div>
+                
+                <div className="mt-4 text-sm text-amber-600 bg-amber-50 rounded-xl p-4 border border-amber-200 shadow-sm">
+                  {t('homeRetroactiveNote')}
                 </div>
               </motion.div>
               )
@@ -1433,7 +1654,7 @@ export default function App() {
                 transition={{ duration: 0.4 }}
                 className="space-y-8"
               >
-                {activeTab !== 'howto' && (
+                {activeTab !== 'howto' && activeTab !== 'support_schedule' && (
                   <div className="sticky lg:top-[56px] top-[56px] z-[50] bg-slate-50/95 backdrop-blur-md border-b border-slate-200 pb-4 pt-4 sm:pt-6 px-4 sm:px-6 -mx-4 sm:-mx-6 -mt-4 sm:-mt-6 mb-8 shadow-sm">
                     <div className="flex flex-col gap-3">
                     <div className="flex flex-col gap-2 items-start">
@@ -1470,6 +1691,13 @@ export default function App() {
                        >
                          <div className={`w-2 h-2 rounded-full ${showRealTime ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
                          {t('realTime')}
+                       </button>
+                       <button 
+                         onClick={() => setIsStaffInChargeOpen(true)}
+                         className="px-2 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 bg-white text-blue-600 border-blue-200 hover:bg-blue-50 shadow-sm w-fit mt-1"
+                       >
+                         <Users size={12} className="text-blue-500" />
+                         Staff now
                        </button>
                     </div>
                     <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 justify-between w-full mt-2">
@@ -1606,7 +1834,7 @@ export default function App() {
                                onClick={() => { setTypeFilter(typeFilter === 'all' ? 'idle_overbreak_wc' : 'all'); clearExtraStatuses(); }}
                                className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${typeFilter === 'idle_overbreak_wc' ? 'bg-rose-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
-                               {t('overbreaks').toUpperCase()}
+                               {String(t('overbreaks') || '').toUpperCase()}
                              </button>
                              <button
                                onClick={() => { setIncludeShort30MinGlobal(!includeShort30MinGlobal); clearExtraStatuses(); }}
@@ -1810,6 +2038,8 @@ export default function App() {
                     />
                   ) : activeTab === 'lobs' ? (
                     <LOBAnalytics summaries={filteredSummaries} />
+                  ) : activeTab === 'support_schedule' ? (
+                    <SupportSchedule summaries={supportScheduleData} />
                   ) : activeTab === 'howto' ? (
                     <HowTo />
                   ) : (
@@ -1822,7 +2052,7 @@ export default function App() {
 
           {/* Floating Summary Banner */}
           <AnimatePresence>
-            {filteredSummaries.length > 0 && !isLoading && !isCalendarLoading && (
+            {filteredSummaries.length > 0 && !isLoading && !isCalendarLoading && activeTab !== 'support_schedule' && activeTab !== 'lobs' && (
               <motion.div 
                 initial={{ y: 100, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
@@ -1854,6 +2084,88 @@ export default function App() {
           </AnimatePresence>
         </div>
       </main>
+      <Dialog open={isStaffInChargeOpen} onOpenChange={setIsStaffInChargeOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black flex items-center gap-3">
+              <Users className="text-blue-600" />
+              Support Staff in Charge
+            </DialogTitle>
+            <DialogDescription className="font-bold text-slate-500">
+              Team members currently scheduled or working right now.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-6">
+            {(() => {
+              const activeStaff = supportScheduleData.filter(s => isAgentActiveNow(s.dailyRecords));
+              if (activeStaff.length === 0) {
+                 return (
+                   <div className="py-12 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                     <UserX className="mx-auto text-slate-300 mb-2" size={40} />
+                     <p className="text-slate-500 font-bold tracking-tight">No support staff active at this moment.</p>
+                   </div>
+                 );
+              }
+
+              const groupedStaff = activeStaff.reduce((acc, s) => {
+                const category = (s.role && !['OS', 'CSR', 'AGENT', 'OPERATIONAL SUPPORT'].includes(s.role.toUpperCase())) 
+                                  ? s.role 
+                                  : ((s.lob && !['OS', 'OPERATIONAL SUPPORT'].includes(s.lob.toUpperCase())) ? s.lob : 'Other Support');
+                if (!acc[category]) acc[category] = [];
+                acc[category].push(s);
+                return acc;
+              }, {} as Record<string, typeof supportScheduleData>);
+
+              return (
+                 <div className="space-y-6">
+                   {Object.entries(groupedStaff).map(([category, st]) => (
+                     <div key={category} className="space-y-3">
+                       <h3 className="text-xs font-black uppercase text-slate-500 tracking-widest border-b border-slate-100 pb-2">{category}</h3>
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                         {st.map(s => {
+                            const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+                            const todayStr = format(now, 'yyyy-MM-dd');
+                            const record = s.dailyRecords.find(r => r.date === todayStr);
+                            return (
+                              <div key={s.employeeName} className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl hover:shadow-md transition-all group">
+                                <div className="flex flex-col min-w-0">
+                                  <span className="font-bold text-slate-900 truncate">{s.employeeName}</span>
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    {s.role && !['OS', 'CSR', 'AGENT', 'OPERATIONAL SUPPORT'].includes(s.role.toUpperCase()) && (
+                                      <span className="text-[9px] font-black uppercase text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-100 truncate">
+                                        {s.role}
+                                      </span>
+                                    )}
+                                    {s.lob && !['OS', 'OPERATIONAL SUPPORT'].includes(s.lob.toUpperCase()) && (
+                                      <span className="text-[9px] font-black uppercase text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate">
+                                        {s.lob}
+                                      </span>
+                                    )}
+                                    {s.language && ((s.role?.toUpperCase() || '').includes('QA') || (s.lob?.toUpperCase() || '').includes('QA')) && (
+                                      <span className="text-[9px] font-black uppercase text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 truncate">
+                                        {s.language}
+                                      </span>
+                                    )}
+                                    {record?.scheduledShift && (
+                                      <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                                        {record.scheduledShift}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                         })}
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+              );
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

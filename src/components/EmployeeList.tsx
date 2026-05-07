@@ -210,7 +210,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead className="bg-slate-50/95 backdrop-blur border-b border-slate-200 text-[10px] uppercase font-black text-slate-500 tracking-widest sticky top-0 z-30 outline outline-1 outline-slate-200 shadow-sm">
                 <tr>
-                  <th className="py-4 pl-8 pr-4 font-black whitespace-nowrap">{t('agentString')} ({filtered.length})</th>
+                  <th className="py-4 pl-8 pr-4 font-black whitespace-nowrap">{String(t('agents') || '').toUpperCase()} ({filtered.length})</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('meal')}>Meal {sortBy === 'meal' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('short')}>Short {sortBy === 'short' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('wellness')}>Well. {sortBy === 'wellness' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
@@ -222,7 +222,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('idle')}>IDLE {sortBy === 'idle' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('tardiness')}>TARDINESS {sortBy === 'tardiness' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('earlyLeave')}>EARLY LEAVE {sortBy === 'earlyLeave' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('absences')}>{t('absencesString').toUpperCase()} {sortBy === 'absences' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('absences')}>{String(t('absencesString') || '').toUpperCase()} {sortBy === 'absences' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('short30Min')}>{t('shortBreaks30Title')} (Dias) {sortBy === 'short30Min' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('total')}>{t('total')} {sortBy === 'total' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 pl-4 pr-8 text-right font-black whitespace-nowrap">{t('status')}</th>
@@ -314,9 +314,10 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                               shiftDiffers = true;
                           }
 
-                          return (s.lob || s.language || dispShift || s.supervisor || statusNote || overrideStatus) ? (
+                          return ((s.role && !['OS', 'CSR'].includes(s.role.toUpperCase())) || s.lob || s.language || dispShift || s.supervisor || statusNote || overrideStatus) ? (
                           <div className="flex flex-col gap-1 mt-1">
                             <div className="flex flex-wrap gap-1">
+                              {s.role && !['OS', 'CSR'].includes(s.role.toUpperCase()) && <span className="bg-slate-100 text-slate-700 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest border border-slate-200">{s.role}</span>}
                               {s.lob && <span className="bg-blue-50 text-blue-600 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.lob}</span>}
                               {s.language && <span className="bg-purple-50 text-purple-600 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.language}</span>}
                               {dispShift && !isLeaveShift(dispShift) && (
@@ -604,7 +605,7 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                <div className="flex items-center gap-4">
                  <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center font-black text-xl shadow-lg shrink-0">
-                   {s.employeeName.substring(0, 2).toUpperCase()}
+                   {String(s.employeeName || '').substring(0, 2).toUpperCase()}
                  </div>
                  <div>
                    <DialogTitle className="text-2xl font-black text-left">{s.employeeName}</DialogTitle>
@@ -628,9 +629,10 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
                        } else {
                            dispShift = s.shift;
                        }
-                       return (s.lob || s.language || dispShift || s.supervisor || overrideStatus) ? (
+                       return ((s.role && !['OS', 'CSR'].includes(s.role.toUpperCase())) || s.lob || s.language || dispShift || s.supervisor || overrideStatus) ? (
                      <div className="flex flex-col gap-1 mt-2">
                        <div className="flex flex-wrap gap-1">
+                         {s.role && !['OS', 'CSR'].includes(s.role.toUpperCase()) && <span className="bg-slate-700 text-slate-300 border border-slate-500 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.role}</span>}
                          {s.lob && <span className="bg-blue-50/10 text-blue-300 border border-blue-500/30 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.lob}</span>}
                          {s.language && <span className="bg-purple-50/10 text-purple-300 border border-purple-500/30 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.language}</span>}
                          {dispShift && !isLeaveShift(dispShift) && <span className={`border text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest ${s.dailyRecords.some(r => isShiftMismatch(r.scheduledShift, r.inferredShift)) ? 'bg-amber-500/20 text-amber-300 border-amber-500/50' : 'bg-emerald-50/10 text-emerald-300 border-emerald-500/30'}`}>{dispShift} {s.dailyRecords.some(r => isShiftMismatch(r.scheduledShift, r.inferredShift)) && '(CHECK)'}</span>}

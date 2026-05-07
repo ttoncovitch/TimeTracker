@@ -886,17 +886,18 @@ export function StatsDashboard({
                     </div>
                   </div>
                   <div className="pl-6 flex-1 min-w-max border-l border-slate-200">
-                     <p className={`text-[11px] font-black uppercase tracking-widest mb-1 truncate ${isNonModOnly ? 'text-amber-500' : (affectedCount > 0 ? 'text-rose-500' : 'text-emerald-500')}`}>{isNonModOnly ? t('agentsString').toUpperCase() : t('withOverbreakGen')}</p>
+                     <p className={`text-[11px] font-black uppercase tracking-widest mb-1 truncate ${isNonModOnly ? 'text-amber-500' : (affectedCount > 0 ? 'text-rose-500' : 'text-emerald-500')}`}>{isNonModOnly ? String(t('agentsString') || '').toUpperCase() : t('withOverbreakGen')}</p>
                      <div className="flex items-baseline gap-1.5">
                         <p className={`text-3xl font-black tracking-tight ${isNonModOnly ? 'text-amber-600' : (affectedCount > 0 ? 'text-rose-600' : 'text-emerald-600')}`}>{affectedCount}</p>
                         <span className={`text-xs font-bold tracking-wide uppercase ${isNonModOnly ? 'text-amber-400' : (affectedCount > 0 ? 'text-rose-400' : 'text-emerald-400')}`}>
-                          {isNonModOnly ? t('agentsString').toUpperCase() : t('affected')}
+                          {isNonModOnly ? String(t('agentsString') || '').toUpperCase() : t('affected')}
                         </span>
                      </div>
                   </div>
                   </>
                 )}
               </div>
+              {(!globalShiftFilter || globalShiftFilter.length !== 1) && (
               <div className="pl-6 flex-1 hidden xl:flex flex-col gap-2">
                  {/* Most Minutes */}
                  {(!isCheckOnly && !activeExtraStatus) && (
@@ -923,6 +924,7 @@ export function StatsDashboard({
                  </div>
                  )}
               </div>
+              )}
             </div>
           </CardContent>
         </Card>

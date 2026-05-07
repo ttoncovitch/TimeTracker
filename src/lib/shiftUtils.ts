@@ -1,8 +1,11 @@
 export const isShiftMismatch = (scheduledShift?: string | null, inferredShift?: string | null): boolean => {
   if (!scheduledShift || !inferredShift) return false;
   
-  const schedNorm = scheduledShift.toUpperCase().replace(/\s+/g, '');
-  const inferNorm = inferredShift.toUpperCase().replace(/\s+/g, '');
+  const sStr = String(scheduledShift || '');
+  const iStr = String(inferredShift || '');
+  
+  const schedNorm = sStr.toUpperCase().replace(/\s+/g, '');
+  const inferNorm = iStr.toUpperCase().replace(/\s+/g, '');
 
   if (schedNorm === inferNorm) return false;
 
@@ -16,8 +19,8 @@ export const isShiftMismatch = (scheduledShift?: string | null, inferredShift?: 
     return null;
   };
 
-  const cleanSched = extractTime(scheduledShift);
-  const cleanInfer = extractTime(inferredShift);
+  const cleanSched = extractTime(sStr);
+  const cleanInfer = extractTime(iStr);
   
   if (cleanSched && cleanInfer) {
       if (cleanSched === cleanInfer) return false;

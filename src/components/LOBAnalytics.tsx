@@ -9,14 +9,25 @@ interface LOBAnalyticsProps {
   summaries: EmployeeSummary[];
 }
 
-export const SUPPORT_ROLES = ['qa', 'rta', 'sr tl', 'tl', 'trainer', 'quality assurance', 'team leader', 'supervisor', 'senior team leader'];
+export const SUPPORT_ROLES = ['qa', 'rta', 'sr tl', 'tl', 'trainer', 'quality', 'supervisor', 'senior team leader', 'manager', 'coordinator', 'ops', 'wfm', 'real time'];
 
-export function isSupportRole(lob: string): boolean {
-  if (!lob) return false;
-  const lowerLob = lob.toLowerCase().trim();
-  if (SUPPORT_ROLES.includes(lowerLob)) return true;
-  // also check if " - qa" or similar
-  if (SUPPORT_ROLES.some(role => lowerLob === role || lowerLob.endsWith(` ${role}`) || lowerLob.startsWith(`${role} `))) return true;
+export function isSupportRole(summary: { role?: string; lob?: string }): boolean {
+  const roleUpper = (summary.role || '').trim().toUpperCase();
+  const lobUpper = (summary.lob || '').trim().toUpperCase();
+
+  // LED QUALITY is explicitly NOT a support role, it's CSR
+  if (lobUpper.includes('LED QUALITY')) return false;
+
+  // Exact match for OS in either column
+  if (roleUpper === 'OS' || lobUpper === 'OS') return true;
+  
+  // Known support roles - check both Role and LOB to catch RTA or QA listed under LOB
+  const supportRegex = /\b(QA|RTA|TRAINER|SUPERVISOR|MANAGER|TL|WFM|REAL TIME|OPS|COORDINATOR|QUALITY|OPERATIONAL SUPPORT)\b/i;
+  
+  if (supportRegex.test(roleUpper) || supportRegex.test(lobUpper)) {
+    return true;
+  }
+
   return false;
 }
 
@@ -33,7 +44,7 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
       if (!hasWorkingSchedule) return;
 
       const lob = (s.lob && s.lob.trim() !== '') ? s.lob : t('unknown');
-      if (isSupportRole(lob)) return; // Exclude QA, RTA, etc.
+      if (isSupportRole(s)) return; // Exclude QA, RTA, etc.
       if (lob.toUpperCase() === 'LEG') return; // Exclude LEG
       
       if (!lobs[lob]) {
