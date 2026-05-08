@@ -20,6 +20,7 @@ import { EmployeeSummary, EmployeeDayRecord } from './types';
 import { parseExcelFile } from './lib/excel-parser';
 import { exportToPDF } from './lib/pdf-exporter';
 import { parseCalendarFile } from './lib/calendar-parser';
+import { parseStaffInfoFile, StaffInfoEntry } from './lib/staff-info-parser';
 import { StatsDashboard } from './components/StatsDashboard';
 import { EmployeeList } from './components/EmployeeList';
 import { motion, AnimatePresence } from 'motion/react';
@@ -76,8 +77,10 @@ export default function App() {
   }, []);
   
   const [calendarData, setCalendarData] = useState<any[]>([]);
+  const [staffInfoData, setStaffInfoData] = useState<StaffInfoEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
+  const [isStaffInfoLoading, setIsStaffInfoLoading] = useState(false);
   const [calendarNote, setCalendarNote] = useState<string>('');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'prev_month' | 'week' | 'day' | 'yesterday'>('day');
@@ -418,6 +421,10 @@ export default function App() {
                   totalOverbreak: 0,
                   tardinessMinutes: 0,
                   earlyLeaveMinutes: 0,
+                  nonModDuration: 0,
+                  reviewAndAppealDuration: 0,
+                  awaitingTasksDuration: 0,
+                  forgotStatusDuration: 0,
                   scheduledShift: scheduleForDay,
                   inferredShift: scheduleForDay,
                   lob: calEntry.lob,
@@ -461,8 +468,31 @@ export default function App() {
        });
     });
 
-    return updatedByteworks;
-  }, [summaries, calendarData, globalMinDate, globalMaxDate, latestDate]);
+    const combinedSummaries = calendarData.length > 0 ? [...updatedByteworks, ...calendarOnlySummaries] : [...summaries];
+
+    // 3. Apply Staff Info overrides if available (by email matching)
+    if (staffInfoData.length > 0) {
+       return combinedSummaries.map(s => {
+          if (!s.email) return s;
+          const staffEntry = staffInfoData.find(si => si.email === s.email?.toLowerCase());
+          if (staffEntry) {
+             const newName = staffEntry.fullName;
+             return {
+                ...s,
+                employeeName: newName,
+                lob: staffEntry.lob || s.lob,
+                language: staffEntry.language || s.language,
+                role: staffEntry.role || s.role,
+                supervisor: staffEntry.tl || s.supervisor,
+                dailyRecords: s.dailyRecords.map(r => ({ ...r, employeeName: newName, lob: staffEntry.lob || r.lob }))
+             };
+          }
+          return s;
+       });
+    }
+
+    return combinedSummaries;
+  }, [summaries, calendarData, staffInfoData, globalMinDate, globalMaxDate, latestDate]);
 
   // Data exclusively for the "OS - Schedule" tab
   const supportScheduleData = useMemo(() => {
@@ -499,6 +529,10 @@ export default function App() {
                      totalOverbreak: 0,
                      tardinessMinutes: 0,
                      earlyLeaveMinutes: 0,
+                     nonModDuration: 0,
+                     reviewAndAppealDuration: 0,
+                     awaitingTasksDuration: 0,
+                     forgotStatusDuration: 0,
                      scheduledShift: schedule,
                      inferredShift: schedule,
                      lob: c.lob,
@@ -555,6 +589,8 @@ export default function App() {
 
     const filters = new Set<string>();
     const distinctMonths = new Set<string>();
+
+    filters.add('day'); // ALWAYS add 'day' so "HOJE" is available
 
     if (summaries) {
         summaries.forEach(s => {
@@ -647,7 +683,7 @@ export default function App() {
     };
   }, [timeFilter, selectedDates, showRealTime]);
 
-  const isAgentActiveNow = (records: EmployeeDayRecord[]) => {
+  const isAgentActiveNow = (records: EmployeeDayRecord[], requireActivity: boolean = true) => {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
     const todayDateStr = format(now, 'yyyy-MM-dd');
     const yesterday = new Date(now);
@@ -692,6 +728,12 @@ export default function App() {
                 }
 
                 if (shiftMatchesNow) {
+                    if (requireActivity) {
+                        const hasRealActivity = r.actualStartTime != null || r.totalWorkTimeMillis > 0 || (r.breaks && r.breaks.length > 0);
+                        if (!hasRealActivity) {
+                            continue;
+                        }
+                    }
                     let latestBreak: any = null;
                     if (r.breaks && r.breaks.length > 0) {
                         for (const b of r.breaks) {
@@ -1013,6 +1055,8 @@ export default function App() {
         return acc + breakMins;
       }, 0) : 0;
 
+      const totalTasks = records.length > 0 ? records.reduce((acc, r) => acc + (r.tasks || 0), 0) : 0;
+
       if (filterMinorOverbreaks && (totalOverbreak > 2 || totalOverbreak === 0)) return null;
 
       return {
@@ -1022,6 +1066,7 @@ export default function App() {
         totalWorkMinutes: Math.round(totalWorkMinutes),
         totalBreakMinutes: Math.round(totalBreakMinutes),
         totalOverbreakMinutes: Math.round(totalOverbreak),
+        totalTasks: totalTasks,
         wcTotalOverbreak: Math.round(wcTotalOverbreak),
         totalTardinessMinutes: Math.round(totalTardinessMinutes),
         totalEarlyLeaveMinutes: Math.round(totalEarlyLeaveMinutes),
@@ -1240,6 +1285,41 @@ export default function App() {
         console.error(err);
         setIsCalendarLoading(false);
         return t('errorProcessingCalendar');
+      }
+    });
+
+    // Reset input
+    event.target.value = '';
+  }, []);
+
+  const handleStaffInfoUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls') && !file.name.endsWith('.csv')) {
+      toast.error(t('invalidFormat'));
+      return;
+    }
+
+    setIsStaffInfoLoading(true);
+    
+    // Simulate delay for UI responsiveness
+    const delayPromise = new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Parse
+    const promise = Promise.all([parseStaffInfoFile(file), delayPromise]).then(([result]) => result);
+    
+    toast.promise(promise, {
+      loading: "Processing Staff Info...",
+      success: ({ data }) => {
+        setStaffInfoData(data);
+        setIsStaffInfoLoading(false);
+        return `${data.length} staff entries loaded`;
+      },
+      error: (err) => {
+        console.error(err);
+        setIsStaffInfoLoading(false);
+        return "Error loading Staff Info";
       }
     });
 
@@ -1533,6 +1613,16 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+             <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative">
+                <Users size={14} className="text-purple-600" /> 
+                <span className="hidden sm:inline">Upload Staff Info</span>
+                {staffInfoData.length > 0 && (
+                   <span className="absolute -top-2 -right-2 bg-purple-500 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm border border-purple-600">
+                      ✓
+                   </span>
+                )}
+                <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleStaffInfoUpload} />
+             </label>
             {summaries.length > 0 && (
               <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative">
                  <Upload size={14} className="text-emerald-600" /> 
@@ -2037,9 +2127,9 @@ export default function App() {
                       globalShiftFilter={shiftFilter} 
                     />
                   ) : activeTab === 'lobs' ? (
-                    <LOBAnalytics summaries={filteredSummaries} />
+                    <LOBAnalytics summaries={filteredSummaries} showRealTime={showRealTime} />
                   ) : activeTab === 'support_schedule' ? (
-                    <SupportSchedule summaries={supportScheduleData} />
+                    <SupportSchedule summaries={supportScheduleData} allSummaries={mergedSummaries} />
                   ) : activeTab === 'howto' ? (
                     <HowTo />
                   ) : (
@@ -2098,7 +2188,7 @@ export default function App() {
 
           <div className="space-y-4 mt-6">
             {(() => {
-              const activeStaff = supportScheduleData.filter(s => isAgentActiveNow(s.dailyRecords));
+              const activeStaff = supportScheduleData.filter(s => isAgentActiveNow(s.dailyRecords, false));
               if (activeStaff.length === 0) {
                  return (
                    <div className="py-12 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
@@ -2108,6 +2198,57 @@ export default function App() {
                  );
               }
 
+              const getLobColorClassesStaff = (lob: string) => {
+                const hash = lob.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                const colors = [
+                    'text-blue-600 bg-blue-50 border-blue-100/50',
+                    'text-indigo-600 bg-indigo-50 border-indigo-100/50',
+                    'text-violet-600 bg-violet-50 border-violet-100/50',
+                    'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-100/50',
+                    'text-rose-600 bg-rose-50 border-rose-100/50',
+                    'text-orange-600 bg-orange-50 border-orange-100/50',
+                    'text-amber-600 bg-amber-50 border-amber-100/50',
+                    'text-emerald-600 bg-emerald-50 border-emerald-100/50',
+                    'text-cyan-600 bg-cyan-50 border-cyan-100/50',
+                ];
+                return colors[hash % colors.length];
+              };
+
+              const tlResponsibilities: Record<string, Record<string, Set<string>>> = {};
+              mergedSummaries.forEach(agent => {
+                if (agent.supervisor) {
+                  const tlName = agent.supervisor;
+                  if (!tlResponsibilities[tlName]) {
+                    tlResponsibilities[tlName] = {};
+                  }
+                  if (agent.lob) {
+                     if (!tlResponsibilities[tlName][agent.lob]) {
+                         tlResponsibilities[tlName][agent.lob] = new Set<string>();
+                     }
+                     if (agent.language && agent.language.toUpperCase() !== 'ALL') {
+                         tlResponsibilities[tlName][agent.lob].add(agent.language);
+                     }
+                  }
+                }
+              });
+
+              // Fallback for TLs without agents correctly parsed
+              mergedSummaries.forEach(s => {
+                 if (s.role && s.role.toUpperCase() === 'TL') {
+                     if (!tlResponsibilities[s.employeeName]) {
+                        tlResponsibilities[s.employeeName] = {};
+                     }
+                     if (s.lob && s.lob.toUpperCase() !== 'OS') {
+                         if (!tlResponsibilities[s.employeeName][s.lob]) {
+                             tlResponsibilities[s.employeeName][s.lob] = new Set<string>();
+                         }
+                         if (s.language && s.language.toUpperCase() !== 'ALL') {
+                             tlResponsibilities[s.employeeName][s.lob].add(s.language);
+                         }
+                     }
+                 }
+              });
+
               const groupedStaff = activeStaff.reduce((acc, s) => {
                 const category = (s.role && !['OS', 'CSR', 'AGENT', 'OPERATIONAL SUPPORT'].includes(s.role.toUpperCase())) 
                                   ? s.role 
@@ -2115,7 +2256,7 @@ export default function App() {
                 if (!acc[category]) acc[category] = [];
                 acc[category].push(s);
                 return acc;
-              }, {} as Record<string, typeof supportScheduleData>);
+              }, {} as Record<string, EmployeeSummary[]>);
 
               return (
                  <div className="space-y-6">
@@ -2123,7 +2264,7 @@ export default function App() {
                      <div key={category} className="space-y-3">
                        <h3 className="text-xs font-black uppercase text-slate-500 tracking-widest border-b border-slate-100 pb-2">{category}</h3>
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                         {st.map(s => {
+                         {(st as EmployeeSummary[]).map(s => {
                             const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
                             const todayStr = format(now, 'yyyy-MM-dd');
                             const record = s.dailyRecords.find(r => r.date === todayStr);
@@ -2131,22 +2272,43 @@ export default function App() {
                               <div key={s.employeeName} className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-xl hover:shadow-md transition-all group">
                                 <div className="flex flex-col min-w-0">
                                   <span className="font-bold text-slate-900 truncate">{s.employeeName}</span>
-                                  <div className="flex items-center gap-1 mt-0.5">
+                                  <div className="flex flex-wrap items-center gap-1 mt-0.5">
                                     {s.role && !['OS', 'CSR', 'AGENT', 'OPERATIONAL SUPPORT'].includes(s.role.toUpperCase()) && (
                                       <span className="text-[9px] font-black uppercase text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-100 truncate">
                                         {s.role}
                                       </span>
                                     )}
-                                    {s.lob && !['OS', 'OPERATIONAL SUPPORT'].includes(s.lob.toUpperCase()) && (
-                                      <span className="text-[9px] font-black uppercase text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate">
-                                        {s.lob}
-                                      </span>
-                                    )}
-                                    {s.language && ((s.role?.toUpperCase() || '').includes('QA') || (s.lob?.toUpperCase() || '').includes('QA')) && (
-                                      <span className="text-[9px] font-black uppercase text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 truncate">
-                                        {s.language}
-                                      </span>
-                                    )}
+                                    {(() => {
+                                       const resArr = tlResponsibilities[s.employeeName];
+                                       const hideLanguage = s.role && ['RTA', 'REAL TIME', 'TRAINER', 'WFM'].some(r => s.role!.toUpperCase().includes(r));
+                                       
+                                       if (resArr && Object.keys(resArr).length > 0) {
+                                          return Object.keys(resArr).sort().map(lob => {
+                                             const langs = Array.from(resArr[lob]).sort();
+                                             const comb = langs.length > 0 ? `${lob} | ${langs.join('-')}` : lob;
+                                             const colorClass = getLobColorClassesStaff(lob);
+                                             return (
+                                                 <span key={comb} className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border truncate ${colorClass}`}>
+                                                     {comb}
+                                                 </span>
+                                             );
+                                          });
+                                       }
+                                       return (
+                                          <>
+                                            {s.lob && !['OS', 'OPERATIONAL SUPPORT'].includes(s.lob.toUpperCase()) && (
+                                              <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border truncate ${getLobColorClassesStaff(s.lob)}`}>
+                                                {s.lob}
+                                              </span>
+                                            )}
+                                            {s.language && s.language.toUpperCase() !== 'ALL' && !hideLanguage && (
+                                              <span className="text-[9px] font-black uppercase text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100 truncate">
+                                                {s.language}
+                                              </span>
+                                            )}
+                                          </>
+                                       );
+                                    })()}
                                     {record?.scheduledShift && (
                                       <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
                                         {record.scheduledShift}

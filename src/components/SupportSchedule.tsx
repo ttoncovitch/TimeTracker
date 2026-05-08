@@ -9,13 +9,76 @@ import { useLanguage } from '../contexts/LanguageContext';
 
 interface SupportScheduleProps {
   summaries: EmployeeSummary[];
+  allSummaries: EmployeeSummary[];
 }
 
-export function SupportSchedule({ summaries }: SupportScheduleProps) {
+export function SupportSchedule({ summaries, allSummaries }: SupportScheduleProps) {
   const { t, lang } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
   const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'prevMonth' | 'week' | 'yesterday' | 'today'>('all');
   const [shiftFilter, setShiftFilter] = useState<string[]>([]);
+
+  const getLobColorClasses = (lob: string) => {
+    const hash = lob.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const colors = [
+        'text-blue-600 bg-blue-50 border-blue-100/50',
+        'text-indigo-600 bg-indigo-50 border-indigo-100/50',
+        'text-violet-600 bg-violet-50 border-violet-100/50',
+        'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-100/50',
+        'text-rose-600 bg-rose-50 border-rose-100/50',
+        'text-orange-600 bg-orange-50 border-orange-100/50',
+        'text-amber-600 bg-amber-50 border-amber-100/50',
+        'text-emerald-600 bg-emerald-50 border-emerald-100/50',
+        'text-cyan-600 bg-cyan-50 border-cyan-100/50',
+    ];
+    return colors[hash % colors.length];
+  };
+
+  const tlResponsibilities = useMemo(() => {
+    const map: Record<string, Record<string, Set<string>>> = {};
+    allSummaries.forEach(agent => {
+      if (agent.supervisor) {
+        const tlName = agent.supervisor;
+        if (!map[tlName]) {
+          map[tlName] = {};
+        }
+        if (agent.lob) {
+           if (!map[tlName][agent.lob]) {
+               map[tlName][agent.lob] = new Set<string>();
+           }
+           if (agent.language && agent.language.toUpperCase() !== 'ALL') {
+               map[tlName][agent.lob].add(agent.language);
+           }
+        }
+      }
+    });
+    
+    // Also include own lob/lang if not OS
+    summaries.forEach(s => {
+       if (s.role && s.role.toUpperCase() === 'TL') {
+           if (!map[s.employeeName]) {
+              map[s.employeeName] = {};
+           }
+           if (s.lob && s.lob.toUpperCase() !== 'OS') {
+               if (!map[s.employeeName][s.lob]) {
+                   map[s.employeeName][s.lob] = new Set<string>();
+               }
+               if (s.language && s.language.toUpperCase() !== 'ALL') {
+                   map[s.employeeName][s.lob].add(s.language);
+               }
+           }
+       }
+    });
+
+    const finalMap: Record<string, { lob: string, langs: string[] }[]> = {};
+    for (const tl in map) {
+      finalMap[tl] = Object.keys(map[tl]).sort().map(lob => ({
+         lob,
+         langs: Array.from(map[tl][lob]).sort()
+      }));
+    }
+    return finalMap;
+  }, [allSummaries, summaries]);
 
   // 1. Get support staff (redundant check but safe)
   const allSupport = useMemo(() => {
@@ -364,9 +427,36 @@ export function SupportSchedule({ summaries }: SupportScheduleProps) {
                         <td className="px-5 py-4 font-medium text-slate-900 sticky left-0 bg-white/90 backdrop-blur-sm z-10 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)] border-b border-slate-100/50 min-w-[250px] max-w-[250px]">
                           <div className="flex flex-col">
                             <span className="font-bold truncate">{s.employeeName}</span>
-                            <div className="flex items-center gap-1 mt-1 text-[10px]">
-                              {s.lob && s.lob.toUpperCase() !== 'OS' && <span className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded tracking-widest font-bold border border-blue-100/50">{s.lob}</span>}
-                              {s.language && ((s.role?.toUpperCase() || '').includes('QA') || (s.lob?.toUpperCase() || '').includes('QA')) && <span className="text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded tracking-widest font-bold border border-slate-200/50">{s.language}</span>}
+                            <div className="flex flex-wrap items-center gap-1 mt-1 text-[10px]">
+                              {s.role && s.role.toUpperCase() !== 'OS' && <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded tracking-widest font-bold border border-slate-200/50">{s.role}</span>}
+                              
+                              {(() => {
+                                 const res = tlResponsibilities[s.employeeName];
+                                 const hideLanguage = s.role && ['RTA', 'REAL TIME', 'TRAINER', 'WFM'].some(r => s.role!.toUpperCase().includes(r));
+                                 
+                                 if (res && res.length > 0) {
+                                    return (
+                                       <>
+                                         {res.map(({ lob, langs }) => {
+                                            const comb = langs.length > 0 ? `${lob} | ${langs.join('-')}` : lob;
+                                            const colorClass = getLobColorClasses(lob);
+                                            return (
+                                                <span key={comb} className={`px-1.5 py-0.5 rounded tracking-widest font-bold border ${colorClass}`}>
+                                                    {comb}
+                                                </span>
+                                            );
+                                         })}
+                                       </>
+                                    );
+                                 }
+                                 
+                                 return (
+                                    <>
+                                       {s.lob && s.lob.toUpperCase() !== 'OS' && <span className={`px-1.5 py-0.5 rounded tracking-widest font-bold border ${getLobColorClasses(s.lob)}`}>{s.lob}</span>}
+                                       {s.language && s.language.toUpperCase() !== 'ALL' && !hideLanguage && <span className="text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded tracking-widest font-bold border border-purple-200/50">{s.language}</span>}
+                                    </>
+                                 );
+                              })()}
                             </div>
                           </div>
                         </td>

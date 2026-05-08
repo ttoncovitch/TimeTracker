@@ -35,6 +35,7 @@ interface StatsDashboardProps {
   globalFilterMajorOverbreaks: boolean;
   globalShiftFilter?: string[];
   basePeriodCount?: number;
+  showRealTime?: boolean;
 }
 
 export function StatsDashboard({ 
@@ -62,7 +63,8 @@ export function StatsDashboard({
   globalIncludeCheck, 
   globalFilterMajorOverbreaks, 
   globalShiftFilter = [], 
-  basePeriodCount 
+  basePeriodCount,
+  showRealTime
 }: StatsDashboardProps) {
   const { t } = useLanguage();
   
@@ -704,11 +706,10 @@ export function StatsDashboard({
           <div className="min-w-0 pr-4 cursor-help flex flex-col">
             <p className="font-bold text-xs text-slate-800 truncate">{summary.employeeName}</p>
             {summary.email && <p className="text-[9px] text-slate-500 truncate">{summary.email}</p>}
-            {(summary.lob || summary.language) && (
-              <p className="text-[8px] font-bold text-blue-600 uppercase mt-0.5 truncate">
-                {[summary.lob, summary.language].filter(Boolean).join(' - ')}
-              </p>
-            )}
+            <div className="flex gap-1 mt-1">
+              {summary.lob && <span className="bg-blue-50 text-blue-600 text-[8px] px-1.5 py-0.5 rounded font-black tracking-widest">{summary.lob}</span>}
+              {summary.language && <span className="bg-purple-50 text-purple-600 text-[8px] px-1.5 py-0.5 rounded font-black tracking-widest">{summary.language}</span>}
+            </div>
             <p className="text-[10px] text-slate-400 truncate mt-0.5">
               {isNonModOnly ? (
                 <>
@@ -900,7 +901,7 @@ export function StatsDashboard({
               {(!globalShiftFilter || globalShiftFilter.length !== 1) && (
               <div className="pl-6 flex-1 hidden xl:flex flex-col gap-2">
                  {/* Most Minutes */}
-                 {(!isCheckOnly && !activeExtraStatus) && (
+                 {(!isCheckOnly && !activeExtraStatus && !showRealTime) && (
                  <div className="flex flex-col">
                     <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title={t('shiftMostMinutes')}>{t('shiftMostMinutes')}</p>
                    <div className="flex items-center gap-1.5">
@@ -914,7 +915,7 @@ export function StatsDashboard({
                  </div>
                  )}
                  {/* Most Occurrences */}
-                 {!activeExtraStatus && (
+                 {(!activeExtraStatus && !showRealTime) && (
                  <div className="flex flex-col">
                     <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5" title={t('shiftMostOccurrences')}>{isCheckOnly ? t('shiftMostOccurrencesAgents') : t('shiftMostOccurrences')}</p>
                    <div className="flex items-center gap-1.5">
@@ -941,10 +942,10 @@ export function StatsDashboard({
          
          const topGridClass = topCardsCount === 3 ? "md:grid-cols-3" : topCardsCount === 2 ? "md:grid-cols-2" : "md:grid-cols-1";
 
-         const showTopPerformers = !isIdleOnly && !isTardinessOnly && !isCheckOnly && !isShort30MinOnly && !isNonModOnly && !isAbsencesOnly && !isOffboardedOnly;
-         const isShort30MinApplicable = !isIdleOnly && !isTardinessOnly && !isCheckOnly && !isNonModOnly && !isWcOnly && !isEarlyLeaveOnly && !isShort30MinOnly && !isAbsencesOnly && !isOffboardedOnly;
-         const showBottom10 = !isNonModOnly && !isAbsencesOnly && !isOffboardedOnly;
-         const showTopWcCard = isWcApplicable && !isTardinessOnly && !isWcOnly;
+         const showTopPerformers = !isIdleOnly && !isTardinessOnly && !isCheckOnly && !isShort30MinOnly && !isNonModOnly && !isAbsencesOnly && !isOffboardedOnly && agentsByOverbreakDuration.length > 0;
+         const isShort30MinApplicable = !isIdleOnly && !isTardinessOnly && !isCheckOnly && !isNonModOnly && !isWcOnly && !isEarlyLeaveOnly && !isShort30MinOnly && !isAbsencesOnly && !isOffboardedOnly && topShort30Min.length > 0;
+         const showBottom10 = !isNonModOnly && !isAbsencesOnly && !isOffboardedOnly && agentsBottom5Special.length > 0;
+         const showTopWcCard = isWcApplicable && !isTardinessOnly && !isWcOnly && topWc.length > 0;
          const botPanesCount = (showBottom10 ? 1 : 0) + (showTopWcCard ? 1 : 0) + (showTopPerformers ? 1 : 0) + (isShort30MinApplicable ? 1 : 0) + (isNonModOnly ? 4 : 0);
          const paneSpan = botPanesCount >= 4 ? 'lg:col-span-3' : botPanesCount === 3 ? 'lg:col-span-4' : botPanesCount === 2 ? 'lg:col-span-6' : 'lg:col-span-12';
 

@@ -127,6 +127,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           let totalReviewAndAppealMinutes = 0;
           let totalAwaitingTasksMinutes = 0;
           let totalForgotStatusMinutes = 0;
+          let sumTasks = 0;
           let isOffboarded = false;
           
           let finalName = '';
@@ -179,6 +180,8 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              const durationHours = isNaN(Number(row[6])) ? 0 : Number(row[6]);
              const durationMinutes = Math.round(durationHours * 60);
              
+             const tasks = Math.round(Number(row[12]) || 0);
+
              const rawInfo = String(row[3] || '') + ' ' + String(row[4] || '');
              
              const baseDateArgs = date.split('-').map(Number);
@@ -213,7 +216,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
                 }
              }
 
-             return { date, employeeName, department: String(row[2] || ''), status, subStatus, remarks, originalStatus, originalSubStatus, originalRemark, rawInfo, durationMinutes, startTime, endTime, row };
+             return { date, employeeName, department: String(row[2] || ''), status, subStatus, remarks, originalStatus, originalSubStatus, originalRemark, rawInfo, durationMinutes, startTime, endTime, tasks, row };
           }).sort((a,b) => a.startTime.getTime() - b.startTime.getTime());
 
           if (allEvents.length === 0) return;
@@ -269,6 +272,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              if (hasSignificantActivity && record.date >= globalMinDateStr) {
               dailyRecords.push(record);
               totalWorkMinutes += record.totalWorkTimeMillis / (1000 * 60);
+              sumTasks += record.tasks || 0;
               totalBreakMinutes += (record.mealDuration + record.shortDuration + record.wellnessDuration + record.wcDuration + record.prayingDuration + record.idleDuration);
               totalOverbreakMinutes += record.totalOverbreak;
               totalTardinessMinutes += record.tardinessMinutes;
@@ -298,6 +302,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               totalReviewAndAppealMinutes: Math.round(totalReviewAndAppealMinutes),
               totalAwaitingTasksMinutes: Math.round(totalAwaitingTasksMinutes),
               totalForgotStatusMinutes: Math.round(totalForgotStatusMinutes),
+              totalTasks: sumTasks,
               totalShort30MinRecords,
               totalAbsences: 0,
               isOffboarded,
@@ -336,6 +341,7 @@ const SHIFTS = [
 function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: number): EmployeeDayRecord {
   const breaks: BreakSession[] = [];
   let totalWorkTimeMillis = 0;
+  let totalTasksForDay = 0;
   
   const checkDailyStatus = (keywords: string[]) => {
       const index = resignedIndex >= 0 ? resignedIndex : 15;
@@ -359,7 +365,7 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
   
   if (events.length === 0) {
       return {
-        date, employeeName: employeeName || 'Unknown', totalWorkTimeMillis: 0, breaks: [],
+        date, employeeName: employeeName || 'Unknown', totalWorkTimeMillis: 0, breaks: [], tasks: 0,
         mealDuration: 0, shortDuration: 0, wellnessDuration: 0, wcDuration: 0, prayingDuration: 0, idleDuration: 0,
         nonModDuration: 0, reviewAndAppealDuration: 0, awaitingTasksDuration: 0, forgotStatusDuration: 0,
         mealOverbreak: 0, shortOverbreak: 0, wellnessOverbreak: 0, prayingOverbreak: 0, wcOverbreak: 0, idleOverbreak: 0, totalOverbreak: 0,
@@ -563,6 +569,9 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
 
      if (isWork && currentBreakType !== 'forgot_status' && currentBreakType !== 'offline') {
          totalWorkTimeMillis += finalDuration * 60 * 1000;
+         if (e.tasks && e.tasks > 0) {
+             totalTasksForDay += e.tasks;
+         }
      }
 
      if (finalDuration > 0 || currentBreakType === 'offline') {
@@ -711,6 +720,7 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
     date: format(shiftStartLimit, 'yyyy-MM-dd'),
     employeeName: employeeName || 'Unknown',
     inferredShift: closestShift.label,
+    tasks: totalTasksForDay,
     hasMealWithoutShortAnomaly,
     hasSingleShort30m,
     totalWorkTimeMillis,

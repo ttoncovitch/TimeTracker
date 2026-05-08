@@ -136,13 +136,27 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
   const isShort30MinOnly = globalTypeFilter === 'all' && globalIncludeShort30Min && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave;
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedLob, setSelectedLob] = useState<string>('ALL');
+  const [selectedLang, setSelectedLang] = useState<string>('ALL');
   const [selectedEmp, setSelectedEmp] = useState<EmployeeSummary | null>(null);
   const [sortBy, setSortBy] = useState<'maiores' | 'menores' | 'alfabetica' | string>('maiores');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  const filtered = summaries.filter(s => 
-    s.employeeName.toLowerCase().includes(searchTerm.toLowerCase())
-  ).sort((a, b) => {
+  const lobs = Array.from(new Set(summaries.map(s => s.lob?.trim()).filter(Boolean))).filter(l => {
+     if (!l) return false;
+     const upper = l.toUpperCase();
+     return !['CSR', 'BA', 'TL', 'RTA', 'QA', 'TRAINER', 'MANAGER', 'OS'].includes(upper);
+  }).sort() as string[];
+  const languages = selectedLob === 'ALL' 
+    ? [] 
+    : Array.from(new Set(summaries.filter(s => s.lob === selectedLob).map(s => s.language?.toUpperCase().trim()).filter(Boolean))).sort() as string[];
+
+  const filtered = summaries.filter(s => {
+    const matchesSearch = s.employeeName.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesLob = selectedLob === 'ALL' || s.lob === selectedLob;
+    const matchesLang = selectedLang === 'ALL' || s.language?.toUpperCase().trim() === selectedLang;
+    return matchesSearch && matchesLob && matchesLang;
+  }).sort((a, b) => {
     // If using predefined sorts
     if (sortBy === 'maiores') return b.totalOverbreakMinutes - a.totalOverbreakMinutes;
     if (sortBy === 'menores') return a.totalOverbreakMinutes - b.totalOverbreakMinutes;
@@ -150,6 +164,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
     
     // Custom column sort
     let aVal = 0, bVal = 0;
+    if (sortBy === 'tasks') { aVal = a.totalTasks || 0; bVal = b.totalTasks || 0; }
     if (sortBy === 'meal') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.mealOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.mealOverbreak, 0); }
     if (sortBy === 'short') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.shortOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.shortOverbreak, 0); }
     if (sortBy === 'wellness') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.wellnessOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.wellnessOverbreak, 0); }
@@ -185,14 +200,28 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
     <>
     <div className="h-[calc(100vh-240px)] min-h-[600px] bg-white rounded-[2rem] shadow-2xl shadow-slate-200/40 border border-slate-200 flex flex-col overflow-hidden">
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between shrink-0 p-4 border-b border-slate-100 bg-slate-50/80 z-20">
-        <div className="relative w-full max-w-md">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <Input 
-            placeholder={t('searchAgent')} 
-            className="pl-11 h-11 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 text-sm font-medium shadow-sm" 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-2xl">
+            <div className="relative w-full max-w-xs">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <Input 
+                placeholder={t('searchAgent')} 
+                className="pl-11 h-11 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 text-sm font-medium shadow-sm" 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            {lobs.length > 0 && (
+              <select className="h-11 bg-white border border-slate-200 text-slate-700 rounded-xl px-3 text-xs font-bold w-full sm:w-auto shadow-sm outline-none cursor-pointer" value={selectedLob} onChange={e => { setSelectedLob(e.target.value); setSelectedLang('ALL'); }}>
+                <option value="ALL">LOB's</option>
+                {lobs.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            )}
+            {selectedLob !== 'ALL' && languages.length > 0 && (
+              <select className="h-11 bg-white border border-slate-200 text-slate-700 rounded-xl px-3 text-xs font-bold w-full sm:w-auto shadow-sm outline-none cursor-pointer" value={selectedLang} onChange={e => setSelectedLang(e.target.value)}>
+                <option value="ALL">All Languages</option>
+                {languages.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            )}
         </div>
         
         <select 
@@ -211,6 +240,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
             <thead className="bg-slate-50/95 backdrop-blur border-b border-slate-200 text-[10px] uppercase font-black text-slate-500 tracking-widest sticky top-0 z-30 outline outline-1 outline-slate-200 shadow-sm">
                 <tr>
                   <th className="py-4 pl-8 pr-4 font-black whitespace-nowrap">{String(t('agents') || '').toUpperCase()} ({filtered.length})</th>
+                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group focus:outline-none" onClick={() => handleSort('tasks')}>TASKS {sortBy === 'tasks' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('meal')}>Meal {sortBy === 'meal' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('short')}>Short {sortBy === 'short' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
                   <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('wellness')}>Well. {sortBy === 'wellness' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
@@ -277,11 +307,6 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                         {s.email && (
                           <div className="flex flex-col gap-0.5 mt-0.5">
                             <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{s.email}</p>
-                            {(s.lob || s.language) && (
-                              <p className="text-[9px] font-bold text-slate-500 uppercase">
-                                {[s.lob, s.language].filter(Boolean).join(' - ')}
-                              </p>
-                            )}
                           </div>
                         )}
                         {(() => {
@@ -342,6 +367,16 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                           </div>
                           ) : null;
                         })()}
+                      </td>
+
+                      <td className="py-4 px-2 text-center" title={s.totalTasks !== undefined && s.totalTasks > 0 ? `${s.totalTasks} tasks` : ''}>
+                        {s.totalTasks !== undefined && s.totalTasks > 0 ? (
+                           <span className="inline-flex items-center justify-center text-sm px-2 py-1 rounded bg-indigo-50 text-indigo-700 font-black">
+                             {s.totalTasks}
+                           </span>
+                        ) : (
+                           <span className="text-slate-300 font-bold">-</span>
+                        )}
                       </td>
                       
                       <td className="py-4 px-2 text-center" title={mealTotal > 0 ? `${mealTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
@@ -553,6 +588,15 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
     });
   }
 
+  const viewRecords = records;
+  const hasExceptionsData = viewRecords.some(r => r.mealOverbreak > 0 || r.shortOverbreak > 0 || r.wellnessOverbreak > 0 || r.prayingOverbreak > 0 || r.wcDuration > 10 || r.idleOverbreak > 0);
+  const hasOrganicData = viewRecords.some(r => r.wcDuration > 0);
+  const hasNonModData = viewRecords.some(r => r.breaks.some(b => b.type === 'non_moderating' || b.type === 'forgot_status'));
+  const hasTardinessData = viewRecords.some(r => (r.tardinessMinutes || 0) > 0);
+  const hasEarlyLeaveData = viewRecords.some(r => (r.earlyLeaveMinutes || 0) > 0);
+  const hasIdleData = viewRecords.some(r => r.idleDuration > 0);
+  const hasCheckData = viewRecords.some(r => isShiftMismatch(r.scheduledShift, r.inferredShift));
+
   const anyLocalFilterActive = onlyExceptions || includeWc || includeIdle || filterNm || includeTardiness || includeEarlyLeave || includeShort30Min || includeCheck;
   if (anyLocalFilterActive) {
     records = records.filter(r => {
@@ -610,11 +654,7 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
                  <div>
                    <DialogTitle className="text-2xl font-black text-left">{s.employeeName}</DialogTitle>
                    {s.email && <p className="text-slate-400 text-xs mt-0.5">{s.email}</p>}
-                   {(s.lob || s.language) && (
-                      <p className="text-xs font-bold text-blue-600 uppercase mt-1">
-                        {[s.lob, s.language].filter(Boolean).join(' - ')}
-                      </p>
-                   )}
+                   {/* */}
                    {(() => {
                        const overrideStatus = getAbsenceStatusText(s, allSummaries, records, latestDate);
                        const schedShifts = Array.from(new Set(records.map(r => r.scheduledShift || r.inferredShift).filter(Boolean)));
@@ -675,52 +715,66 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
                   </div>
   
                   {!isWcOnly && (
-                    <div className="flex flex-wrap bg-slate-800 rounded-md p-1.5 border border-slate-700 w-full gap-1 justify-center">
-                          <button
-                            onClick={() => setOnlyExceptions(!onlyExceptions)}
-                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${onlyExceptions ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                          >
-                            {t('exceptions')}
-                          </button>
-                          <button
-                            onClick={() => setIncludeWc(!includeWc)}
-                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeWc ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                          >
-                            Organic
-                          </button>
-                          <button
-                            onClick={() => setFilterNm(!filterNm)}
-                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${filterNm ? 'bg-teal-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                          >
-                            NON-MOD
-                          </button>
-                          <button
-                            onClick={() => setIncludeTardiness(!includeTardiness)}
-                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeTardiness ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                          >
-                            TARDINESS
-                          </button>
-                          <button
-                            onClick={() => setIncludeEarlyLeave(!includeEarlyLeave)}
-                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeEarlyLeave ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                          >
-                            EARLY LEAVE
-                          </button>
-                          <button
-                            onClick={() => setIncludeIdle(!includeIdle)}
-                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeIdle ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                          >
-                            IDLE
-                          </button>
-                          <button
-                            onClick={() => setIncludeCheck(!includeCheck)}
-                            className={`flex-1 min-w-[30%] px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-wider transition-colors ${includeCheck ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
-                          >
-                            CHECK
-                          </button>
-                          <div className="flex-1 min-w-[30%] flex items-center justify-center gap-1 bg-slate-700/50 px-2 py-1 rounded border border-slate-600/50">
-                             <span className="text-[9.5px] font-bold tracking-widest text-slate-400 uppercase">TOTAL</span>
-                             <span className="text-[10px] font-black text-rose-400">+{totalPeriodOverbreak}m</span>
+                    <div className="flex flex-wrap bg-slate-800 rounded-md p-1 border border-slate-700 w-full gap-1 justify-center">
+                          {hasExceptionsData && (
+                            <button
+                              onClick={() => setOnlyExceptions(!onlyExceptions)}
+                              className={`flex-auto px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider transition-colors min-w-fit ${onlyExceptions ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                            >
+                              {t('exceptions')}
+                            </button>
+                          )}
+                          {hasOrganicData && (
+                            <button
+                              onClick={() => setIncludeWc(!includeWc)}
+                              className={`flex-auto px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider transition-colors min-w-fit ${includeWc ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                            >
+                              Organic
+                            </button>
+                          )}
+                          {hasNonModData && (
+                            <button
+                              onClick={() => setFilterNm(!filterNm)}
+                              className={`flex-auto px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider transition-colors min-w-fit ${filterNm ? 'bg-teal-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                            >
+                              NON-MOD
+                            </button>
+                          )}
+                          {hasTardinessData && (
+                            <button
+                              onClick={() => setIncludeTardiness(!includeTardiness)}
+                              className={`flex-auto px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider transition-colors min-w-fit ${includeTardiness ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                            >
+                              TARDINESS
+                            </button>
+                          )}
+                          {hasEarlyLeaveData && (
+                            <button
+                              onClick={() => setIncludeEarlyLeave(!includeEarlyLeave)}
+                              className={`flex-auto px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider transition-colors min-w-fit ${includeEarlyLeave ? 'bg-orange-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                            >
+                              EARLY LEAVE
+                            </button>
+                          )}
+                          {hasIdleData && (
+                            <button
+                              onClick={() => setIncludeIdle(!includeIdle)}
+                              className={`flex-auto px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider transition-colors min-w-fit ${includeIdle ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                            >
+                              IDLE
+                            </button>
+                          )}
+                          {hasCheckData && (
+                            <button
+                              onClick={() => setIncludeCheck(!includeCheck)}
+                              className={`flex-auto px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider transition-colors min-w-fit ${includeCheck ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                            >
+                              CHECK
+                            </button>
+                          )}
+                          <div className={`flex-auto px-1.5 py-0.5 flex items-center justify-center gap-1 bg-slate-700/50 rounded border border-slate-600/50 min-w-fit ${totalPeriodOverbreak === 0 ? 'opacity-50' : ''}`}>
+                             <span className="text-[8.5px] font-bold tracking-widest text-slate-400 uppercase">TOTAL</span>
+                             <span className="text-[9px] font-black text-rose-400">+{totalPeriodOverbreak}m</span>
                           </div>
                     </div>
                   )}
@@ -949,6 +1003,14 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                     <>
                         {!isWcOnly && (
                             <>
+                                {record.tasks !== undefined && record.tasks > 0 && (
+                                    <div title={`Total Cases: ${record.tasks}`}>
+                                        <p className="text-[10px] text-indigo-400 uppercase font-bold tracking-widest leading-none mb-0.5">TASKS</p>
+                                        <div className="flex flex-col">
+                                            <span className="font-black text-sm text-indigo-600">{record.tasks}</span>
+                                        </div>
+                                    </div>
+                                )}
                                 <div title={`Total: ${Math.floor(record.mealDuration/60)}h ${record.mealDuration%60}m`}>
                                     <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-0.5">Meal</p>
                                     <div className="flex items-center gap-1 font-black text-sm">

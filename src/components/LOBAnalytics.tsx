@@ -7,6 +7,7 @@ import { format } from 'date-fns';
 
 interface LOBAnalyticsProps {
   summaries: EmployeeSummary[];
+  showRealTime?: boolean;
 }
 
 export const SUPPORT_ROLES = ['qa', 'rta', 'sr tl', 'tl', 'trainer', 'quality', 'supervisor', 'senior team leader', 'manager', 'coordinator', 'ops', 'wfm', 'real time'];
@@ -31,7 +32,7 @@ export function isSupportRole(summary: { role?: string; lob?: string }): boolean
   return false;
 }
 
-export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
+export function LOBAnalytics({ summaries, showRealTime }: LOBAnalyticsProps) {
   const { t, lang } = useLanguage();
 
   // Group summaries by LOB, excluding support roles
@@ -117,7 +118,7 @@ export function LOBAnalytics({ summaries }: LOBAnalyticsProps) {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 px-4">
         {lobNames.map((lobName, idx) => (
-           <LOBCard key={lobName} lobName={lobName} summaries={lobsData[lobName]} idx={idx} />
+           <LOBCard key={lobName} lobName={lobName} summaries={lobsData[lobName]} idx={idx} showRealTime={showRealTime} />
         ))}
       </div>
     </div>
@@ -128,9 +129,10 @@ interface LOBCardProps {
   lobName: string;
   summaries: EmployeeSummary[];
   idx: number;
+  showRealTime?: boolean;
 }
 
-const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
+const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx, showRealTime }) => {
    const { t, lang } = useLanguage();
 
    const languages = useMemo(() => {
@@ -159,34 +161,42 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
       let idleAlerts = 0;
       let employeeWithAbsences = 0;
       let totalTardiness = 0;
-      const topAgents: { name: string; overbreak: number; absences: number; lang: string }[] = [];
+      let totalTasks = 0;
+      const topAgents: { name: string; overbreak: number; absences: number; lang: string; summary: EmployeeSummary; tasks: number }[] = [];
 
       filtered.forEach(s => {
          agentCount++;
          totalOverbreak += s.totalOverbreakMinutes || 0;
          totalAbsences += s.totalAbsences || 0;
+         totalTasks += s.totalTasks || 0;
          if ((s.totalAbsences || 0) > 0) employeeWithAbsences++;
          wcAlerts += s.wcAlerts || 0;
          idleAlerts += s.idleAlerts || 0;
          totalTardiness += s.totalTardinessMinutes || 0;
 
-         if (s.totalOverbreakMinutes > 0 || s.totalAbsences > 0 || Math.floor((s.totalTardinessMinutes || 0)/60) > 0) {
+         if (s.totalOverbreakMinutes > 0 || s.totalAbsences > 0 || Math.floor((s.totalTardinessMinutes || 0)/60) > 0 || showRealTime) {
              topAgents.push({
                 name: s.employeeName,
                 overbreak: s.totalOverbreakMinutes || 0,
                 absences: s.totalAbsences || 0,
                 lang: (s.language && s.language.trim() !== '') ? s.language.toUpperCase().trim() : 'N/A',
+                tasks: s.totalTasks || 0,
                 summary: s
              } as any);
          }
       });
 
-      topAgents.sort((a, b) => (b.overbreak + b.absences * 60) - (a.overbreak + a.absences * 60));
+      if (showRealTime) {
+         topAgents.sort((a, b) => b.tasks - a.tasks);
+      } else {
+         topAgents.sort((a, b) => (b.overbreak + b.absences * 60) - (a.overbreak + a.absences * 60));
+      }
 
       return {
          agentCount,
          totalOverbreak,
          totalAbsences,
+         totalTasks,
          wcAlerts,
          idleAlerts,
          employeeWithAbsences,
@@ -252,13 +262,19 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
 
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                <CalendarX className="w-3 h-3" /> {t('absencesString')}
+                {showRealTime ? (
+                   <><Target className="w-3 h-3" /> TASKS</>
+                ) : (
+                   <><CalendarX className="w-3 h-3" /> {t('absencesString')}</>
+                )}
               </span>
               <div className="flex flex-col">
-                <span className={`text-xl font-black leading-none ${stats.totalAbsences > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                  {stats.totalAbsences}
+                <span className={`text-xl font-black leading-none ${showRealTime ? 'text-indigo-600' : (stats.totalAbsences > 0 ? 'text-red-600' : 'text-emerald-600')}`}>
+                  {showRealTime ? stats.totalTasks : stats.totalAbsences}
                 </span>
-                <span className="text-[10px] font-bold text-slate-400 mt-1">{stats.employeeWithAbsences} {t('agMissed')}</span>
+                <span className="text-[10px] font-bold text-slate-400 mt-1">
+                  {showRealTime ? 'Total Cases' : `${stats.employeeWithAbsences} ${t('agMissed')}`}
+                </span>
               </div>
             </div>
 
@@ -294,15 +310,21 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
           <div className="mt-auto pt-5 border-t border-slate-100">
             <div className="flex justify-between items-center mb-3">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                <Globe className="w-3 h-3" /> {t('biggestInfractors')} ({selectedLang === 'ALL' ? t('allLangs') : selectedLang})
+                {showRealTime ? (
+                  <><Target className="w-3 h-3" /> Leaderboard ({selectedLang === 'ALL' ? t('allLangs') : selectedLang})</>
+                ) : (
+                  <><Globe className="w-3 h-3" /> {t('biggestInfractors')} ({selectedLang === 'ALL' ? t('allLangs') : selectedLang})</>
+                )}
               </span>
-              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest leading-none">{t('onlyExceeded')}</span>
+              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                {showRealTime ? 'TOP AGENTS' : t('onlyExceeded')}
+              </span>
             </div>
             <div className="space-y-2">
               {stats.topAgents.length === 0 ? (
                  <div className="text-[11px] text-slate-400 font-bold py-2 bg-slate-50/50 rounded-lg text-center border border-slate-100/50">{t('noCriticalAgent')}</div>
               ) : stats.topAgents.map((agent, aIdx) => (
-                 <AgentVarianceRow key={`${agent.name}-${aIdx}`} agent={agent} aIdx={aIdx} selectedLang={selectedLang} t={t} />
+                 <AgentVarianceRow key={`${agent.name}-${aIdx}`} agent={agent} aIdx={aIdx} selectedLang={selectedLang} t={t} showRealTime={showRealTime} />
               ))}
             </div>
           </div>
@@ -312,7 +334,7 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx }) => {
    );
 }
 
-const AgentVarianceRow: React.FC<{ agent: any, aIdx: number, selectedLang: string, t: any }> = ({ agent, aIdx, selectedLang, t }) => {
+const AgentVarianceRow: React.FC<{ agent: any, aIdx: number, selectedLang: string, t: any, showRealTime?: boolean }> = ({ agent, aIdx, selectedLang, t, showRealTime }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const exceptions = useMemo(() => {
@@ -391,10 +413,10 @@ const AgentVarianceRow: React.FC<{ agent: any, aIdx: number, selectedLang: strin
   }, [agent]);
 
   return (
-    <div className="flex flex-col bg-slate-50/80 rounded-xl border border-transparent hover:border-slate-200 transition-all overflow-hidden">
+    <div className={`flex flex-col bg-slate-50/80 rounded-xl border border-transparent transition-all overflow-hidden ${exceptions.length > 0 ? "hover:border-slate-200" : ""}`}>
       <div 
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center justify-between p-2.5 cursor-pointer select-none"
+        onClick={() => exceptions.length > 0 && setIsExpanded(!isExpanded)}
+        className={`flex items-center justify-between p-2.5 select-none ${exceptions.length > 0 ? "cursor-pointer" : ""}`}
       >
         <div className="flex items-center gap-2 overflow-hidden flex-1">
           <span className="text-[10px] font-black text-slate-300 w-4 shrink-0 text-center">#{aIdx + 1}</span>
@@ -406,17 +428,24 @@ const AgentVarianceRow: React.FC<{ agent: any, aIdx: number, selectedLang: strin
                {agent.lang}
              </span>
           )}
-          {agent.absences > 0 && (
+          {agent.tasks > 0 && (
+            <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 border border-emerald-200 rounded shadow-sm">
+              TASKS: {agent.tasks}
+            </span>
+          )}
+          {(!showRealTime && agent.absences > 0) && (
             <span className="text-[9px] font-black text-red-600 bg-red-50/80 px-1.5 py-0.5 border border-red-100 rounded shadow-sm">{t('absencesLabel')}: {agent.absences}</span>
           )}
-          {agent.overbreak > 0 && (
+          {(!showRealTime && agent.overbreak > 0) && (
             <span className="text-[9px] font-black text-rose-600 bg-rose-50/80 px-1.5 py-0.5 border border-rose-100 rounded shadow-sm">
               {t('exceededLabel')}: {agent.overbreak}m
             </span>
           )}
-          <div className="text-slate-400 ml-1">
-            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </div>
+          {exceptions.length > 0 && (
+            <div className="text-slate-400 ml-1">
+              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </div>
+          )}
         </div>
       </div>
       

@@ -49,6 +49,7 @@ export interface EmployeeDayRecord {
   inferredShift?: string;
   scheduledShift?: string;
   lob?: string;
+  tasks?: number;
   hasSingleShort30m?: boolean;
   hasMealWithoutShortAnomaly?: boolean;
   isAbsence?: boolean;
@@ -93,6 +94,7 @@ export interface EmployeeSummary {
   totalReviewAndAppealMinutes: number;
   totalAwaitingTasksMinutes: number;
   totalForgotStatusMinutes: number;
+  totalTasks?: number;
   totalAbsences: number;
   totalShort30MinRecords?: number;
   isOffboarded?: boolean;
