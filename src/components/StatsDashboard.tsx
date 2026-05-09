@@ -699,6 +699,58 @@ export function StatsDashboard({
         }
     };
 
+    const exceptions: any[] = [];
+    if (showRealTime || (globalTimeFilter === 'day' && summary.dailyRecords.length === 1)) {
+      summary.dailyRecords.forEach(r => {
+        const typeSums: Record<string, number> = {};
+        const sortedBreaks = [...r.breaks].sort((a,b) => a.startTime.getTime() - b.startTime.getTime());
+        sortedBreaks.forEach(b => {
+           const prevSum = typeSums[b.type] || 0;
+           const newSum = prevSum + b.durationMinutes;
+           typeSums[b.type] = newSum;
+           
+           let idealTime = 0;
+           if (b.type === 'meal') idealTime = 60;
+           else if (b.type === 'short') idealTime = 30;
+           else if (b.type === 'wellness' || b.type === 'praying') idealTime = 15;
+           else if (b.type === 'wc') idealTime = 10;
+           
+           let isOverbreak = false;
+           let excessTime = 0;
+  
+           if (b.type === 'idle' || b.type === 'forgot_status') {
+               if (!globalFilterMajorOverbreaks || b.durationMinutes > 2) {
+                   isOverbreak = true;
+                   excessTime = b.durationMinutes;
+               }
+           } else if (idealTime > 0) {
+               if (newSum > idealTime) {
+                   const excess = Math.min(b.durationMinutes, newSum - idealTime);
+                   if (b.type === 'wc' || b.type === 'praying' || b.type === 'wellness') {
+                       isOverbreak = true;
+                   } else {
+                       if (!globalFilterMajorOverbreaks || excess > 2) isOverbreak = true;
+                   }
+                   if (isOverbreak) {
+                       excessTime = excess;
+                   }
+               }
+           }
+  
+           if (isOverbreak) {
+              let typeLabel = b.type.toUpperCase();
+              if (b.type === 'wc') typeLabel = 'ORGANIC';
+              exceptions.push({
+                type: typeLabel,
+                excess: excessTime,
+                time: (b.startTime && b.endTime) ? `${format(new Date(b.startTime), 'HH:mm')} - ${format(new Date(b.endTime), 'HH:mm')}` : '-'
+              });
+           }
+        });
+      });
+      exceptions.sort((a,b) => a.time.localeCompare(b.time));
+    }
+
     return (
       <div onMouseEnter={handleMouseEnter} className="flex items-center justify-between p-3.5 hover:bg-slate-50 transition-colors relative group">
         <div className="flex items-center gap-3 w-full">
@@ -723,65 +775,83 @@ export function StatsDashboard({
         </div>
 
         {/* Tooltip Hover */}
-        {!hideTooltip && (
         <div className={`absolute bottom-[110%] z-[100] hidden group-hover:block w-64 bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl p-5 text-white animate-in fade-in zoom-in-95 duration-200 ${tooltipPos === 'left' ? 'right-0' : tooltipPos === 'right' ? 'left-0' : 'left-1/2 -translate-x-1/2'}`}>
           <p className="font-black text-base border-b border-slate-700/50 pb-3 mb-3 text-white tracking-tight">{summary.employeeName}</p>
           <div className="space-y-2.5 text-xs">
-             <div className="flex justify-between items-center text-slate-300 font-bold">
-               <span>Meal:</span> 
-               <span className={mealOver > 0 ? "text-rose-400 font-black" : "text-emerald-400 font-black"}>
-                 {mealOver > 0 ? `+${mealOver}m` : (mealDur > 0 ? `OK (${mealDur}m)` : `OK`)}
-               </span>
-             </div>
-             <div className="flex justify-between items-center text-slate-300 font-bold">
-               <span>Short:</span> 
-               <span className={shortOver > 0 ? "text-rose-400 font-black" : "text-emerald-400 font-black"}>
-                 {shortOver > 0 ? `+${shortOver}m` : (shortDur > 0 ? `OK (${shortDur}m)` : `OK`)}
-               </span>
-             </div>
-             <div className="flex justify-between items-center text-slate-300 font-bold">
-               <span>Wellness:</span> 
-               <span className={wellnessOver > 0 ? "text-rose-400 font-black" : "text-emerald-400 font-black"}>
-                 {wellnessOver > 0 ? `+${wellnessOver}m` : (wellnessDur > 0 ? `OK (${wellnessDur}m)` : `OK`)}
-               </span>
-             </div>
-             <div className="flex justify-between items-center text-slate-300 font-bold">
-               <span>Praying:</span> 
-               <span className={prayingOver > 0 ? "text-rose-400 font-black" : "text-emerald-400 font-black"}>
-                 {prayingOver > 0 ? `+${prayingOver}m` : (prayingDur > 0 ? `OK (${prayingDur}m)` : `OK`)}
-               </span>
-             </div>
-             <div className="flex justify-between items-center text-slate-300 font-bold">
-               <span>Organic:</span> 
-               <span className={wcOver > 0 ? "text-amber-400 font-black" : "text-emerald-400 font-black"}>
-                 {wcOver > 0 ? `+${wcOver}m` : (wcDur > 0 ? `OK (${wcDur}m)` : `OK`)}
-               </span>
-             </div>
-             <div className="flex justify-between items-center text-slate-300 font-bold">
-               <span>{t('idleLabel')}:</span> 
-               <span className={idleOver > 0 ? "text-red-400 font-black" : "text-emerald-400 font-black"}>
-                 {idleOver > 0 ? `+${idleOver}m` : t('okLabel')}
-               </span>
-             </div>
-             <div className="flex justify-between items-center text-slate-300 font-bold">
-               <span>{t('status')}:</span> 
-               <span className={summary.isOffboarded ? "text-slate-400 font-black" : "text-emerald-400 font-black"}>
-                 {summary.isOffboarded ? t('offboarded') : t('active')}
-               </span>
-             </div>
-             <div className="flex justify-between items-center text-slate-300 font-bold">
-               <span>{t('absencesString')}:</span> 
-               <span className={(summary.totalAbsences || 0) > 0 ? "text-red-500 font-black" : "text-emerald-400 font-black"}>
-                 {summary.totalAbsences || 0}
-               </span>
-             </div>
+             {(showRealTime || (globalTimeFilter === 'day' && summary.dailyRecords.length === 1)) ? (
+                <>
+                   {exceptions.length > 0 ? exceptions.map((exc, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-slate-300 font-bold border-b border-slate-800 pb-2 mb-2 last:border-0 last:pb-0 last:mb-0">
+                         <div className="flex flex-col">
+                            <span className="text-[10px] text-slate-400">{exc.time}</span>
+                            <span className="text-white text-sm tracking-widest uppercase">{exc.type}</span>
+                         </div>
+                         <span className="text-rose-400 font-black text-sm">+{exc.excess}m</span>
+                      </div>
+                   )) : (
+                      <div className="text-center py-2 text-emerald-400 font-black">
+                         Nenhum Overbreak
+                      </div>
+                   )}
+                </>
+             ) : (
+                <>
+                  <div className="flex justify-between items-center text-slate-300 font-bold">
+                    <span>Meal:</span> 
+                    <span className={mealOver > 0 ? "text-rose-400 font-black" : "text-emerald-400 font-black"}>
+                      {mealOver > 0 ? `+${mealOver}m` : (mealDur > 0 ? `OK (${mealDur}m)` : `OK`)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-300 font-bold">
+                    <span>Short:</span> 
+                    <span className={shortOver > 0 ? "text-rose-400 font-black" : "text-emerald-400 font-black"}>
+                      {shortOver > 0 ? `+${shortOver}m` : (shortDur > 0 ? `OK (${shortDur}m)` : `OK`)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-300 font-bold">
+                    <span>Wellness:</span> 
+                    <span className={wellnessOver > 0 ? "text-rose-400 font-black" : "text-emerald-400 font-black"}>
+                      {wellnessOver > 0 ? `+${wellnessOver}m` : (wellnessDur > 0 ? `OK (${wellnessDur}m)` : `OK`)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-300 font-bold">
+                    <span>Praying:</span> 
+                    <span className={prayingOver > 0 ? "text-rose-400 font-black" : "text-emerald-400 font-black"}>
+                      {prayingOver > 0 ? `+${prayingOver}m` : (prayingDur > 0 ? `OK (${prayingDur}m)` : `OK`)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-300 font-bold">
+                    <span>Organic:</span> 
+                    <span className={wcOver > 0 ? "text-amber-400 font-black" : "text-emerald-400 font-black"}>
+                      {wcOver > 0 ? `+${wcOver}m` : (wcDur > 0 ? `OK (${wcDur}m)` : `OK`)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-300 font-bold">
+                    <span>{t('idleLabel')}:</span> 
+                    <span className={idleOver > 0 ? "text-red-400 font-black" : "text-emerald-400 font-black"}>
+                      {idleOver > 0 ? `+${idleOver}m` : t('okLabel')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-300 font-bold">
+                    <span>{t('status')}:</span> 
+                    <span className={summary.isOffboarded ? "text-slate-400 font-black" : "text-emerald-400 font-black"}>
+                      {summary.isOffboarded ? t('offboarded') : t('active')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-300 font-bold">
+                    <span>{t('absencesString')}:</span> 
+                    <span className={(summary.totalAbsences || 0) > 0 ? "text-red-500 font-black" : "text-emerald-400 font-black"}>
+                      {summary.totalAbsences || 0}
+                    </span>
+                  </div>
+                </>
+             )}
              <div className="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center font-black">
                 <span className="text-rose-400/80 text-[10px] uppercase tracking-wider">{t('totalOverbreakLabel')}:</span>
                 <span className="text-rose-400 text-lg">{summary.totalOverbreakMinutes}m</span>
              </div>
           </div>
         </div>
-        )}
       </div>
     );
   };
@@ -1104,7 +1174,7 @@ export function StatsDashboard({
                                   metricValue={globalTimeFilter === 'day' && mismatchRecord ? `${mismatchRecord.scheduledShift} ➔ ${mismatchRecord.inferredShift}` : `${s.mismatchCount}`} 
                                   metricLabel={globalTimeFilter === 'day' ? "" : (s.mismatchCount === 1 ? t('day').toLowerCase() : t('days').toLowerCase())} 
                                   colorClass="text-amber-700"
-                                  hideTooltip={true}
+                                  
                                />
                             );
                          })
@@ -1207,7 +1277,7 @@ export function StatsDashboard({
                               metricValue={`${s.totalShort30MinRecords}`} 
                               metricLabel={s.totalShort30MinRecords === 1 ? "dia" : "dias"} 
                               colorClass="text-emerald-700"
-                              hideTooltip={true}
+                              
                            />
                         ))}
                         {topShort30Min.length === 0 && (
@@ -1238,7 +1308,7 @@ export function StatsDashboard({
                                 metricValue={s.totalOverbreakMinutes === 0 ? "Perfeito" : `${s.totalOverbreakMinutes}m`} 
                                 metricLabel={s.totalOverbreakMinutes === 0 ? "" : t('overbreakExceeded')} 
                                 colorClass="text-emerald-700"
-                                hideTooltip={true}
+                                
                              />
                         ))}
                         {topPerformers.length === 0 && (
@@ -1268,7 +1338,7 @@ export function StatsDashboard({
                               metricValue={`${Math.floor(s.totalForgotStatusMinutes / 60)}h ${Math.round(s.totalForgotStatusMinutes % 60)}m`} 
                               metricLabel="tempo" 
                               colorClass="text-slate-700"
-                              hideTooltip={true}
+                              
                            />
                         ))}
                         {topForgotStatus.length === 0 && (
@@ -1295,7 +1365,7 @@ export function StatsDashboard({
                               metricValue={`${Math.floor(s.totalReviewAndAppealMinutes / 60)}h ${s.totalReviewAndAppealMinutes % 60}m`} 
                               metricLabel="tempo" 
                               colorClass="text-purple-700"
-                              hideTooltip={true}
+                              
                            />
                         ))}
                         {topReviewAndAppeal.length === 0 && (
@@ -1322,7 +1392,7 @@ export function StatsDashboard({
                               metricValue={`${Math.floor(s.totalAwaitingTasksMinutes / 60)}h ${s.totalAwaitingTasksMinutes % 60}m`} 
                               metricLabel="tempo" 
                               colorClass="text-indigo-700"
-                              hideTooltip={true}
+                              
                            />
                         ))}
                         {topAwaitingTasks.length === 0 && (
@@ -1349,7 +1419,7 @@ export function StatsDashboard({
                               metricValue={`${Math.floor(s.totalNonModMinutes / 60)}h ${s.totalNonModMinutes % 60}m`} 
                               metricLabel="tempo" 
                               colorClass="text-teal-700"
-                              hideTooltip={true}
+                              
                            />
                         ))}
                         {topNonModTotal.length === 0 && (
@@ -1407,7 +1477,7 @@ export function StatsDashboard({
                                    metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
                                    metricLabel=""
                                    colorClass="text-slate-700"
-                                   hideTooltip={true}
+                                   
                                 />
                               )} />
                            </div>
@@ -1431,7 +1501,7 @@ export function StatsDashboard({
                                    metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
                                    metricLabel=""
                                    colorClass="text-rose-700"
-                                   hideTooltip={true}
+                                   
                                 />
                               )} />
                            </div>
@@ -1456,7 +1526,7 @@ export function StatsDashboard({
                                    metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
                                    metricLabel="" 
                                    colorClass="text-emerald-700"
-                                   hideTooltip={true}
+                                   
                                 />
                               )} />
                            </div>
@@ -1487,7 +1557,7 @@ export function StatsDashboard({
                                     metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
                                     metricLabel=""
                                     colorClass="text-rose-700"
-                                    hideTooltip={true}
+                                    
                                  />
                                  );
                               }} />
@@ -1515,7 +1585,7 @@ export function StatsDashboard({
                                     metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
                                     metricLabel="" 
                                     colorClass="text-amber-700"
-                                    hideTooltip={true}
+                                    
                                  />
                               )} />
                            </div>
@@ -1541,7 +1611,7 @@ export function StatsDashboard({
                                     metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
                                     metricLabel="" 
                                     colorClass="text-emerald-700"
-                                    hideTooltip={true}
+                                    
                                  />
                               )} />
                            </div>

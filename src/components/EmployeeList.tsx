@@ -142,6 +142,8 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
   const [sortBy, setSortBy] = useState<'maiores' | 'menores' | 'alfabetica' | string>('maiores');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
+  const normalizeName = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/\./g, ' ').replace(/-/g, ' ');
+
   const lobs = Array.from(new Set(summaries.map(s => s.lob?.trim()).filter(Boolean))).filter(l => {
      if (!l) return false;
      const upper = l.toUpperCase();
@@ -152,7 +154,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
     : Array.from(new Set(summaries.filter(s => s.lob === selectedLob).map(s => s.language?.toUpperCase().trim()).filter(Boolean))).sort() as string[];
 
   const filtered = summaries.filter(s => {
-    const matchesSearch = s.employeeName.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = normalizeName(s.employeeName).includes(normalizeName(searchTerm));
     const matchesLob = selectedLob === 'ALL' || s.lob === selectedLob;
     const matchesLang = selectedLang === 'ALL' || s.language?.toUpperCase().trim() === selectedLang;
     return matchesSearch && matchesLob && matchesLang;
@@ -198,7 +200,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
 
   return (
     <>
-    <div className="h-[calc(100vh-240px)] min-h-[600px] bg-white rounded-[2rem] shadow-2xl shadow-slate-200/40 border border-slate-200 flex flex-col overflow-hidden">
+    <div className="flex-1 min-h-0 bg-white rounded-[2rem] shadow-2xl shadow-slate-200/40 border border-slate-200 flex flex-col overflow-hidden">
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between shrink-0 p-4 border-b border-slate-100 bg-slate-50/80 z-20">
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-2xl">
             <div className="relative w-full max-w-xs">
@@ -555,6 +557,22 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
   
   let records = fullSummary.dailyRecords;
   
+  const isShiftCrossingMidnight = (shiftStr: string | null | undefined) => {
+    if (!shiftStr) return false;
+    const cleaned = shiftStr.replace(/\s+/g, '').replace('h', ':').replace('hrs', '').replace('H', ':');
+    const times = cleaned.split('-');
+    if (times.length === 2) {
+        const [sh, sm] = times[0].split(':').map(Number);
+        const [eh, em] = times[1].split(':').map(Number);
+        if (!isNaN(sh) && !isNaN(eh)) {
+            let startTotal = sh * 60 + (sm || 0);
+            let endTotal = eh * 60 + (em || 0);
+            if (endTotal <= startTotal) return true;
+        }
+    }
+    return false;
+  };
+
   if (view === 'month') {
     records = fullSummary.dailyRecords.filter(r => {
       const d = new Date(r.date + 'T12:00:00');
@@ -577,14 +595,29 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
   } else if (view === 'today') {
     records = fullSummary.dailyRecords.filter(r => {
       const d = new Date(r.date + 'T12:00:00');
-      return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+      const isToday = d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const isYesterday = d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear();
+      
+      if (isToday) return true;
+      if (isYesterday && (isShiftCrossingMidnight(r.scheduledShift) || isShiftCrossingMidnight(r.inferredShift))) return true;
+      return false;
     });
   } else if (view === 'yesterday') {
     records = fullSummary.dailyRecords.filter(r => {
       const d = new Date(r.date + 'T12:00:00');
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
-      return d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear();
+      const isYesterday = d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear();
+      
+      const beforeYesterday = new Date(yesterday);
+      beforeYesterday.setDate(beforeYesterday.getDate() - 1);
+      const isBeforeYesterday = d.getDate() === beforeYesterday.getDate() && d.getMonth() === beforeYesterday.getMonth() && d.getFullYear() === beforeYesterday.getFullYear();
+
+      if (isYesterday) return true;
+      if (isBeforeYesterday && (isShiftCrossingMidnight(r.scheduledShift) || isShiftCrossingMidnight(r.inferredShift))) return true;
+      return false;
     });
   }
 

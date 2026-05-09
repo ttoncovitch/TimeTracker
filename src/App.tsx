@@ -35,6 +35,19 @@ import { HowTo } from './components/HowTo';
 export default function App() {
   const { lang, setLang, t } = useLanguage();
 
+  const normalizeLanguage = (lang?: string): string => {
+    if (!lang) return '';
+    const upper = lang.toUpperCase().trim();
+    if (upper === 'GERMAN') return 'DE';
+    if (upper === 'PORTUGUESE') return 'PT';
+    if (upper === 'SPANISH') return 'ES';
+    if (upper === 'ITALIAN') return 'IT';
+    if (upper === 'ROMANIAN') return 'RO';
+    if (upper === 'FRENCH') return 'FR';
+    if (upper === 'ENGLISH') return 'EN';
+    return upper;
+  };
+
   const getFullMonthName = (text: string, language: string) => {
     if (!text) return '';
     const upperText = text.toUpperCase();
@@ -107,6 +120,51 @@ export default function App() {
   const [selectedDates, setSelectedDates] = useState<Date[] | undefined>();
   const [showRealTime, setShowRealTime] = useState(false);
   const [isStaffInChargeOpen, setIsStaffInChargeOpen] = useState(false);
+  const [isMissingStaffOpen, setIsMissingStaffOpen] = useState(false);
+
+  const normalizeName = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/\./g, ' ').replace(/-/g, ' ');
+
+  const findCalendarEntry = useCallback((staffEmail: string, staffName: string) => {
+      // 1. Email matching
+      let calEntry = calendarData.find(c => c.email && c.email.toLowerCase() === staffEmail.toLowerCase());
+
+      if (!calEntry) {
+          // 2. Exact name matching
+          const staffNameNormalized = normalizeName(staffName);
+          calEntry = calendarData.find(c => normalizeName(c.name) === staffNameNormalized);
+          
+          if (!calEntry) {
+            // 3. Partial name matching
+            calEntry = calendarData.find(c => {
+              const calNameParts = normalizeName(c.name).split(/\s+/);
+              const staffNameParts = staffNameNormalized.split(/\s+/);
+              
+              if (calNameParts.length > 0 && staffNameParts.length > 0) {
+                 if (calNameParts[0] === staffNameParts[0]) {
+                    if (calNameParts.length === 1 || staffNameParts.length === 1) return true;
+                    const overlap = calNameParts.filter(p => staffNameParts.includes(p));
+                    if (overlap.length > 1) return true;
+                 }
+              }
+              return false;
+            });
+          }
+      }
+      return calEntry;
+  }, [calendarData]);
+
+  const missingStaffNames = useMemo(() => {
+     if (staffInfoData.length === 0 || calendarData.length === 0) return [];
+     
+     const missing: string[] = [];
+     for (const staff of staffInfoData) {
+         if (staff.status !== 'ACTIVE' || staff.role !== 'CSR') continue;
+         if (!findCalendarEntry(staff.email, staff.fullName)) {
+             missing.push(staff.fullName);
+         }
+     }
+     return missing;
+  }, [staffInfoData, findCalendarEntry]);
 
   const cleanShift = (shift: string) => {
     const match = shift.match(/\b(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\b/);
@@ -199,34 +257,65 @@ export default function App() {
   }, [summaries, calendarData]);
 
   const mergedSummaries = useMemo(() => {
-    if (calendarData.length === 0) return summaries;
+    // 1. Appply Staff Info overrides to all staff (even those not in Byteworks)
+    const allStaff = [...staffInfoData.filter(s => s.status === 'ACTIVE' && s.lob !== 'Stranded Resource')];
+    const emailToStaff = new Map(allStaff.map(s => [s.email.toLowerCase(), s]));
+
+    // Map summary to staff info if possible
+    let mergedSummaries = summaries.map(s => {
+       const staffEntry = (s.email && emailToStaff.get(s.email.toLowerCase())) || 
+                          allStaff.find(si => normalizeName(si.fullName) === normalizeName(s.employeeName));
+       
+       if (staffEntry) {
+          const newName = staffEntry.fullName;
+          return {
+             ...s,
+             employeeName: newName,
+             lob: staffEntry.lob || s.lob,
+             language: normalizeLanguage(staffEntry.language || s.language),
+             role: staffEntry.role || s.role,
+             supervisor: staffEntry.tl || s.supervisor,
+             dailyRecords: s.dailyRecords.map(r => ({ ...r, employeeName: newName, lob: staffEntry.lob || r.lob }))
+          };
+       }
+       return s;
+    });
+
+    // Add agents from StaffInfo who aren't in summaries
+    allStaff.forEach(staff => {
+       if (!mergedSummaries.find(s => s.email?.toLowerCase() === staff.email.toLowerCase() || normalizeName(s.employeeName) === normalizeName(staff.fullName))) {
+          mergedSummaries.push({
+              employeeName: staff.fullName,
+              email: staff.email,
+              lob: staff.lob,
+              language: normalizeLanguage(staff.language),
+              role: staff.role,
+              supervisor: staff.tl || '',
+              dailyRecords: [],
+              calendarName: '',
+              isTraining: false,
+              totalWorkMinutes: 0,
+              totalBreakMinutes: 0,
+              totalOverbreakMinutes: 0,
+              totalTardinessMinutes: 0,
+              totalEarlyLeaveMinutes: 0,
+              totalNonModMinutes: 0,
+              totalReviewAndAppealMinutes: 0,
+              totalAwaitingTasksMinutes: 0,
+              totalForgotStatusMinutes: 0,
+              totalAbsences: 0,
+              wcAlerts: 0,
+              idleAlerts: 0
+          });
+       }
+    });
+
+    if (calendarData.length === 0) return mergedSummaries;
 
     const matchedCalendarNames = new Set<string>();
 
-    // 1. Map existing summaries and find matches
-    const updatedByteworks = summaries.map(s => {
-       let calEntry = calendarData.find(c => c.email && c.email.toLowerCase() === s.email?.toLowerCase());
-
-       if (!calEntry) {
-           const summaryNameLower = s.employeeName.toLowerCase().trim().replace(/\./g, ' ');
-           calEntry = calendarData.find(c => c.name.toLowerCase().trim() === summaryNameLower);
-           
-           if (!calEntry) {
-             calEntry = calendarData.find(c => {
-               const calNameParts = c.name.toLowerCase().trim().split(/\s+/);
-               const sumNameParts = summaryNameLower.split(/\s+/);
-               
-               if (calNameParts.length > 0 && sumNameParts.length > 0) {
-                  if (calNameParts[0] === sumNameParts[0]) {
-                     if (calNameParts.length === 1 || sumNameParts.length === 1) return true;
-                     const overlap = calNameParts.filter(p => sumNameParts.includes(p));
-                     if (overlap.length > 1) return true;
-                  }
-               }
-               return false;
-             });
-           }
-       }
+    const updatedSummaries = mergedSummaries.map(s => {
+       let calEntry = findCalendarEntry(s.email || '', s.employeeName);
        
        if (calEntry) {
           matchedCalendarNames.add(calEntry.name.toLowerCase().trim());
@@ -241,10 +330,18 @@ export default function App() {
                  const dateKeyAlt = format(d, 'MM/dd/yyyy');
                  
                  if (!existingDates.has(dateStr)) {
-                    const scheduleForDay = calEntry.schedule[dateStr] || calEntry.schedule[dateKey] || calEntry.schedule[dateKeyAlt];
+                    let shiftForDay = calEntry.schedule[dateStr] || calEntry.schedule[dateKey] || calEntry.schedule[dateKeyAlt];
                     
-                    if (scheduleForDay) {
-                        const schedUpper = String(scheduleForDay).toUpperCase();
+                    // If not in schedule, look in byteworks records for this day
+                    if (!shiftForDay) {
+                        const byteworksRecord = s.dailyRecords.find(r => r.date === dateStr);
+                        if (byteworksRecord && (byteworksRecord.scheduledShift || byteworksRecord.inferredShift)) {
+                            shiftForDay = byteworksRecord.scheduledShift || byteworksRecord.inferredShift;
+                        }
+                    }
+                    
+                    if (shiftForDay) {
+                        const schedUpper = String(shiftForDay).toUpperCase();
                         const isWorkingShift = /\d{1,2}:\d{2}/.test(schedUpper);
                         const isWorkday = !schedUpper.includes('OFF') && !schedUpper.includes('VAC') && !schedUpper.includes('FESTA') && !schedUpper.includes('HOLIDAY') && !schedUpper.includes('LOA') && !schedUpper.includes('PTO') && !schedUpper.includes('SL') && !schedUpper.includes('ATT') && !schedUpper.includes('SUSPP');
                         const latestDateStr = format(latestDate, 'yyyy-MM-dd');
@@ -289,32 +386,30 @@ export default function App() {
                           }
                         }
 
-                        if (!isWorkday || hasShiftStarted) {
-                            newRecords.push({
-                               date: dateStr,
-                               totalWorkTimeMillis: 0,
-                               totalOfflineTimeMillis: 0,
-                               breaks: [],
-                               mealDuration: 0,
-                               mealOverbreak: 0,
-                               shortDuration: 0,
-                               shortOverbreak: 0,
-                               wellnessDuration: 0,
-                               wellnessOverbreak: 0,
-                               prayingDuration: 0,
-                               prayingOverbreak: 0,
-                               wcDuration: 0,
-                               wcOverbreak: 0,
-                               idleDuration: 0,
-                               idleOverbreak: 0,
-                               totalBreakMinutes: 0,
-                               tardinessMinutes: 0,
-                               earlyLeaveMinutes: 0,
-                               inferredShift: scheduleForDay,
-                               scheduledShift: scheduleForDay,
-                               isAbsence: isWorkday && dateStr < latestDateStr
-                            });
-                        }
+                        newRecords.push({
+                           date: dateStr,
+                           totalWorkTimeMillis: 0,
+                           totalOfflineTimeMillis: 0,
+                           breaks: [],
+                           mealDuration: 0,
+                           mealOverbreak: 0,
+                           shortDuration: 0,
+                           shortOverbreak: 0,
+                           wellnessDuration: 0,
+                           wellnessOverbreak: 0,
+                           prayingDuration: 0,
+                           prayingOverbreak: 0,
+                           wcDuration: 0,
+                           wcOverbreak: 0,
+                           idleDuration: 0,
+                           idleOverbreak: 0,
+                           totalBreakMinutes: 0,
+                           tardinessMinutes: 0,
+                           earlyLeaveMinutes: 0,
+                           inferredShift: shiftForDay,
+                           scheduledShift: shiftForDay,
+                           isAbsence: isWorkday && hasShiftStarted
+                        });
                     }
                  }
                  d.setDate(d.getDate() + 1);
@@ -373,10 +468,10 @@ export default function App() {
        return s;
     });
 
-    // 2. Add agents ONLY in calendar (unmatched ones)
+    // 3. Add agents ONLY in calendar (unmatched ones)
     const calendarOnlySummaries: EmployeeSummary[] = [];
     calendarData.forEach(calEntry => {
-       const normName = calEntry.name.toLowerCase().trim();
+       const normName = normalizeName(calEntry.name);
        if (matchedCalendarNames.has(normName)) return;
 
        const dailyRecords: EmployeeDayRecord[] = [];
@@ -401,7 +496,46 @@ export default function App() {
                 const isSusppShift = (shiftUpper.includes('SUSPP') || shiftUpper.includes('SUSPENSÃO')) && !isWorkingShift;
                 const isAttShift = (shiftUpper.includes('ATT') || shiftUpper.includes('ATTRITION') || shiftUpper.includes('RESIGN') || shiftUpper.includes('SAÍDA')) && !isWorkingShift;
 
-                dailyRecords.push({
+                 let hasShiftStarted = true;
+                 if (isWorkday) {
+                    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+                    const todayStr = format(now, 'yyyy-MM-dd');
+                    const latestDateStr = format(latestDate, 'yyyy-MM-dd');
+                    
+                    if (dateStr > latestDateStr) {
+                       hasShiftStarted = false;
+                    } else if (dateStr === latestDateStr && isWorkingShift) {
+                       const match = schedUpper.match(/(\d{1,2}):(\d{2})/);
+                       if (match) {
+                          const h = parseInt(match[1], 10);
+                          const m = parseInt(match[2], 10);
+                          const shiftStartMinutes = h * 60 + m;
+                          const latestMinutes = latestDate.getHours() * 60 + latestDate.getMinutes();
+                          if (shiftStartMinutes > latestMinutes) {
+                             hasShiftStarted = false;
+                          }
+                       }
+                    }
+                    
+                    if (hasShiftStarted) {
+                        if (dateStr > todayStr) {
+                           hasShiftStarted = false;
+                        } else if (dateStr === todayStr && isWorkingShift) {
+                           const match = schedUpper.match(/(\d{1,2}):(\d{2})/);
+                           if (match) {
+                              const h = parseInt(match[1], 10);
+                              const m = parseInt(match[2], 10);
+                              const shiftStartMinutes = h * 60 + m;
+                              const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                              if (shiftStartMinutes > currentMinutes) {
+                                 hasShiftStarted = false;
+                              }
+                           }
+                        }
+                    }
+                 }
+
+                 dailyRecords.push({
                   date: dateStr,
                   employeeName: calEntry.name,
                   totalWorkTimeMillis: 0,
@@ -434,7 +568,7 @@ export default function App() {
                   isLOA: isLoaShift,
                   isSUSPP: isSusppShift,
                   isATT: isAttShift,
-                  isAbsence: isWorkday && dateStr < format(latestDate, 'yyyy-MM-dd')
+                  isAbsence: isWorkday && hasShiftStarted
                 });
              }
              d.setDate(d.getDate() + 1);
@@ -446,7 +580,7 @@ export default function App() {
           email: calEntry.email || '',
           department: '',
           lob: calEntry.lob,
-          language: calEntry.language,
+          language: normalizeLanguage(calEntry.language),
           supervisor: calEntry.supervisor,
           role: calEntry.role,
           shift: calEntry.shift,
@@ -468,28 +602,7 @@ export default function App() {
        });
     });
 
-    const combinedSummaries = calendarData.length > 0 ? [...updatedByteworks, ...calendarOnlySummaries] : [...summaries];
-
-    // 3. Apply Staff Info overrides if available (by email matching)
-    if (staffInfoData.length > 0) {
-       return combinedSummaries.map(s => {
-          if (!s.email) return s;
-          const staffEntry = staffInfoData.find(si => si.email === s.email?.toLowerCase());
-          if (staffEntry) {
-             const newName = staffEntry.fullName;
-             return {
-                ...s,
-                employeeName: newName,
-                lob: staffEntry.lob || s.lob,
-                language: staffEntry.language || s.language,
-                role: staffEntry.role || s.role,
-                supervisor: staffEntry.tl || s.supervisor,
-                dailyRecords: s.dailyRecords.map(r => ({ ...r, employeeName: newName, lob: staffEntry.lob || r.lob }))
-             };
-          }
-          return s;
-       });
-    }
+    const combinedSummaries = calendarData.length > 0 ? [...updatedSummaries, ...calendarOnlySummaries] : [...updatedSummaries];
 
     return combinedSummaries;
   }, [summaries, calendarData, staffInfoData, globalMinDate, globalMaxDate, latestDate]);
@@ -555,7 +668,7 @@ export default function App() {
             lob: c.lob,
             role: c.role,
             shift: c.shift,
-            language: c.language,
+            language: normalizeLanguage(c.language),
             calendarName: c.name,
             dailyRecords: dailyRecords.sort((a, b) => a.date.localeCompare(b.date))
          } as EmployeeSummary;
@@ -661,6 +774,22 @@ export default function App() {
            if (!selectedDateStrings.includes(r.date)) return false;
         }
         
+        const isShiftCrossingMidnight = (shiftStr: string | null | undefined) => {
+            if (!shiftStr) return false;
+            const cleaned = shiftStr.replace(/\s+/g, '').replace('h', ':').replace('hrs', '').replace('H', ':');
+            const times = cleaned.split('-');
+            if (times.length === 2) {
+                const [sh, sm] = times[0].split(':').map(Number);
+                const [eh, em] = times[1].split(':').map(Number);
+                if (!isNaN(sh) && !isNaN(eh)) {
+                    let startTotal = sh * 60 + (sm || 0);
+                    let endTotal = eh * 60 + (em || 0);
+                    if (endTotal <= startTotal) return true;
+                }
+            }
+            return false;
+        };
+
         if (timeFilter !== 'all') {
            const d = new Date(r.date + 'T12:00:00');
            if (timeFilter === 'month') {
@@ -673,10 +802,20 @@ export default function App() {
               if (d < startOfWeek || d > endOfWeek) return false;
            }
            if (timeFilter === 'day') {
-              if (!(d.getDate() === td && d.getMonth() === tm && d.getFullYear() === ty)) return false;
+              const isToday = d.getDate() === td && d.getMonth() === tm && d.getFullYear() === ty;
+              const isYesterday = d.getDate() === yd && d.getMonth() === ym && d.getFullYear() === yy;
+              if (isToday) return true;
+              if (isYesterday && (isShiftCrossingMidnight(r.scheduledShift) || isShiftCrossingMidnight(r.inferredShift))) return true;
+              return false;
            }
            if (timeFilter === 'yesterday') {
-              if (!(d.getDate() === yd && d.getMonth() === ym && d.getFullYear() === yy)) return false;
+              const isYesterday = d.getDate() === yd && d.getMonth() === ym && d.getFullYear() === yy;
+              const b4Date = new Date(yesterday);
+              b4Date.setDate(b4Date.getDate() - 1);
+              const isDayBeforeYesterday = d.getDate() === b4Date.getDate() && d.getMonth() === b4Date.getMonth() && d.getFullYear() === b4Date.getFullYear();
+              if (isYesterday) return true;
+              if (isDayBeforeYesterday && (isShiftCrossingMidnight(r.scheduledShift) || isShiftCrossingMidnight(r.inferredShift))) return true;
+              return false;
            }
         }
         return true;
@@ -1600,7 +1739,7 @@ export default function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-y-auto">
+      <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header - Geometric Balance */}
         <header className="sticky top-0 z-[60] flex justify-between items-center py-3 px-4 sm:px-6 bg-white/95 backdrop-blur-md border-b border-slate-200">
           <div className="flex items-center gap-4">
@@ -1624,11 +1763,18 @@ export default function App() {
                 <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleStaffInfoUpload} />
              </label>
             {summaries.length > 0 && (
-              <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative">
-                 <Upload size={14} className="text-emerald-600" /> 
-                 <span className="hidden sm:inline">{summaries.length > 0 ? t('updateExtract') : t('addExtract')}</span>
-                 <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
-              </label>
+              <div className="relative">
+                <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative">
+                   <Upload size={14} className="text-emerald-600" /> 
+                   <span className="hidden sm:inline">{summaries.length > 0 ? t('updateExtract') : t('addExtract')}</span>
+                   <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
+                </label>
+                {lastExtractTime && (
+                  <span className="absolute top-8 left-0 text-[9px] text-slate-400 whitespace-nowrap">
+                    {t('lastUpdate')}{format(lastExtractTime, 'HH:mm:ss')}
+                  </span>
+                )}
+              </div>
             )}
             {summaries.length > 0 && (
               <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative">
@@ -1647,14 +1793,6 @@ export default function App() {
                 <Button onClick={handleExport} className="bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-xs font-bold flex items-center gap-1.5 h-8 px-4 shadow-sm shadow-slate-200">
                   <FileDown size={14} /> <span className="hidden sm:inline">{t('exportPdf')}</span>
                 </Button>
-                <div className="hidden md:flex flex-col items-center justify-center bg-slate-900 text-white px-3 h-8 rounded-lg shadow-sm border border-slate-700">
-                  <span className="text-[12px] font-black tracking-widest font-mono text-emerald-400">
-                    {format(currentTime, 'HH:mm:ss')}
-                  </span>
-                  <span className="text-[7px] font-bold uppercase tracking-wider text-slate-400 -mt-1">
-                    Update: {lastExtractTime ? format(lastExtractTime, 'HH:mm:ss') : '--:--:--'}
-                  </span>
-                </div>
               </div>
             )}
                 <div className="flex lg:hidden gap-1 bg-white border border-slate-200 rounded-lg p-1">
@@ -1678,7 +1816,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="p-4 sm:p-6">
+        <div className="flex-1 p-4 sm:p-6 flex flex-col overflow-hidden min-h-0">
           <AnimatePresence mode="wait">
             {summaries.length === 0 ? (
               activeTab === 'howto' ? (
@@ -1742,10 +1880,10 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4 }}
-                className="space-y-8"
+                className="flex-1 flex flex-col overflow-hidden space-y-0 min-h-0"
               >
                 {activeTab !== 'howto' && activeTab !== 'support_schedule' && (
-                  <div className="sticky lg:top-[56px] top-[56px] z-[50] bg-slate-50/95 backdrop-blur-md border-b border-slate-200 pb-4 pt-4 sm:pt-6 px-4 sm:px-6 -mx-4 sm:-mx-6 -mt-4 sm:-mt-6 mb-8 shadow-sm">
+                  <div className="shrink-0 z-[50] bg-slate-50/95 backdrop-blur-md border-b border-slate-200 pb-4 pt-4 sm:pt-6 px-4 sm:px-6 -mx-4 sm:-mx-6 -mt-4 sm:-mt-6 mb-8 shadow-sm">
                     <div className="flex flex-col gap-3">
                     <div className="flex flex-col gap-2 items-start">
                       <h3 className="text-slate-500 text-xs font-bold uppercase tracking-widest leading-none">{t('realtimeMetrics')}</h3>
@@ -1753,29 +1891,6 @@ export default function App() {
                          onClick={() => {
                            const nextValue = !showRealTime;
                            setShowRealTime(nextValue);
-                           if (nextValue) {
-                             setTimeFilter('day');
-                             setShiftFilter([]);
-                             setSelectedDates([]);
-                             // Desativar TODOS os filtros de ocorrência e extras
-                             setIncludeCheckGlobal(false);
-                             setIncludeWcGlobal(false);
-                             setIncludeIdleGlobal(false);
-                             setIncludeNonModGlobal(false);
-                             setIncludeTardinessGlobal(false);
-                             setIncludeMinorTardinessGlobal(false);
-                             setIncludeEarlyLeaveGlobal(false);
-                             setIncludeAbsencesGlobal(false);
-                             setIncludeShort30MinGlobal(false);
-                             setIncludeOffboardedGlobal(false);
-                             setTypeFilter('all');
-                             setIncludeATTGlobal(false);
-                             setIncludeLOAGlobal(false);
-                             setIncludePTOGlobal(false);
-                             setIncludeSLGlobal(false);
-                             setIncludeSUSPPGlobal(false);
-                             setIncludeOFFGlobal(false);
-                           }
                          }}
                          className={`px-2 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 min-w-max shadow-sm w-fit ${showRealTime ? 'bg-red-500 text-white border-red-500' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
                        >
@@ -1789,6 +1904,15 @@ export default function App() {
                          <Users size={12} className="text-blue-500" />
                          Staff now
                        </button>
+                       {missingStaffNames.length > 0 && (
+                         <button 
+                           onClick={() => setIsMissingStaffOpen(true)}
+                           className="px-2 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100 shadow-sm w-fit mt-1"
+                         >
+                           <UserX size={12} className="text-amber-500" />
+                           Missing in Schedule ({missingStaffNames.length})
+                         </button>
+                       )}
                     </div>
                     <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 justify-between w-full mt-2">
                       <p className="text-2xl font-black text-slate-900 hidden sm:block whitespace-nowrap">{t('auditResults')}</p>
@@ -2099,7 +2223,7 @@ export default function App() {
                 </div>
               )}
 
-                <div className="min-h-[600px]">
+                <div className={`flex-1 relative flex flex-col pb-20 min-h-0 ${activeTab !== 'list' ? 'overflow-y-auto w-full custom-scrollbar pt-8' : 'pt-4'}`}>
                   {activeTab === 'dashboard' ? (
                     <StatsDashboard 
                       summaries={filteredSummaries} 
@@ -2125,6 +2249,7 @@ export default function App() {
                       globalIncludeOFF={includeOFFGlobal}
                       globalFilterMajorOverbreaks={false} 
                       globalShiftFilter={shiftFilter} 
+                      showRealTime={showRealTime}
                     />
                   ) : activeTab === 'lobs' ? (
                     <LOBAnalytics summaries={filteredSummaries} showRealTime={showRealTime} />
@@ -2216,7 +2341,7 @@ export default function App() {
 
               const tlResponsibilities: Record<string, Record<string, Set<string>>> = {};
               mergedSummaries.forEach(agent => {
-                if (agent.supervisor) {
+                if (agent.supervisor && agent.lob !== 'Stranded Resource') {
                   const tlName = agent.supervisor;
                   if (!tlResponsibilities[tlName]) {
                     tlResponsibilities[tlName] = {};
@@ -2238,7 +2363,7 @@ export default function App() {
                      if (!tlResponsibilities[s.employeeName]) {
                         tlResponsibilities[s.employeeName] = {};
                      }
-                     if (s.lob && s.lob.toUpperCase() !== 'OS') {
+                     if (s.lob && s.lob.toUpperCase() !== 'OS' && s.lob !== 'Stranded Resource') {
                          if (!tlResponsibilities[s.employeeName][s.lob]) {
                              tlResponsibilities[s.employeeName][s.lob] = new Set<string>();
                          }
@@ -2325,6 +2450,35 @@ export default function App() {
                  </div>
               );
             })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isMissingStaffOpen} onOpenChange={setIsMissingStaffOpen}>
+        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black flex items-center gap-3">
+              <UserX className="text-amber-600" />
+              Missing in Schedule
+            </DialogTitle>
+            <DialogDescription className="font-bold text-slate-500">
+              Agents present in Staff Info but not found in the uploaded Schedule.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-6">
+             {missingStaffNames.length === 0 ? (
+                 <div className="py-12 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                     <p className="text-slate-500 font-bold tracking-tight">All Staff Info agents were found in the schedule.</p>
+                 </div>
+             ) : (
+                <div className="grid grid-cols-1 gap-3">
+                   {missingStaffNames.map((name, index) => (
+                      <div key={`${name}-${index}`} className="flex flex-col p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                          <span className="font-bold text-slate-900">{name}</span>
+                      </div>
+                   ))}
+                </div>
+             )}
           </div>
         </DialogContent>
       </Dialog>

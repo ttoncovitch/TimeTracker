@@ -7,6 +7,7 @@ export interface StaffInfoEntry {
     lob: string;
     language: string;
     tl?: string;
+    status: string;
 }
 
 export async function parseStaffInfoFile(file: File): Promise<{ data: StaffInfoEntry[] }> {
@@ -43,6 +44,7 @@ export async function parseStaffInfoFile(file: File): Promise<{ data: StaffInfoE
            const row = rows[i];
            if (!row || row.length < 5) continue;
            
+           const statusStr = String(row[0] || '').trim().toUpperCase();
            const name = String(row[4] || '').trim();
            // if name is empty skip
            if (!name) continue;
@@ -61,7 +63,8 @@ export async function parseStaffInfoFile(file: File): Promise<{ data: StaffInfoE
                role: roleStr,
                lob: lobStr,
                language: langStr,
-               tl: tlStr
+               tl: tlStr,
+               status: statusStr
            });
         }
 
