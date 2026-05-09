@@ -201,7 +201,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
   return (
     <>
     <div className="flex-1 min-h-0 bg-white rounded-[2rem] shadow-2xl shadow-slate-200/40 border border-slate-200 flex flex-col overflow-hidden">
-      <div className="flex flex-col sm:flex-row gap-4 items-center justify-between shrink-0 p-4 border-b border-slate-100 bg-slate-50/80 z-20">
+      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between shrink-0 p-3 border-b border-slate-100 bg-slate-50/80 z-20">
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-2xl">
             <div className="relative w-full max-w-xs">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -241,23 +241,23 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead className="bg-slate-50/95 backdrop-blur border-b border-slate-200 text-[10px] uppercase font-black text-slate-500 tracking-widest sticky top-0 z-30 outline outline-1 outline-slate-200 shadow-sm">
                 <tr>
-                  <th className="py-4 pl-8 pr-4 font-black whitespace-nowrap">{String(t('agents') || '').toUpperCase()} ({filtered.length})</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group focus:outline-none" onClick={() => handleSort('tasks')}>TASKS {sortBy === 'tasks' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('meal')}>Meal {sortBy === 'meal' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('short')}>Short {sortBy === 'short' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('wellness')}>Well. {sortBy === 'wellness' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('praying')}>Pray. {sortBy === 'praying' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('nonMod')}>NON-MOD {sortBy === 'nonMod' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('reviewAndAppeal')}>R&A {sortBy === 'reviewAndAppeal' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('awaitingTasks')}>A.T {sortBy === 'awaitingTasks' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('wc')}>Organic {sortBy === 'wc' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('idle')}>IDLE {sortBy === 'idle' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('tardiness')}>TARDINESS {sortBy === 'tardiness' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('earlyLeave')}>EARLY LEAVE {sortBy === 'earlyLeave' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('absences')}>{String(t('absencesString') || '').toUpperCase()} {sortBy === 'absences' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('short30Min')}>{t('shortBreaks30Title')} (Dias) {sortBy === 'short30Min' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('total')}>{t('total')} {sortBy === 'total' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
-                  <th className="py-4 pl-4 pr-8 text-right font-black whitespace-nowrap">{t('status')}</th>
+                  <th className="py-2.5 pl-8 pr-4 font-black whitespace-nowrap">{String(t('agents') || '').toUpperCase()} ({filtered.length})</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group focus:outline-none" onClick={() => handleSort('tasks')}>TASKS {sortBy === 'tasks' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('meal')}>Meal {sortBy === 'meal' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('short')}>Short {sortBy === 'short' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('wellness')}>Well. {sortBy === 'wellness' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('praying')}>Pray. {sortBy === 'praying' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('nonMod')}>NON-MOD {sortBy === 'nonMod' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('reviewAndAppeal')}>R&A {sortBy === 'reviewAndAppeal' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('awaitingTasks')}>A.T {sortBy === 'awaitingTasks' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('wc')}>Organic {sortBy === 'wc' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('idle')}>IDLE {sortBy === 'idle' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('tardiness')}>TARDINESS {sortBy === 'tardiness' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('earlyLeave')}>EARLY LEAVE {sortBy === 'earlyLeave' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('absences')}>{String(t('absencesString') || '').toUpperCase()} {sortBy === 'absences' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('short30Min')}>{t('shortBreaks30Title')} (Dias) {sortBy === 'short30Min' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group" onClick={() => handleSort('total')}>{t('total')} {sortBy === 'total' && <span className="text-[10px] ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</th>
+                  <th className="py-2.5 pl-4 pr-8 text-right font-black whitespace-nowrap">{t('status')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -288,13 +288,15 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                     ? s.dailyRecords.some(r => isShiftMismatch(r.scheduledShift, r.inferredShift)) 
                     : false;
 
+                  const isTotallyAbsent = s.dailyRecords.length > 0 && s.dailyRecords.every(r => r.isAbsence);
+
                   return (
                     <tr 
                       key={`${s.employeeName}-${idx}`} 
                       onClick={() => setSelectedEmp(allSummaries.find(all => all.employeeName === s.employeeName) || s)}
                       className={`cursor-pointer transition-all hover:bg-slate-50/80 group ${isAlertRow ? 'bg-rose-50/10' : 'bg-white'}`}
                     >
-                      <td className="py-4 pl-8 pr-4 relative">
+                      <td className="py-2.5 pl-8 pr-4 relative">
                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${hasIdleExc ? 'bg-red-500' : hasWcExc ? 'bg-amber-500' : 'bg-transparent'}`} />
                         <div className="flex items-center gap-2">
                           <p className={`font-bold text-sm text-slate-800 group-hover:text-blue-600 transition-colors ${hasIdleExc ? 'underline decoration-red-500/50 decoration-2 underline-offset-4' : hasWcExc ? 'underline decoration-amber-500/50 decoration-2 underline-offset-4' : ''} truncate max-w-[200px]`}>
@@ -371,9 +373,9 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                         })()}
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={s.totalTasks !== undefined && s.totalTasks > 0 ? `${s.totalTasks} tasks` : ''}>
+                      <td className="py-2.5 px-2 text-center" title={s.totalTasks !== undefined && s.totalTasks > 0 ? `${s.totalTasks} tasks` : ''}>
                         {s.totalTasks !== undefined && s.totalTasks > 0 ? (
-                           <span className="inline-flex items-center justify-center text-sm px-2 py-1 rounded bg-indigo-50 text-indigo-700 font-black">
+                           <span className="inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-black">
                              {s.totalTasks}
                            </span>
                         ) : (
@@ -381,117 +383,117 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                         )}
                       </td>
                       
-                      <td className="py-4 px-2 text-center" title={mealTotal > 0 ? `${mealTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${hasMealOver ? 'bg-rose-100 text-rose-700 font-black' : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {mealTotal > 0 ? `${mealTotal}m` : t('okShort')}
+                      <td className="py-2.5 px-2 text-center" title={mealTotal > 0 ? `${mealTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${hasMealOver ? 'bg-rose-100 text-rose-700 font-black' : (isTotallyAbsent && mealTotal === 0 ? 'text-slate-300 font-bold' : 'bg-emerald-50 text-emerald-600 font-bold')}`}>
+                          {mealTotal > 0 ? `${mealTotal}m` : (isTotallyAbsent ? '-' : t('okShort'))}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={shortTotal > 0 ? `${shortTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${hasShortOver ? 'bg-rose-100 text-rose-700 font-black' : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {shortTotal > 0 ? `${shortTotal}m` : t('okShort')}
+                      <td className="py-2.5 px-2 text-center" title={shortTotal > 0 ? `${shortTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${hasShortOver ? 'bg-rose-100 text-rose-700 font-black' : (isTotallyAbsent && shortTotal === 0 ? 'text-slate-300 font-bold' : 'bg-emerald-50 text-emerald-600 font-bold')}`}>
+                          {shortTotal > 0 ? `${shortTotal}m` : (isTotallyAbsent ? '-' : t('okShort'))}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={wellnessTotal > 0 ? `${wellnessTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${hasWellnessOver ? 'bg-rose-100 text-rose-700 font-black' : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {wellnessTotal > 0 ? `${wellnessTotal}m` : t('okShort')}
+                      <td className="py-2.5 px-2 text-center" title={wellnessTotal > 0 ? `${wellnessTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${hasWellnessOver ? 'bg-rose-100 text-rose-700 font-black' : (isTotallyAbsent && wellnessTotal === 0 ? 'text-slate-300 font-bold' : 'bg-emerald-50 text-emerald-600 font-bold')}`}>
+                          {wellnessTotal > 0 ? `${wellnessTotal}m` : (isTotallyAbsent ? '-' : t('okShort'))}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={prayingTotal > 0 ? `${prayingTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${hasPrayingOver ? 'bg-rose-100 text-rose-700 font-black' : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {prayingTotal > 0 ? `${prayingTotal}m` : t('okShort')}
+                      <td className="py-2.5 px-2 text-center" title={prayingTotal > 0 ? `${prayingTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${hasPrayingOver ? 'bg-rose-100 text-rose-700 font-black' : (isTotallyAbsent && prayingTotal === 0 ? 'text-slate-300 font-bold' : 'bg-emerald-50 text-emerald-600 font-bold')}`}>
+                          {prayingTotal > 0 ? `${prayingTotal}m` : (isTotallyAbsent ? '-' : t('okShort'))}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={nonModTotal > 0 ? `${nonModTotal}m em NON-MOD` : '0m em NON-MOD'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${nonModTotal > 0 ? 'bg-teal-50 text-teal-700 font-black border border-teal-200' : 'text-slate-300 font-bold'}`}>
-                          {nonModTotal}m
+                      <td className="py-2.5 px-2 text-center" title={nonModTotal > 0 ? `${nonModTotal}m em NON-MOD` : '0m em NON-MOD'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${nonModTotal > 0 ? 'bg-teal-50 text-teal-700 font-black border border-teal-200' : 'text-slate-300 font-bold'}`}>
+                          {nonModTotal > 0 ? `${nonModTotal}m` : (isTotallyAbsent ? '-' : '0m')}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={s.totalReviewAndAppealMinutes > 0 ? `${s.totalReviewAndAppealMinutes}m em R&A` : '0m em R&A'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${s.totalReviewAndAppealMinutes > 0 ? 'bg-purple-50 text-purple-700 font-black border border-purple-200' : 'text-slate-300 font-bold'}`}>
-                          {s.totalReviewAndAppealMinutes}m
+                      <td className="py-2.5 px-2 text-center" title={s.totalReviewAndAppealMinutes > 0 ? `${s.totalReviewAndAppealMinutes}m em R&A` : '0m em R&A'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${s.totalReviewAndAppealMinutes > 0 ? 'bg-purple-50 text-purple-700 font-black border border-purple-200' : 'text-slate-300 font-bold'}`}>
+                          {s.totalReviewAndAppealMinutes > 0 ? `${s.totalReviewAndAppealMinutes}m` : (isTotallyAbsent ? '-' : '0m')}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={s.totalAwaitingTasksMinutes > 0 ? `${s.totalAwaitingTasksMinutes}m em A.T` : '0m em A.T'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${s.totalAwaitingTasksMinutes > 0 ? 'bg-indigo-50 text-indigo-700 font-black border border-indigo-200' : 'text-slate-300 font-bold'}`}>
-                          {s.totalAwaitingTasksMinutes}m
+                      <td className="py-2.5 px-2 text-center" title={s.totalAwaitingTasksMinutes > 0 ? `${s.totalAwaitingTasksMinutes}m em A.T` : '0m em A.T'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${s.totalAwaitingTasksMinutes > 0 ? 'bg-indigo-50 text-indigo-700 font-black border border-indigo-200' : 'text-slate-300 font-bold'}`}>
+                          {s.totalAwaitingTasksMinutes > 0 ? `${s.totalAwaitingTasksMinutes}m` : (isTotallyAbsent ? '-' : '0m')}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={wcTotal > 0 ? `${wcTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${hasWcExc ? 'bg-amber-100 text-amber-700 font-black border border-amber-200' : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {wcTotal > 0 ? `${wcTotal}m` : t('okShort')}
+                      <td className="py-2.5 px-2 text-center" title={wcTotal > 0 ? `${wcTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${hasWcExc ? 'bg-amber-100 text-amber-700 font-black border border-amber-200' : (isTotallyAbsent && wcTotal === 0 ? 'text-slate-300 font-bold' : 'bg-emerald-50 text-emerald-600 font-bold')}`}>
+                          {wcTotal > 0 ? `${wcTotal}m` : (isTotallyAbsent ? '-' : t('okShort'))}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={idleTotal > 0 ? `${idleTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${hasIdleExc ? 'bg-red-100 text-red-700 font-black border border-red-200' : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {idleTotal > 0 ? `${idleTotal}m` : t('okShort')}
+                      <td className="py-2.5 px-2 text-center" title={idleTotal > 0 ? `${idleTotal}m ${t('overbreakExceeded')}` : 'No overbreak'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${hasIdleExc ? 'bg-red-100 text-red-700 font-black border border-red-200' : (isTotallyAbsent && idleTotal === 0 ? 'text-slate-300 font-bold' : 'bg-emerald-50 text-emerald-600 font-bold')}`}>
+                          {idleTotal > 0 ? `${idleTotal}m` : (isTotallyAbsent ? '-' : t('okShort'))}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={tardinessTotal > 0 ? `${tardinessTotal}m atraso` : 'No tardiness'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${tardinessTotal > 0 ? 'bg-orange-100 text-orange-700 font-black border border-orange-200' : 'text-slate-300 font-bold'}`}>
-                          {tardinessTotal > 0 ? `${tardinessTotal}m` : '0m'}
+                      <td className="py-2.5 px-2 text-center" title={tardinessTotal > 0 ? `${tardinessTotal}m atraso` : 'No tardiness'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${tardinessTotal > 0 ? 'bg-orange-100 text-orange-700 font-black border border-orange-200' : 'text-slate-300 font-bold'}`}>
+                          {tardinessTotal > 0 ? `${tardinessTotal}m` : (isTotallyAbsent ? '-' : '0m')}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={earlyLeaveTotal > 0 ? `${earlyLeaveTotal}m saída antecipada` : 'No early leave'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${earlyLeaveTotal > 0 ? 'bg-orange-100 text-orange-700 font-black border border-orange-200' : 'text-slate-300 font-bold'}`}>
-                          {earlyLeaveTotal > 0 ? `${earlyLeaveTotal}m` : '0m'}
+                      <td className="py-2.5 px-2 text-center" title={earlyLeaveTotal > 0 ? `${earlyLeaveTotal}m saída antecipada` : 'No early leave'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${earlyLeaveTotal > 0 ? 'bg-orange-100 text-orange-700 font-black border border-orange-200' : 'text-slate-300 font-bold'}`}>
+                          {earlyLeaveTotal > 0 ? `${earlyLeaveTotal}m` : (isTotallyAbsent ? '-' : '0m')}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={(s.totalAbsences || 0) > 0 ? `${s.totalAbsences} ${t('absencesString').toLowerCase()} no período` : t('withoutRecords')}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${(s.totalAbsences || 0) > 0 ? 'bg-red-100 text-red-700 font-black border border-red-200' : 'text-slate-300 font-bold'}`}>
+                      <td className="py-2.5 px-2 text-center" title={(s.totalAbsences || 0) > 0 ? `${s.totalAbsences} ${t('absencesString').toLowerCase()} no período` : t('withoutRecords')}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${(s.totalAbsences || 0) > 0 ? 'bg-red-100 text-red-700 font-black border border-red-200' : 'text-slate-300 font-bold'}`}>
                           {(s.totalAbsences || 0) > 0 ? s.totalAbsences : '0'}
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={(s.totalShort30MinRecords || 0) > 0 ? `${s.totalShort30MinRecords} dias` : '0 dias'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${(s.totalShort30MinRecords || 0) > 0 ? 'bg-emerald-100/70 border border-emerald-200 text-emerald-800 font-black' : 'text-slate-300 font-bold'}`}>
+                      <td className="py-2.5 px-2 text-center" title={(s.totalShort30MinRecords || 0) > 0 ? `${s.totalShort30MinRecords} dias` : '0 dias'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${(s.totalShort30MinRecords || 0) > 0 ? 'bg-emerald-100/70 border border-emerald-200 text-emerald-800 font-black' : 'text-slate-300 font-bold'}`}>
                           {s.totalShort30MinRecords || 0}d
                         </span>
                       </td>
 
-                      <td className="py-4 px-2 text-center" title={s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m ${isWcOnly ? 'Organic' : t('overbreakExceeded')}` : 'No overbreak'}>
-                        <span className={`inline-flex items-center justify-center text-sm px-2 py-1 rounded transition-colors ${s.totalOverbreakMinutes > 0 ? (isWcOnly ? 'bg-amber-100 border border-amber-200 text-amber-600 font-black' : 'bg-rose-100 text-rose-700 font-black') : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
+                      <td className="py-2.5 px-2 text-center" title={s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m ${isWcOnly ? 'Organic' : t('overbreakExceeded')}` : 'No overbreak'}>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${s.totalOverbreakMinutes > 0 ? (isWcOnly ? 'bg-amber-100 border border-amber-200 text-amber-600 font-black' : 'bg-rose-100 text-rose-700 font-black') : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
                           {s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m` : t('okShort')}
                         </span>
                       </td>
 
-                      <td className="py-4 pl-4 pr-8 text-right">
+                      <td className="py-2.5 pl-4 pr-8 text-right">
                         {s.isATT ? (
-                            <span className="inline-block px-2 py-1 bg-slate-900 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">ATT</span>
+                            <span className="inline-block px-1.5 py-0.5 bg-slate-900 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">ATT</span>
                         ) : s.isOffboarded ? (
-                            <span className="inline-block px-2 py-1 bg-slate-200 text-slate-700 rounded-md text-[10px] font-black uppercase tracking-tighter">OFFBOARDED</span>
+                            <span className="inline-block px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded-md text-[10px] font-black uppercase tracking-tighter">OFFBOARDED</span>
                         ) : s.isLOA ? (
-                            <span className="inline-block px-2 py-1 bg-indigo-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">LOA</span>
+                            <span className="inline-block px-1.5 py-0.5 bg-indigo-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">LOA</span>
                         ) : s.isPTO ? (
-                            <span className="inline-block px-2 py-1 bg-cyan-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">PTO</span>
+                            <span className="inline-block px-1.5 py-0.5 bg-cyan-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">PTO</span>
                         ) : s.isSL ? (
-                            <span className="inline-block px-2 py-1 bg-rose-400 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">SL</span>
+                            <span className="inline-block px-1.5 py-0.5 bg-rose-400 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">SL</span>
                         ) : s.isSUSPP ? (
-                            <span className="inline-block px-2 py-1 bg-red-700 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">SUSPP</span>
+                            <span className="inline-block px-1.5 py-0.5 bg-red-700 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">SUSPP</span>
                         ) : s.isOFF ? (
-                            <span className="inline-block px-2 py-1 bg-slate-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">OFF</span>
+                            <span className="inline-block px-1.5 py-0.5 bg-slate-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">OFF</span>
                         ) : isWcOnly && s.totalOverbreakMinutes > 0 ? (
-                           <span className="inline-block px-2 py-1 bg-amber-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter">ORGANIC TOTAL</span>
+                           <span className="inline-block px-1.5 py-0.5 bg-amber-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter">ORGANIC TOTAL</span>
                         ) : hasIdleExc ? (
-                          <span className="inline-block px-2 py-1 bg-red-100 text-red-700 rounded-md text-[10px] font-black uppercase tracking-tighter">IDLE</span>
+                          <span className="inline-block px-1.5 py-0.5 bg-red-100 text-red-700 rounded-md text-[10px] font-black uppercase tracking-tighter">IDLE</span>
                         ) : hasWcExc ? (
-                          <span className="inline-block px-2 py-1 bg-amber-100 text-amber-700 rounded-md text-[10px] font-black uppercase tracking-tighter">ORGANIC EXC.</span>
+                          <span className="inline-block px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-md text-[10px] font-black uppercase tracking-tighter">ORGANIC EXC.</span>
                         ) : s.totalOverbreakMinutes > 30 ? (
-                          <span className="inline-block px-2 py-1 bg-rose-600 text-white rounded-md text-[10px] font-black uppercase tracking-tighter">OVERBREAK</span>
+                          <span className="inline-block px-1.5 py-0.5 bg-rose-600 text-white rounded-md text-[10px] font-black uppercase tracking-tighter">OVERBREAK</span>
                         ) : s.totalOverbreakMinutes > 0 ? (
-                          <span className="inline-block px-2 py-1 bg-rose-100 text-rose-700 rounded-md text-[10px] font-black uppercase tracking-tighter">{t('alert')}</span>
+                          <span className="inline-block px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded-md text-[10px] font-black uppercase tracking-tighter">{t('alert')}</span>
                         ) : (
-                          <span className="inline-block px-2 py-1 bg-emerald-100 text-emerald-700 rounded-md text-[10px] font-black uppercase tracking-tighter">{t('stable')}</span>
+                          <span className="inline-block px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-md text-[10px] font-black uppercase tracking-tighter">{t('stable')}</span>
                         )}
                       </td>
                     </tr>
@@ -1202,7 +1204,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                             const durFormat = dur > 59 ? `${Math.floor(dur / 60)}h${dur % 60 > 0 ? ` ${dur % 60}m` : ''}` : `${dur}m`;
                             
                             return (
-                                <div key={i} className={`flex items-center px-2 py-1 rounded text-[10px] border gap-1.5 shadow-sm ${isOverbreak ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-200'}`}>
+                                <div key={i} className={`flex items-center px-1.5 py-0.5 rounded text-[10px] border gap-1.5 shadow-sm ${isOverbreak ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-200'}`}>
                                     <span className={`w-2 h-2 rounded-full ${dotColor}`} />
                                     <span className={`font-bold ${isOverbreak ? 'text-rose-900' : 'text-slate-700'}`}>
                                         {format(b.startTime, 'HH:mm')} 
