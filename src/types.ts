@@ -17,6 +17,7 @@ export interface EmployeeDayRecord {
   date: string;
   employeeName: string;
   totalWorkTimeMillis: number;
+  totalOfflineTimeMillis?: number;
   breaks: BreakSession[];
   
   // Accumulated durations in minutes

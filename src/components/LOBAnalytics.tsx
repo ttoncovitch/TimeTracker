@@ -46,7 +46,7 @@ export function LOBAnalytics({ summaries, showRealTime }: LOBAnalyticsProps) {
 
       const lob = (s.lob && s.lob.trim() !== '') ? s.lob : t('unknown');
       if (isSupportRole(s)) return; // Exclude QA, RTA, etc.
-      if (lob.toUpperCase() === 'LEG') return; // Exclude LEG
+      if (['LEG', 'LMG', 'LMG BADNESS', 'LMG ES', 'LMG LATAM'].includes(lob.toUpperCase())) return; // Exclude legacy LOBs
       
       if (!lobs[lob]) {
         lobs[lob] = [];

@@ -122,7 +122,7 @@ export default function App() {
   const [isStaffInChargeOpen, setIsStaffInChargeOpen] = useState(false);
   const [isMissingStaffOpen, setIsMissingStaffOpen] = useState(false);
 
-  const normalizeName = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/\./g, ' ').replace(/-/g, ' ');
+  const normalizeName = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/[\.,\-]/g, ' ');
 
   const findCalendarEntry = useCallback((staffEmail: string, staffName: string) => {
       // 1. Email matching
@@ -136,15 +136,19 @@ export default function App() {
           if (!calEntry) {
             // 3. Partial name matching
             calEntry = calendarData.find(c => {
-              const calNameParts = normalizeName(c.name).split(/\s+/);
-              const staffNameParts = staffNameNormalized.split(/\s+/);
+              const rawCalParts = normalizeName(c.name).split(/\s+/);
+              const rawStaffParts = staffNameNormalized.split(/\s+/);
               
-              if (calNameParts.length > 0 && staffNameParts.length > 0) {
-                 if (calNameParts[0] === staffNameParts[0]) {
-                    if (calNameParts.length === 1 || staffNameParts.length === 1) return true;
-                    const overlap = calNameParts.filter(p => staffNameParts.includes(p));
-                    if (overlap.length > 1) return true;
+              if (rawCalParts.length > 0 && rawStaffParts.length > 0) {
+                 if (rawCalParts[0] === rawStaffParts[0] && (rawCalParts.length === 1 || rawStaffParts.length === 1)) {
+                     return true;
                  }
+                 
+                 const calNameParts = rawCalParts.filter(p => p.length > 2);
+                 const staffNameParts = rawStaffParts.filter(p => p.length > 2);
+                 
+                 const overlap = calNameParts.filter(p => staffNameParts.includes(p));
+                 if (overlap.length > 1) return true;
               }
               return false;
             });
@@ -167,8 +171,23 @@ export default function App() {
   }, [staffInfoData, findCalendarEntry]);
 
   const cleanShift = (shift: string) => {
-    const match = shift.match(/\b(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\b/);
-    return match ? `${match[1]}-${match[2]}` : shift;
+    if (!shift) return shift;
+    const match = shift.match(/(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)\s*-\s*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)/);
+    if (!match) return shift;
+
+    const parseTimeComp = (t: string) => {
+        const tUpper = t.toUpperCase();
+        const isPM = tUpper.includes('PM');
+        const isAM = tUpper.includes('AM');
+        let parts = tUpper.replace(/[A-Z\s]/g, '').split(':');
+        let h = parseInt(parts[0]) || 0;
+        let m = parts.length > 1 ? parseInt(parts[1]) || 0 : 0;
+        if (isPM && h !== 12) h += 12;
+        if (isAM && h === 12) h = 0;
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    };
+
+    return `${parseTimeComp(match[1])}-${parseTimeComp(match[2])}`;
   };
 
   const availableShifts = useMemo(() => {
@@ -196,15 +215,8 @@ export default function App() {
   }, [summaries]);
 
   const latestDate = useMemo(() => {
-    let latest = 0;
-    summaries.forEach(s => {
-      s.dailyRecords.forEach(r => {
-        const d = new Date(r.date + 'T12:00:00').getTime();
-        if (d > latest) latest = d;
-      });
-    });
-    return latest > 0 ? new Date(latest) : new Date();
-  }, [summaries]);
+    return new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+  }, []);
 
   const { globalMinDate, globalMaxDate } = useMemo(() => {
     let min = new Date('2099-01-01');
@@ -266,49 +278,74 @@ export default function App() {
        const staffEntry = (s.email && emailToStaff.get(s.email.toLowerCase())) || 
                           allStaff.find(si => normalizeName(si.fullName) === normalizeName(s.employeeName));
        
+       if (!staffEntry) return null; // "Somente os agentes cujo email está no byteworks e consecutivamente no staff info"
+
+       let finalLob = s.lob;
+       let finalLang = s.language;
+       let finalRole = s.role;
+       let finalSup = s.supervisor;
+       let finalName = s.employeeName;
+       let finalEmail = s.email;
+
        if (staffEntry) {
-          const newName = staffEntry.fullName;
-          return {
-             ...s,
-             employeeName: newName,
-             lob: staffEntry.lob || s.lob,
-             language: normalizeLanguage(staffEntry.language || s.language),
-             role: staffEntry.role || s.role,
-             supervisor: staffEntry.tl || s.supervisor,
-             dailyRecords: s.dailyRecords.map(r => ({ ...r, employeeName: newName, lob: staffEntry.lob || r.lob }))
-          };
+          finalName = staffEntry.fullName;
+          finalLob = staffEntry.lob || s.lob;
+          finalLang = staffEntry.language || s.language;
+          finalRole = staffEntry.role || s.role;
+          finalSup = staffEntry.tl || s.supervisor;
+          finalEmail = staffEntry.email || s.email;
        }
-       return s;
+
+       if (finalLob && finalLob.toUpperCase() === 'LMG LATAM') {
+          finalLob = 'LMEG LATAM';
+       }
+       if (finalLob && finalLob.toUpperCase() === 'BPO LED QUALITY') {
+          finalLob = 'BPO LED Quality';
+       }
+       if (finalLob && finalLob.toUpperCase() === 'HIGH REPORTED QUEUE') {
+          finalLob = 'HRQ';
+       }
+
+       return {
+          ...s,
+          employeeName: finalName,
+          email: finalEmail,
+          lob: finalLob,
+          language: normalizeLanguage(finalLang),
+          role: finalRole,
+          supervisor: finalSup,
+          dailyRecords: s.dailyRecords.map(r => ({ 
+              ...r, 
+              employeeName: finalName, 
+              lob: finalLob 
+          }))
+       };
     });
 
-    // Add agents from StaffInfo who aren't in summaries
-    allStaff.forEach(staff => {
-       if (!mergedSummaries.find(s => s.email?.toLowerCase() === staff.email.toLowerCase() || normalizeName(s.employeeName) === normalizeName(staff.fullName))) {
-          mergedSummaries.push({
-              employeeName: staff.fullName,
-              email: staff.email,
-              lob: staff.lob,
-              language: normalizeLanguage(staff.language),
-              role: staff.role,
-              supervisor: staff.tl || '',
-              dailyRecords: [],
-              calendarName: '',
-              isTraining: false,
-              totalWorkMinutes: 0,
-              totalBreakMinutes: 0,
-              totalOverbreakMinutes: 0,
-              totalTardinessMinutes: 0,
-              totalEarlyLeaveMinutes: 0,
-              totalNonModMinutes: 0,
-              totalReviewAndAppealMinutes: 0,
-              totalAwaitingTasksMinutes: 0,
-              totalForgotStatusMinutes: 0,
-              totalAbsences: 0,
-              wcAlerts: 0,
-              idleAlerts: 0
-          });
-       }
+    const dedupedMap = new Map<string, EmployeeSummary>();
+    mergedSummaries.forEach(s => {
+        if (!s) return;
+        const key = normalizeName(s.employeeName);
+        if (dedupedMap.has(key)) {
+            const existing = dedupedMap.get(key)!;
+            s.dailyRecords.forEach(dr => {
+                const existingDr = existing.dailyRecords.find(e => e.date === dr.date);
+                if (existingDr) {
+                    existingDr.tasks = (existingDr.tasks || 0) + (dr.tasks || 0);
+                    existingDr.breaks.push(...dr.breaks);
+                    existingDr.totalWorkTimeMillis += dr.totalWorkTimeMillis;
+                    existingDr.totalOfflineTimeMillis += dr.totalOfflineTimeMillis;
+                } else {
+                    existing.dailyRecords.push(dr);
+                }
+            });
+            existing.totalTasks = (existing.totalTasks || 0) + (s.totalTasks || 0);
+            if (s.email && !existing.email) existing.email = s.email;
+        } else {
+            dedupedMap.set(key, s);
+        }
     });
+    mergedSummaries = Array.from(dedupedMap.values()).filter(Boolean) as EmployeeSummary[];
 
     if (calendarData.length === 0) return mergedSummaries;
 
@@ -318,7 +355,7 @@ export default function App() {
        let calEntry = findCalendarEntry(s.email || '', s.employeeName);
        
        if (calEntry) {
-          matchedCalendarNames.add(calEntry.name.toLowerCase().trim());
+          matchedCalendarNames.add(normalizeName(calEntry.name));
           const existingDates = new Set(s.dailyRecords.map(r => r.date));
           const newRecords = [...s.dailyRecords];
           
@@ -431,7 +468,7 @@ export default function App() {
               }
               const scheduledShift = specificShift || calEntry?.shift || r.scheduledShift;
               const inferredShift = r.inferredShift || scheduledShift;
-              const currentLob = specificLob || calEntry?.lob || s.lob;
+              const currentLob = specificLob || s.lob || calEntry?.lob;
               
               const shiftUpper = (scheduledShift || inferredShift || '').toUpperCase();
               const isWorkingShift = /\d{1,2}:\d{2}/.test(shiftUpper);
@@ -458,153 +495,40 @@ export default function App() {
 
            const totalAbsences = updatedDailyRecords.filter(r => r.isAbsence).length;
 
+           let finalAgentLob = s.lob || calEntry?.lob;
+           if (finalAgentLob && finalAgentLob.toUpperCase() === 'LMG LATAM') {
+               finalAgentLob = 'LMEG LATAM';
+           }
+           if (finalAgentLob && finalAgentLob.toUpperCase() === 'BPO LED QUALITY') {
+               finalAgentLob = 'BPO LED Quality';
+           }
+           if (finalAgentLob && finalAgentLob.toUpperCase() === 'HIGH REPORTED QUEUE') {
+               finalAgentLob = 'HRQ';
+           }
+
+           const updatedRecordsWithLMEG = updatedDailyRecords.map(r => {
+                let rLob = r.lob;
+                if (rLob && rLob.toUpperCase() === 'LMG LATAM') {
+                    rLob = 'LMEG LATAM';
+                }
+                if (rLob && rLob.toUpperCase() === 'BPO LED QUALITY') {
+                    rLob = 'BPO LED Quality';
+                }
+                return { ...r, lob: rLob };
+           });
+
            return {
               ...s,
               calendarName: calEntry.name,
+              lob: finalAgentLob,
               totalAbsences,
-              dailyRecords: updatedDailyRecords
+              dailyRecords: updatedRecordsWithLMEG
            };
        }
        return s;
     });
 
-    // 3. Add agents ONLY in calendar (unmatched ones)
-    const calendarOnlySummaries: EmployeeSummary[] = [];
-    calendarData.forEach(calEntry => {
-       const normName = normalizeName(calEntry.name);
-       if (matchedCalendarNames.has(normName)) return;
-
-       const dailyRecords: EmployeeDayRecord[] = [];
-       if (globalMinDate <= globalMaxDate && calEntry.schedule) {
-          let d = new Date(globalMinDate);
-          while (d <= globalMaxDate) {
-             const dateStr = format(d, 'yyyy-MM-dd');
-             const dateKey = format(d, 'dd/MM/yyyy');
-             const dateKeyAlt = format(d, 'MM/dd/yyyy');
-             const scheduleForDay = calEntry.schedule[dateStr] || calEntry.schedule[dateKey] || calEntry.schedule[dateKeyAlt];
-             
-             if (scheduleForDay) {
-                const schedUpper = String(scheduleForDay).toUpperCase();
-                const isWorkingShift = /\d{1,2}:\d{2}/.test(schedUpper);
-                const isWorkday = !schedUpper.includes('OFF') && !schedUpper.includes('VAC') && !schedUpper.includes('FESTA') && !schedUpper.includes('HOLIDAY') && !schedUpper.includes('LOA') && !schedUpper.includes('PTO') && !schedUpper.includes('SL') && !schedUpper.includes('ATT') && !schedUpper.includes('SUSPP');
-                
-                const shiftUpper = (scheduleForDay || '').toUpperCase();
-                const isOffShift = shiftUpper.includes('OFF') || shiftUpper.includes('FOLGA');
-                const isVacationShift = (shiftUpper.includes('VAC') || shiftUpper.includes('PTO') || shiftUpper.includes('FÉRIAS')) && !isWorkingShift;
-                const isSickShift = (shiftUpper.includes('SL') || shiftUpper.includes('SICK') || shiftUpper.includes('MEDICO') || shiftUpper.includes('ATESTADO')) && !isWorkingShift;
-                const isLoaShift = (shiftUpper.includes('LOA') || shiftUpper.includes('LICENÇA')) && !isWorkingShift;
-                const isSusppShift = (shiftUpper.includes('SUSPP') || shiftUpper.includes('SUSPENSÃO')) && !isWorkingShift;
-                const isAttShift = (shiftUpper.includes('ATT') || shiftUpper.includes('ATTRITION') || shiftUpper.includes('RESIGN') || shiftUpper.includes('SAÍDA')) && !isWorkingShift;
-
-                 let hasShiftStarted = true;
-                 if (isWorkday) {
-                    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
-                    const todayStr = format(now, 'yyyy-MM-dd');
-                    const latestDateStr = format(latestDate, 'yyyy-MM-dd');
-                    
-                    if (dateStr > latestDateStr) {
-                       hasShiftStarted = false;
-                    } else if (dateStr === latestDateStr && isWorkingShift) {
-                       const match = schedUpper.match(/(\d{1,2}):(\d{2})/);
-                       if (match) {
-                          const h = parseInt(match[1], 10);
-                          const m = parseInt(match[2], 10);
-                          const shiftStartMinutes = h * 60 + m;
-                          const latestMinutes = latestDate.getHours() * 60 + latestDate.getMinutes();
-                          if (shiftStartMinutes > latestMinutes) {
-                             hasShiftStarted = false;
-                          }
-                       }
-                    }
-                    
-                    if (hasShiftStarted) {
-                        if (dateStr > todayStr) {
-                           hasShiftStarted = false;
-                        } else if (dateStr === todayStr && isWorkingShift) {
-                           const match = schedUpper.match(/(\d{1,2}):(\d{2})/);
-                           if (match) {
-                              const h = parseInt(match[1], 10);
-                              const m = parseInt(match[2], 10);
-                              const shiftStartMinutes = h * 60 + m;
-                              const currentMinutes = now.getHours() * 60 + now.getMinutes();
-                              if (shiftStartMinutes > currentMinutes) {
-                                 hasShiftStarted = false;
-                              }
-                           }
-                        }
-                    }
-                 }
-
-                 dailyRecords.push({
-                  date: dateStr,
-                  employeeName: calEntry.name,
-                  totalWorkTimeMillis: 0,
-                  breaks: [],
-                  mealDuration: 0,
-                  mealOverbreak: 0,
-                  shortDuration: 0,
-                  shortOverbreak: 0,
-                  wellnessDuration: 0,
-                  wellnessOverbreak: 0,
-                  prayingDuration: 0,
-                  prayingOverbreak: 0,
-                  wcDuration: 0,
-                  wcOverbreak: 0,
-                  idleDuration: 0,
-                  idleOverbreak: 0,
-                  totalOverbreak: 0,
-                  tardinessMinutes: 0,
-                  earlyLeaveMinutes: 0,
-                  nonModDuration: 0,
-                  reviewAndAppealDuration: 0,
-                  awaitingTasksDuration: 0,
-                  forgotStatusDuration: 0,
-                  scheduledShift: scheduleForDay,
-                  inferredShift: scheduleForDay,
-                  lob: calEntry.lob,
-                  isOFF: isOffShift,
-                  isPTO: isVacationShift,
-                  isSL: isSickShift,
-                  isLOA: isLoaShift,
-                  isSUSPP: isSusppShift,
-                  isATT: isAttShift,
-                  isAbsence: isWorkday && hasShiftStarted
-                });
-             }
-             d.setDate(d.getDate() + 1);
-          }
-       }
-
-       calendarOnlySummaries.push({
-          employeeName: calEntry.name,
-          email: calEntry.email || '',
-          department: '',
-          lob: calEntry.lob,
-          language: normalizeLanguage(calEntry.language),
-          supervisor: calEntry.supervisor,
-          role: calEntry.role,
-          shift: calEntry.shift,
-          calendarName: calEntry.name,
-          isTraining: false,
-          totalWorkMinutes: 0,
-          totalBreakMinutes: 0,
-          totalOverbreakMinutes: 0,
-          totalTardinessMinutes: 0,
-          totalEarlyLeaveMinutes: 0,
-          totalNonModMinutes: 0,
-          totalReviewAndAppealMinutes: 0,
-          totalAwaitingTasksMinutes: 0,
-          totalForgotStatusMinutes: 0,
-          totalAbsences: dailyRecords.filter(r => r.isAbsence).length,
-          wcAlerts: 0,
-          idleAlerts: 0,
-          dailyRecords: dailyRecords.sort((a, b) => a.date.localeCompare(b.date))
-       });
-    });
-
-    const combinedSummaries = calendarData.length > 0 ? [...updatedSummaries, ...calendarOnlySummaries] : [...updatedSummaries];
-
-    return combinedSummaries;
+    return updatedSummaries;
   }, [summaries, calendarData, staffInfoData, globalMinDate, globalMaxDate, latestDate]);
 
   // Data exclusively for the "OS - Schedule" tab
@@ -648,7 +572,7 @@ export default function App() {
                      forgotStatusDuration: 0,
                      scheduledShift: schedule,
                      inferredShift: schedule,
-                     lob: c.lob,
+                     lob: c.lob?.toUpperCase() === 'LMG LATAM' ? 'LMEG LATAM' : (c.lob?.toUpperCase() === 'BPO LED QUALITY' ? 'BPO LED Quality' : (c.lob?.toUpperCase() === 'HIGH REPORTED QUEUE' ? 'HRQ' : c.lob)),
                      isOFF: shiftUpper.includes('OFF') || shiftUpper.includes('FOLGA'),
                      isPTO: shiftUpper.includes('VAC') || shiftUpper.includes('PTO') || shiftUpper.includes('FÉRIAS'),
                      isSL: shiftUpper.includes('SL') || shiftUpper.includes('SICK'),
@@ -665,7 +589,7 @@ export default function App() {
          return {
             employeeName: c.name,
             email: c.email || '',
-            lob: c.lob,
+            lob: c.lob?.toUpperCase() === 'LMG LATAM' ? 'LMEG LATAM' : (c.lob?.toUpperCase() === 'BPO LED QUALITY' ? 'BPO LED Quality' : (c.lob?.toUpperCase() === 'HIGH REPORTED QUEUE' ? 'HRQ' : c.lob)),
             role: c.role,
             shift: c.shift,
             language: normalizeLanguage(c.language),
@@ -734,13 +658,94 @@ export default function App() {
     return Array.from(filters);
   }, [summaries]);
 
+  const isRecordActiveNow = (r: EmployeeDayRecord, requireActivity: boolean = true) => {
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+    const todayDateStr = format(now, 'yyyy-MM-dd');
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = format(yesterday, 'yyyy-MM-dd');
+
+    if (r.date !== todayDateStr && r.date !== yesterdayStr) return false;
+
+    const shiftStr = r.scheduledShift || r.inferredShift;
+    if (!shiftStr) return false;
+
+    const cleaned = cleanShift(shiftStr);
+    const times = cleaned.split('-');
+    if (times.length === 2) {
+        const [sh, sm] = times[0].split(':').map(Number);
+        const [eh, em] = times[1].split(':').map(Number);
+        
+        if (!isNaN(sh) && !isNaN(eh)) {
+            let startTotal = sh * 60 + (sm || 0);
+            let endTotal = eh * 60 + (em || 0);
+            if (endTotal <= startTotal) endTotal += 24 * 60; // passes midnight
+
+            const curTotal = now.getHours() * 60 + now.getMinutes();
+            
+            let shiftMatchesNow = false;
+
+            if (r.date === yesterdayStr) {
+                if (endTotal > 24 * 60) {
+                    if (curTotal <= (endTotal - 24 * 60)) { 
+                        shiftMatchesNow = true;
+                    }
+                }
+            } else if (r.date === todayDateStr) {
+                if (endTotal > 24 * 60) {
+                    if (curTotal >= startTotal) shiftMatchesNow = true;
+                } else {
+                    if (curTotal >= startTotal && curTotal <= endTotal) shiftMatchesNow = true;
+                }
+            }
+
+            if (shiftMatchesNow) {
+                if (requireActivity) {
+                    const hasRealActivity = r.actualStartTime != null || r.totalWorkTimeMillis > 0 || (r.breaks && r.breaks.length > 0);
+                    if (!hasRealActivity) {
+                        return false;
+                    }
+                }
+                let latestBreak: any = null;
+                if (r.breaks && r.breaks.length > 0) {
+                    for (const b of r.breaks) {
+                        if (!latestBreak || b.endTime.getTime() > latestBreak.endTime.getTime()) {
+                            latestBreak = b;
+                        }
+                    }
+                }
+
+                if (!latestBreak || (latestBreak.type !== 'offline' && latestBreak.type !== 'forgot_status')) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+  };
+
+  const isAgentActiveNow = (records: EmployeeDayRecord[], requireActivity: boolean = true) => {
+    return records.some(r => isRecordActiveNow(r, requireActivity));
+  };
+
   const recordTimeFilterFn = useMemo(() => {
     const selectedDateStrings = selectedDates && selectedDates.length > 0 ? selectedDates.map(d => format(d, 'yyyy-MM-dd')) : [];
     
-    const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+    const today = showRealTime ? new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" })) : new Date(latestDate);
     const tm = today.getMonth();
     const ty = today.getFullYear();
     const td = today.getDate();
+    
+    // For Real Time explicitly
+    const realToday = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+    const td_rt = realToday.getDate();
+    const tm_rt = realToday.getMonth();
+    const ty_rt = realToday.getFullYear();
+    const realYesterday = new Date(realToday);
+    realYesterday.setDate(realYesterday.getDate() - 1);
+    const yd_rt = realYesterday.getDate();
+    const ym_rt = realYesterday.getMonth();
+    const yy_rt = realYesterday.getFullYear();
     
     const pm = new Date(today.getFullYear(), today.getMonth() - 1, 1);
     const pmM = pm.getMonth();
@@ -763,11 +768,10 @@ export default function App() {
 
     return (r: EmployeeDayRecord) => {
         if (showRealTime) {
-           const d = new Date(r.date + 'T12:00:00');
-           const isToday = d.getDate() === td && d.getMonth() === tm && d.getFullYear() === ty;
-           const isYesterday = d.getDate() === yd && d.getMonth() === ym && d.getFullYear() === yy;
-           if (isToday || isYesterday) return true;
-           return false;
+           // When in Real Time mode, only the specifically active record matters.
+           // Setting requireActivity to false here because the overall agent active check
+           // handles requiring activity. We just want to retain the record that *could* be active.
+           return isRecordActiveNow(r, false);
         }
 
         if (selectedDateStrings.length > 0) {
@@ -776,16 +780,26 @@ export default function App() {
         
         const isShiftCrossingMidnight = (shiftStr: string | null | undefined) => {
             if (!shiftStr) return false;
-            const cleaned = shiftStr.replace(/\s+/g, '').replace('h', ':').replace('hrs', '').replace('H', ':');
+            let cleaned = cleanShift(shiftStr).replace(/\s+/g, '').toUpperCase();
+            
+            // Convert AM/PM to 24h before removing letters
+            const parseTime = (timeStr: string) => {
+                let isPM = timeStr.includes('PM');
+                let isAM = timeStr.includes('AM');
+                let t = timeStr.replace(/[A-Z]/g, '').replace(':', '.');
+                let parts = t.split('.');
+                let h = parseInt(parts[0]) || 0;
+                let m = parseInt(parts[1]) || 0;
+                if (isPM && h !== 12) h += 12;
+                if (isAM && h === 12) h = 0;
+                return h * 60 + m;
+            };
+
             const times = cleaned.split('-');
             if (times.length === 2) {
-                const [sh, sm] = times[0].split(':').map(Number);
-                const [eh, em] = times[1].split(':').map(Number);
-                if (!isNaN(sh) && !isNaN(eh)) {
-                    let startTotal = sh * 60 + (sm || 0);
-                    let endTotal = eh * 60 + (em || 0);
-                    if (endTotal <= startTotal) return true;
-                }
+                let startTotal = parseTime(times[0]);
+                let endTotal = parseTime(times[1]);
+                if (endTotal <= startTotal) return true;
             }
             return false;
         };
@@ -822,77 +836,6 @@ export default function App() {
     };
   }, [timeFilter, selectedDates, showRealTime]);
 
-  const isAgentActiveNow = (records: EmployeeDayRecord[], requireActivity: boolean = true) => {
-    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
-    const todayDateStr = format(now, 'yyyy-MM-dd');
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = format(yesterday, 'yyyy-MM-dd');
-
-    let isActiveNow = false;
-
-    for (const r of records) {
-        if (r.date !== todayDateStr && r.date !== yesterdayStr) continue;
-
-        const shiftStr = r.scheduledShift || r.inferredShift;
-        if (!shiftStr) continue;
-
-        const cleaned = cleanShift(shiftStr);
-        const times = cleaned.split('-');
-        if (times.length === 2) {
-            const [sh, sm] = times[0].split(':').map(Number);
-            const [eh, em] = times[1].split(':').map(Number);
-            
-            if (!isNaN(sh) && !isNaN(eh)) {
-                let startTotal = sh * 60 + (sm || 0);
-                let endTotal = eh * 60 + (em || 0);
-                if (endTotal <= startTotal) endTotal += 24 * 60; // passes midnight
-
-                const curTotal = now.getHours() * 60 + now.getMinutes();
-                
-                let shiftMatchesNow = false;
-
-                if (r.date === yesterdayStr) {
-                    if (endTotal > 24 * 60) {
-                        if (curTotal <= (endTotal - 24 * 60)) { 
-                            shiftMatchesNow = true;
-                        }
-                    }
-                } else if (r.date === todayDateStr) {
-                    if (endTotal > 24 * 60) {
-                        if (curTotal >= startTotal) shiftMatchesNow = true;
-                    } else {
-                        if (curTotal >= startTotal && curTotal <= endTotal) shiftMatchesNow = true;
-                    }
-                }
-
-                if (shiftMatchesNow) {
-                    if (requireActivity) {
-                        const hasRealActivity = r.actualStartTime != null || r.totalWorkTimeMillis > 0 || (r.breaks && r.breaks.length > 0);
-                        if (!hasRealActivity) {
-                            continue;
-                        }
-                    }
-                    let latestBreak: any = null;
-                    if (r.breaks && r.breaks.length > 0) {
-                        for (const b of r.breaks) {
-                            if (!latestBreak || b.endTime.getTime() > latestBreak.endTime.getTime()) {
-                                latestBreak = b;
-                            }
-                        }
-                    }
-
-                    if (!latestBreak || (latestBreak.type !== 'offline' && latestBreak.type !== 'forgot_status')) {
-                        isActiveNow = true;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    return isActiveNow;
-  };
-
   const basePeriodSummaries = useMemo(() => {
     const otherShifts = shiftFilter;
     
@@ -928,7 +871,7 @@ export default function App() {
       const finalIsOFF = isGlobalView ? s.dailyRecords.some(r => r.isOFF) : isOFFInfo;
       const totalAbsences = records.reduce((acc, r) => acc + (r.isAbsence && !r.isATT ? 1 : 0), 0);
       
-      const activeLob = records.find(r => r.lob)?.lob || s.lob;
+      const activeLob = [...records].reverse().find(r => r.lob)?.lob || s.lob;
 
       return (records.length > 0 || s.isOffboarded || finalIsATT || finalIsLOA || finalIsPTO || finalIsSL || finalIsSUSPP || finalIsOFF) ? { 
           ...s, 
@@ -990,7 +933,7 @@ export default function App() {
       const finalIsOFF = isGlobalView ? s.dailyRecords.some(r => r.isOFF) : isOFFInfo;
       const totalAbsences = records.reduce((acc, r) => acc + (r.isAbsence && !r.isATT ? 1 : 0), 0);
       
-      const activeLob = records.find(r => r.lob)?.lob || s.lob;
+      const activeLob = [...records].reverse().find(r => r.lob)?.lob || s.lob;
 
       return (records.length > 0 || s.isOffboarded || finalIsATT || finalIsLOA || finalIsPTO || finalIsSL || finalIsSUSPP || finalIsOFF) ? { 
           ...s, 
@@ -1891,6 +1834,10 @@ export default function App() {
                          onClick={() => {
                            const nextValue = !showRealTime;
                            setShowRealTime(nextValue);
+                           if (nextValue) {
+                               setTimeFilter('all');
+                               setSelectedDates(undefined);
+                           }
                          }}
                          className={`px-2 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 min-w-max shadow-sm w-fit ${showRealTime ? 'bg-red-500 text-white border-red-500' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
                        >
@@ -1956,7 +1903,7 @@ export default function App() {
                             <span className="text-[9px] font-black uppercase text-slate-400 px-2">{t('period')}:</span>
                             <Popover>
                               <PopoverTrigger
-                                   className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${selectedDates && selectedDates.length > 0 ? 'bg-amber-500 text-white shadow-md hover:bg-amber-600' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                                   className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${(!showRealTime && selectedDates && selectedDates.length > 0) ? 'bg-amber-500 text-white shadow-md hover:bg-amber-600' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
                                  >
                                    <CalendarIcon size={12} />
                                    {t('calendar')} {selectedDates && selectedDates.length > 0 ? `(${selectedDates.length})` : ''}
@@ -2035,7 +1982,7 @@ export default function App() {
                                          setSelectedDates(undefined);
                                      }
                                  }}
-                                 className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${timeFilter === filter && (!selectedDates || selectedDates.length === 0) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                                 className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${(!showRealTime && timeFilter === filter && (!selectedDates || selectedDates.length === 0)) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
                                >
                                  {filter === 'month' ? t('filterMonth') : filter === 'prev_month' ? t('filterPrevMonth') : filter === 'week' ? t('filterWeek') : filter === 'yesterday' ? t('filterYesterday') : t('filterDay')}
                                </button>

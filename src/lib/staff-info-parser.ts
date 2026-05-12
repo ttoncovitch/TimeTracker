@@ -40,22 +40,41 @@ export async function parseStaffInfoFile(file: File): Promise<{ data: StaffInfoE
         // AE: A=1..Z=26, AA=27, AB=28, AC=29, AD=30, AE=31
         // BN: B is 2, N is 14 -> 26*1 + 14 = 40 (wait... A=1..Z=26. AA=27..AZ=52. BA=53..BN=53+13=66. index 65)
 
+        let langIndex = 30; // Default AE
+        const headers = rows[0] || [];
+        for (let j = 0; j < headers.length; j++) {
+            const h = String(headers[j] || '').trim().toLowerCase();
+            if (h === 'language' || h === 'idioma' || h === 'língua' || h === 'lingua' || h === 'language / skill') {
+                langIndex = j;
+                break;
+            }
+        }
+
         for (let i = 1; i < rows.length; i++) {
            const row = rows[i];
            if (!row || row.length < 5) continue;
            
            const statusStr = String(row[0] || '').trim().toUpperCase();
+           if (statusStr !== 'ACTIVE') continue;
+
            const name = String(row[4] || '').trim();
            // if name is empty skip
            if (!name) continue;
 
            const roleStr = String(row[5] || '').trim();
            const lobStr = String(row[17] || '').trim();
-           const langStr = String(row[30] || '').trim(); // AE is index 30
-           const emailStr = String(row[65] || '').trim().toLowerCase(); // BN is index 65
+           const langStr = String(row[langIndex] || '').trim(); // AE is index 30 or dynamic
+           let emailStr = String(row[65] || '').trim().toLowerCase();
+           if (!emailStr.includes('@')) {
+               for (let c = row.length - 1; c >= 0; c--) {
+                   const cellValue = String(row[c] || '').trim().toLowerCase();
+                   if (cellValue.includes('@')) {
+                       emailStr = cellValue;
+                       break;
+                   }
+               }
+           }
            const tlStr = String(row[9] || '').trim(); // J is index 9
-           
-           if (!emailStr) continue;
 
            entries.push({
                email: emailStr,

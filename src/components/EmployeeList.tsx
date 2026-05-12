@@ -142,12 +142,12 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
   const [sortBy, setSortBy] = useState<'maiores' | 'menores' | 'alfabetica' | string>('maiores');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  const normalizeName = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/\./g, ' ').replace(/-/g, ' ');
+  const normalizeName = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/[\.,\-]/g, ' ');
 
   const lobs = Array.from(new Set(summaries.map(s => s.lob?.trim()).filter(Boolean))).filter(l => {
      if (!l) return false;
      const upper = l.toUpperCase();
-     return !['CSR', 'BA', 'TL', 'RTA', 'QA', 'TRAINER', 'MANAGER', 'OS'].includes(upper);
+     return !['CSR', 'BA', 'TL', 'RTA', 'QA', 'TRAINER', 'MANAGER', 'OS', 'LMG', 'LMG BADNESS', 'LMG ES', 'LMG LATAM'].includes(upper);
   }).sort() as string[];
   const languages = selectedLob === 'ALL' 
     ? [] 
@@ -262,6 +262,12 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((s, idx) => {
+                  if (String(s.employeeName).toLowerCase().includes('elsa')) {
+                      console.log('ELSA DEBUG:', JSON.parse(JSON.stringify({ 
+                         totalTasks: s.totalTasks, 
+                         dailyRecords: s.dailyRecords.map(r => ({ date: r.date, tasks: r.tasks, shortOverbreak: r.shortOverbreak })) 
+                      })));
+                  }
                   const hasMealOver = s.dailyRecords.some(r => r.mealOverbreak > 0);
                   const hasShortOver = s.dailyRecords.some(r => r.shortOverbreak > 0);
                   const hasWellnessOver = s.dailyRecords.some(r => r.wellnessOverbreak > 0);
@@ -373,7 +379,7 @@ export function EmployeeList({ summaries, allSummaries, latestDate, initialFilte
                         })()}
                       </td>
 
-                      <td className="py-2.5 px-2 text-center" title={s.totalTasks !== undefined && s.totalTasks > 0 ? `${s.totalTasks} tasks` : ''}>
+                      <td className="py-2.5 px-2 text-center" title={s.totalTasks !== undefined && s.totalTasks > 0 ? `${s.totalTasks} tasks` : undefined}>
                         {s.totalTasks !== undefined && s.totalTasks > 0 ? (
                            <span className="inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-black">
                              {s.totalTasks}
@@ -561,16 +567,26 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
   
   const isShiftCrossingMidnight = (shiftStr: string | null | undefined) => {
     if (!shiftStr) return false;
-    const cleaned = shiftStr.replace(/\s+/g, '').replace('h', ':').replace('hrs', '').replace('H', ':');
+    let cleaned = shiftStr.replace(/\s+/g, '').toUpperCase();
+    
+    // Convert AM/PM to 24h before removing letters
+    const parseTime = (timeStr: string) => {
+        let isPM = timeStr.includes('PM');
+        let isAM = timeStr.includes('AM');
+        let t = timeStr.replace(/[A-Z]/g, '').replace(':', '.');
+        let parts = t.split('.');
+        let h = parseInt(parts[0]) || 0;
+        let m = parseInt(parts[1]) || 0;
+        if (isPM && h !== 12) h += 12;
+        if (isAM && h === 12) h = 0;
+        return h * 60 + m;
+    };
+
     const times = cleaned.split('-');
     if (times.length === 2) {
-        const [sh, sm] = times[0].split(':').map(Number);
-        const [eh, em] = times[1].split(':').map(Number);
-        if (!isNaN(sh) && !isNaN(eh)) {
-            let startTotal = sh * 60 + (sm || 0);
-            let endTotal = eh * 60 + (em || 0);
-            if (endTotal <= startTotal) return true;
-        }
+        let startTotal = parseTime(times[0]);
+        let endTotal = parseTime(times[1]);
+        if (endTotal <= startTotal) return true;
     }
     return false;
   };
@@ -602,8 +618,34 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
       yesterday.setDate(yesterday.getDate() - 1);
       const isYesterday = d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear();
       
-      if (isToday) return true;
       if (isYesterday && (isShiftCrossingMidnight(r.scheduledShift) || isShiftCrossingMidnight(r.inferredShift))) return true;
+      
+      if (isToday) {
+          const isNightShift = isShiftCrossingMidnight(r.scheduledShift) || isShiftCrossingMidnight(r.inferredShift);
+          if (isNightShift) {
+              const hasActivity = r.totalWorkTimeMillis > 0 || r.breaks.length > 0;
+              let shiftStartMins = 0;
+              const schedUpper = String(r.scheduledShift || r.inferredShift || '').replace(/\s+/g, '').toUpperCase();
+              const times = schedUpper.split('-');
+              if (times.length > 0) {
+                 const t = times[0];
+                 const isPM = t.includes('PM');
+                 const isAM = t.includes('AM');
+                 let parts = t.replace(/[A-Z]/g, '').replace(':', '.').split('.');
+                 let h = parseInt(parts[0]) || 0;
+                 let m = parseInt(parts[1]) || 0;
+                 if (isPM && h !== 12) h += 12;
+                 if (isAM && h === 12) h = 0;
+                 shiftStartMins = h * 60 + m;
+              }
+              
+              const currentMins = today.getHours() * 60 + today.getMinutes();
+              if (!hasActivity && shiftStartMins > currentMins) {
+                  return false;
+              }
+          }
+          return true;
+      }
       return false;
     });
   } else if (view === 'yesterday') {

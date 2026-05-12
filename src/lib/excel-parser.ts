@@ -108,10 +108,25 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
         const summaries: EmployeeSummary[] = [];
 
         const headerRow = rawData[0];
-        const resignedIndex = headerRow.findIndex(h => {
-           const s = String(h || '').toLowerCase();
-           return s.includes('resigned') || s.includes('离职') || s.includes('offboarded') || s.includes('saída');
-        });
+        const headersStr = headerRow.map((h: any) => String(h || '').trim().toUpperCase());
+        
+        const resignedIndex = headersStr.findIndex((s: string) => s.includes('RESIGNED') || s.includes('离职') || s.includes('OFFBOARDED') || s.includes('SAÍDA'));
+        
+        let tasksIndex = 12; // default
+        let schedShiftIndex = 11; // default
+        let infShiftIndex = 12; // default
+        let durationIndex = 6;
+        let startIndex = 7;
+        let endIndex = 8;
+        
+        const foundTasks = headersStr.findIndex((h: string) => h === 'TASKS' || h === 'TASKS PROCESSED' || h.includes('PROCESSED'));
+        if (foundTasks >= 0) tasksIndex = foundTasks;
+        
+        const foundSched = headersStr.findIndex((h: string) => h === 'SCHEDULED SHIFT' || h.includes('SCHEDULE') || h.includes('VÁRIOS'));
+        if (foundSched >= 0) schedShiftIndex = foundSched;
+        
+        const foundInf = headersStr.findIndex((h: string) => h === 'INFERRED SHIFT' || h.includes('INFERRED'));
+        if (foundInf >= 0) infShiftIndex = foundInf;
 
         employeeMap.forEach((allRows, _email) => {
           const dailyRecords: EmployeeDayRecord[] = [];
@@ -139,15 +154,16 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               if (resignedIndex >= 0 && allRows.length > 0) {
                   return allRows.some(row => {
                       const val = String(row[resignedIndex] || '').trim().toUpperCase();
-                      const shift = String(row[11] || '').trim().toUpperCase();
-                      const infShift = String(row[12] || '').trim().toUpperCase();
+                      const shift = String(row[schedShiftIndex] || '').trim().toUpperCase();
+                      const infShift = String(row[infShiftIndex] || '').trim().toUpperCase();
                       return keywords.some(k => val.includes(k.toUpperCase()) || shift.includes(k.toUpperCase()) || infShift.includes(k.toUpperCase()));
                   });
               } else if (allRows.length > 0) {
                   return allRows.some(row => {
+                      // Fallback to 15 if resignedIndex wasn't found
                       const val = String(row[15] || '').trim().toUpperCase();
-                      const shift = String(row[11] || '').trim().toUpperCase();
-                      const infShift = String(row[12] || '').trim().toUpperCase();
+                      const shift = String(row[schedShiftIndex] || '').trim().toUpperCase();
+                      const infShift = String(row[infShiftIndex] || '').trim().toUpperCase();
                       return keywords.some(k => val.includes(k.toUpperCase()) || shift.includes(k.toUpperCase()) || infShift.includes(k.toUpperCase()));
                   });
               }
@@ -177,17 +193,17 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              const originalSubStatus = String(row[4] || '').trim();
              const originalRemark = String(row[5] || '').trim();
              
-             const durationHours = isNaN(Number(row[6])) ? 0 : Number(row[6]);
+             const durationHours = isNaN(Number(row[durationIndex])) ? 0 : Number(row[durationIndex]);
              const durationMinutes = Math.round(durationHours * 60);
              
-             const tasks = Math.round(Number(row[12]) || 0);
+             const tasks = Math.round(Number(row[tasksIndex]) || 0);
 
              const rawInfo = String(row[3] || '') + ' ' + String(row[4] || '');
              
              const baseDateArgs = date.split('-').map(Number);
              const baseDate = baseDateArgs.length === 3 ? new Date(baseDateArgs[0], baseDateArgs[1] - 1, baseDateArgs[2]) : new Date();
 
-             let startTime = parseTime(date, row[7]);
+             let startTime = parseTime(date, row[startIndex]);
              if (!startTime) {
                 startTime = new Date(baseDate);
                 startTime.setHours(0,0,0,0);
@@ -197,7 +213,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              }
              lastRawStartTime = new Date(startTime);
 
-             let endTime = parseTime(date, row[8]);
+             let endTime = parseTime(date, row[endIndex]);
              if (endTime && durationMinutes > 0) {
                  const diffMins = (endTime.getTime() - startTime.getTime()) / 60000;
                  if (diffMins < 0 || Math.abs(diffMins - durationMinutes) > 60) {
@@ -221,7 +237,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
 
           if (allEvents.length === 0) return;
           
-          finalName = finalEmail.split('@')[0];
+          if (!finalName) finalName = finalEmail.split('@')[0];
           finalDepartment = allEvents[0].department;
 
           const isTraining = finalDepartment.toLowerCase().includes('training') || finalEmail.toLowerCase().includes('training');
@@ -233,13 +249,21 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           let previousEndTime: Date | null = null;
 
           allEvents.forEach(e => {
-              // Split if gap between events is > 5 hours
+              // Calculate elapsed time since the very start of this shift
+              let hoursSinceShiftStart = 0;
+              if (currentShiftStart) {
+                  hoursSinceShiftStart = (e.startTime.getTime() - currentShiftStart.getTime()) / 3600000;
+              }
+
+              // Split if gap between events is huge (> 10 hours)
+              // OR if we've passed 14 hours since the shift started (a logical max for one day's shift)
               if (currentShiftStart && previousEndTime) {
                   const gapMinutes = (e.startTime.getTime() - previousEndTime.getTime()) / 60000;
-                  if (gapMinutes > 300) {
+                  if (gapMinutes > 600 || hoursSinceShiftStart >= 14) {
                       shifts.push({ events: currentShift, firstEventTime: currentShiftStart });
                       currentShift = [];
                       currentShiftStart = null;
+                      previousEndTime = null;
                   }
               }
               
@@ -249,8 +273,14 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               currentShift.push(e);
               previousEndTime = e.endTime;
               
-              // Split if we encounter a long offline period > 4 hours
-              if ((e.status === 'offline' || (e.status === 'rest' && e.subStatus === 'fim de turno')) && e.durationMinutes >= 240) {
+              // End the shift immediately if we encounter a true "Fim de turno"
+              // OR if it's an offline period so long (> 10h) that it must be overnight rest
+              if (e.status === 'rest' && e.subStatus === 'fim de turno') {
+                  shifts.push({ events: currentShift, firstEventTime: currentShiftStart });
+                  currentShift = [];
+                  currentShiftStart = null;
+                  previousEndTime = null;
+              } else if (e.status === 'offline' && e.durationMinutes >= 600) {
                   shifts.push({ events: currentShift, firstEventTime: currentShiftStart });
                   currentShift = [];
                   currentShiftStart = null;
@@ -265,7 +295,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              const shiftEvents = shiftInfo.events;
              // Date of the shift is based on the first event time
              const firstRowDate = format(shiftInfo.firstEventTime, 'yyyy-MM-dd'); 
-             const record = processDailyRowsFromEvents(firstRowDate, shiftEvents, resignedIndex);
+             const record = processDailyRowsFromEvents(firstRowDate, shiftEvents, resignedIndex, schedShiftIndex, infShiftIndex);
              
              const hasSignificantActivity = record.totalWorkTimeMillis > 0 || record.breaks.some(b => b.type !== 'offline') || record.isOFF || record.isPTO || record.isLOA || record.isSL || record.isSUSPP || record.isATT;
              
@@ -338,7 +368,7 @@ const SHIFTS = [
   { startHour: 22, startMinute: 30, endHour: 7, endMinute: 30, label: '22:30-07:30', crossesMidnight: true }
 ];
 
-function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: number): EmployeeDayRecord {
+function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: number, schedShiftIdx: number, infShiftIdx: number): EmployeeDayRecord {
   const breaks: BreakSession[] = [];
   let totalWorkTimeMillis = 0;
   let totalTasksForDay = 0;
@@ -348,8 +378,8 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
       return events.some(e => {
           const row = e.row;
           const val = String(row[index] || '').trim().toUpperCase();
-          const shift = String(row[11] || '').trim().toUpperCase();
-          const infShift = String(row[12] || '').trim().toUpperCase();
+          const shift = String(row[schedShiftIdx] || '').trim().toUpperCase();
+          const infShift = String(row[infShiftIdx] || '').trim().toUpperCase();
           return keywords.some(k => val.includes(k.toUpperCase()) || shift.includes(k.toUpperCase()) || infShift.includes(k.toUpperCase()));
       });
   };
@@ -378,8 +408,8 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
 
   let explicitShift = null;
   for (const e of events) {
-      const s1 = String(e.row[11] || '').trim();
-      const s2 = String(e.row[12] || '').trim();
+      const s1 = String(e.row[schedShiftIdx] || '').trim();
+      const s2 = String(e.row[infShiftIdx] || '').trim();
       const match = s1.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/) || s2.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
       if (match) {
          let startH = parseInt(match[1]);
