@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input';
 import { EmployeeSummary, EmployeeDayRecord } from '../types';
 import { format } from 'date-fns';
 import { isShiftMismatch } from '../lib/shiftUtils';
-import { Calendar as CalendarIcon, Search, ChevronRight, AlertTriangle, Info, ArrowUpDown, Clock } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, ChevronRight, AlertTriangle, Info, ArrowUpDown, Clock, Mail } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -729,9 +729,199 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
                    {String(s.employeeName || '').substring(0, 2).toUpperCase()}
                  </div>
                  <div>
-                   <DialogTitle className="text-2xl font-black text-left">{s.employeeName}</DialogTitle>
-                   {s.email && <p className="text-slate-400 text-xs mt-0.5">{s.email}</p>}
-                   {/* */}
+                    <div className="flex items-center gap-2">
+                      <DialogTitle className="text-2xl font-black text-left">{s.employeeName}</DialogTitle>
+                      <button
+                           onClick={() => {
+                               let periodStr = '';
+                               if (records.length > 0) {
+                                   const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
+                                   periodStr = sorted.length === 1 ? sorted[0].date : `${sorted[0].date} to ${sorted[sorted.length - 1].date}`;
+                               } else {
+                                   periodStr = 'N/A';
+                               }
+
+                               const fmtD = (dStr: string) => {
+                                   const dObj = new Date(dStr + 'T12:00:00');
+                                   const day = dObj.getDate();
+                                   const m = dObj.toLocaleDateString('en-US', { month: 'long' });
+                                   const ord = (day > 3 && day < 21) ? 'th' : ['th', 'st', 'nd', 'rd', 'th', 'th', 'th', 'th', 'th', 'th'][day % 10];
+                                   return `${m} ${day}${ord}`;
+                               };
+
+                               const reports = [];
+
+                               // Idle Time
+                               if (includeIdle) {
+                                   const totalIdle = records.reduce((acc, r) => acc + r.idleDuration, 0);
+                                   if (totalIdle > 0) {
+                                       let occurrences = '';
+                                       records.filter(r => r.idleDuration > 0).forEach(r => {
+                                           const idleBreaks = (r.breaks || []).filter(b => b.type === 'idle');
+                                           if (idleBreaks.length > 0) {
+                                               const totalMin = Math.round(idleBreaks.reduce((acc, b) => acc + b.durationMinutes, 0));
+                                               const details = idleBreaks.map(b => {
+                                                   const start = `${b.startTime.getHours().toString().padStart(2, '0')}:${b.startTime.getMinutes().toString().padStart(2, '0')}`;
+                                                   const end = `${b.endTime.getHours().toString().padStart(2, '0')}:${b.endTime.getMinutes().toString().padStart(2, '0')}`;
+                                                   return `${start} ~ ${end} [${Math.round(b.durationMinutes)} min]`;
+                                               }).join(' | ');
+                                               occurrences += `  • ${fmtD(r.date)}: ${totalMin} minutes (${details})\n`;
+                                           }
+                                       });
+                                       reports.push({
+                                           title: "Idle Time",
+                                           totalStr: `${Math.floor(totalIdle / 60)}h ${totalIdle % 60}m`,
+                                           occurrences
+                                       });
+                                   }
+                               }
+
+                               // Organic Excess
+                               if (includeWc) {
+                                   const wcRecords = records.filter(r => r.wcOverbreak > 0);
+                                   if (wcRecords.length > 0) {
+                                       const totalWc = wcRecords.reduce((acc, r) => acc + r.wcOverbreak, 0);
+                                       let occurrences = '';
+                                       wcRecords.forEach(r => {
+                                           let accWc = 0;
+                                           const wcBreaks = (r.breaks || []).filter(b => b.type === 'wc');
+                                           const details: string[] = [];
+                                           wcBreaks.forEach(b => {
+                                               let oldAcc = accWc;
+                                               accWc += b.durationMinutes;
+                                               if (accWc > 25) {
+                                                   let exceeded = accWc - Math.max(oldAcc, 25);
+                                                   if (exceeded > 0) {
+                                                       const start = `${b.startTime.getHours().toString().padStart(2, '0')}:${b.startTime.getMinutes().toString().padStart(2, '0')}`;
+                                                       const end = `${b.endTime.getHours().toString().padStart(2, '0')}:${b.endTime.getMinutes().toString().padStart(2, '0')}`;
+                                                       details.push(`${start} ~ ${end} [${Math.round(exceeded)} min exceeded]`);
+                                                   }
+                                               }
+                                           });
+                                           if (details.length > 0) {
+                                               occurrences += `  • ${fmtD(r.date)}: ${Math.round(r.wcOverbreak)} minutes exceeded (${details.join(' | ')})\n`;
+                                           }
+                                       });
+                                       reports.push({
+                                           title: "Organic Break Excess (Allowed: 25m/day)",
+                                           totalStr: `${Math.floor(totalWc / 60)}h ${totalWc % 60}m`,
+                                           occurrences
+                                       });
+                                   }
+                               }
+
+                               // Overbreak
+                               if (onlyExceptions) {
+                                   const overbreakRecords = records.filter(r => r.mealOverbreak > 0 || r.shortOverbreak > 0 || r.wellnessOverbreak > 0 || r.prayingOverbreak > 0);
+                                   if (overbreakRecords.length > 0) {
+                                       const totalOver = overbreakRecords.reduce((acc, r) => acc + r.mealOverbreak + r.shortOverbreak + r.wellnessOverbreak + r.prayingOverbreak, 0);
+                                       let occurrences = '';
+                                       overbreakRecords.forEach(r => {
+                                           let accMeal = 0, accShort = 0, accWell = 0, accPray = 0;
+                                           const types = ['meal', 'short', 'wellness', 'praying'];
+                                           const obBreaks = (r.breaks || []).filter(b => types.includes(b.type));
+                                           const details: string[] = [];
+                                           obBreaks.forEach(b => {
+                                               let lim = 0;
+                                               let acc = 0;
+                                               if (b.type === 'meal') { lim = 60; accMeal += b.durationMinutes; acc = accMeal; }
+                                               else if (b.type === 'short') { lim = 20; accShort += b.durationMinutes; acc = accShort; }
+                                               else if (b.type === 'wellness') { lim = 10; accWell += b.durationMinutes; acc = accWell; }
+                                               else if (b.type === 'praying') { lim = 15; accPray += b.durationMinutes; acc = accPray; }
+                                               
+                                               let oldAcc = acc - b.durationMinutes;
+                                               if (acc > lim) {
+                                                   let exceeded = acc - Math.max(oldAcc, lim);
+                                                   if (exceeded > 0) {
+                                                       const start = `${b.startTime.getHours().toString().padStart(2, '0')}:${b.startTime.getMinutes().toString().padStart(2, '0')}`;
+                                                       const end = `${b.endTime.getHours().toString().padStart(2, '0')}:${b.endTime.getMinutes().toString().padStart(2, '0')}`;
+                                                       const typeNames = { meal: 'Meal', short: 'Short', wellness: 'Wellness', praying: 'Praying' };
+                                                       details.push(`${typeNames[b.type as keyof typeof typeNames]} ${start} ~ ${end} [${Math.round(exceeded)} min exceeded]`);
+                                                   }
+                                               }
+                                           });
+                                           if (details.length > 0) {
+                                               const totalExceeded = Math.round(r.mealOverbreak + r.shortOverbreak + r.wellnessOverbreak + r.prayingOverbreak);
+                                               occurrences += `  • ${fmtD(r.date)}: ${totalExceeded} minutes exceeded (${details.join(' | ')})\n`;
+                                           }
+                                       });
+                                       reports.push({
+                                           title: "Standard Overbreak (Meal: 60m, Short: 20m, Wellness: 10m)",
+                                           totalStr: `${Math.floor(totalOver / 60)}h ${totalOver % 60}m`,
+                                           occurrences
+                                       });
+                                   }
+                               }
+
+                               // Tardiness
+                               if (includeTardiness) {
+                                   const tardyRecords = records.filter(r => (r.tardinessMinutes || 0) > 0);
+                                   if (tardyRecords.length > 0) {
+                                       const totalTardiness = tardyRecords.reduce((acc, r) => acc + (r.tardinessMinutes || 0), 0);
+                                       let occurrences = tardyRecords.map(r => {
+                                           const actualStart = r.actualStartTime ? `${new Date(r.actualStartTime).getHours().toString().padStart(2, '0')}:${new Date(r.actualStartTime).getMinutes().toString().padStart(2, '0')}` : 'N/A';
+                                           return `  • ${fmtD(r.date)}: ${r.tardinessMinutes} minutes (Shift: ${r.scheduledShift || r.inferredShift || 'N/A'} | Clock In: ${actualStart})`;
+                                       }).join('\n');
+                                       occurrences += '\n';
+                                       reports.push({
+                                           title: "Tardiness",
+                                           totalStr: `${Math.floor(totalTardiness / 60)}h ${totalTardiness % 60}m`,
+                                           occurrences
+                                       });
+                                   }
+                               }
+
+                               // Early Leave
+                               if (includeEarlyLeave) {
+                                   const earlyRecords = records.filter(r => (r.earlyLeaveMinutes || 0) > 0);
+                                   if (earlyRecords.length > 0) {
+                                       const totalEarly = earlyRecords.reduce((acc, r) => acc + (r.earlyLeaveMinutes || 0), 0);
+                                       let occurrences = earlyRecords.map(r => {
+                                           const actualEnd = r.actualEndTime ? `${new Date(r.actualEndTime).getHours().toString().padStart(2, '0')}:${new Date(r.actualEndTime).getMinutes().toString().padStart(2, '0')}` : 'N/A';
+                                           return `  • ${fmtD(r.date)}: ${r.earlyLeaveMinutes} minutes (Shift: ${r.scheduledShift || r.inferredShift || 'N/A'} | Clock Out: ${actualEnd})`;
+                                       }).join('\n');
+                                       occurrences += '\n';
+                                       reports.push({
+                                           title: "Early Leave",
+                                           totalStr: `${Math.floor(totalEarly / 60)}h ${totalEarly % 60}m`,
+                                           occurrences
+                                       });
+                                   }
+                               }
+
+                               let subjects = reports.map(r => r.title);
+                               const subjStr = subjects.length > 1 ? "Timeline Exceptions" : (subjects[0] || "Timeline Review");
+                               const subj = `${subjStr} - ${s.employeeName}`;
+
+                               const firstName = s.employeeName ? s.employeeName.split(' ')[0] : 'Team Member';
+                               
+                               let body = `Hello ${firstName},\n\nI hope you're doing well.\n\nWhile reviewing your timeline for the period (${periodStr}), I noticed some exceeded times that we need to align on:\n\n`;
+                               
+                               if (reports.length > 0) {
+                                   reports.forEach(report => {
+                                       body += `--- ${report.title} ---\nTotal Accumulated: ${report.totalStr}\nDetails:\n${report.occurrences}\n`;
+                                   });
+                                   body += `Could you please check your timeline for these specific times and clarify what happened?\n\n`;
+                               } else {
+                                   body += `Please review your timeline to ensure all activities are correctly logged.\n\n`;
+                               }
+
+                               body += `Let me know if you have any questions.\n\nBest regards,`;
+
+                               const tlEmail = s.tl ? `${s.tl.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, '.')}@concentrix.com` : '';
+                               const ccList = ["sofia.fernandes@concentrix.com", tlEmail].filter(e => e).join(',');
+                               
+                               const mailto = `mailto:${s.email || ''}?cc=${encodeURIComponent(ccList)}&subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+                               window.location.href = mailto;
+                           }}
+                           className="p-1 rounded bg-slate-800 text-slate-300 hover:bg-indigo-500 hover:text-white transition-colors border border-slate-700 ml-1"
+                           title="Send Report via Email"
+                      >
+                           <Mail size={16} />
+                      </button>
+                    </div>
+                    {s.email && <p className="text-slate-400 text-xs mt-0.5">{s.email}</p>}
+                    {/* */}
                    {(() => {
                        const overrideStatus = getAbsenceStatusText(s, allSummaries, records, latestDate);
                        const schedShifts = Array.from(new Set(records.map(r => r.scheduledShift || r.inferredShift).filter(Boolean)));
@@ -778,6 +968,7 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
                     {(['today', 'yesterday', 'week', 'month'] as const)
                       .filter(v => {
                         if (v === 'today') return availableFilters.includes('day');
+                        if (v === 'month') return true; // ALways allow Current Month
                         return availableFilters.includes(v);
                       })
                       .map(v => (

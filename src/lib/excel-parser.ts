@@ -410,12 +410,24 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
   for (const e of events) {
       const s1 = String(e.row[schedShiftIdx] || '').trim();
       const s2 = String(e.row[infShiftIdx] || '').trim();
-      const match = s1.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/) || s2.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+      
+      const combined = s1 || s2;
+      const match = combined.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/);
       if (match) {
          let startH = parseInt(match[1]);
          let startM = parseInt(match[2]);
-         let endH = parseInt(match[3]);
-         let endM = parseInt(match[4]);
+         let startPeriod = match[3] ? match[3].toUpperCase() : null;
+         
+         let endH = parseInt(match[4]);
+         let endM = parseInt(match[5]);
+         let endPeriod = match[6] ? match[6].toUpperCase() : null;
+
+         if (startPeriod === 'PM' && startH !== 12) startH += 12;
+         if (startPeriod === 'AM' && startH === 12) startH = 0;
+         
+         if (endPeriod === 'PM' && endH !== 12) endH += 12;
+         if (endPeriod === 'AM' && endH === 12) endH = 0;
+
          explicitShift = {
              startHour: startH, startMinute: startM, endHour: endH, endMinute: endM,
              label: `${String(startH).padStart(2,'0')}:${String(startM).padStart(2,'0')}-${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}`,
