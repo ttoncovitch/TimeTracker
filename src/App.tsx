@@ -119,6 +119,7 @@ export default function App() {
   const [filterMinorOverbreaks, setFilterMinorOverbreaks] = useState(false);
   const [selectedDates, setSelectedDates] = useState<Date[] | undefined>();
   const [showRealTime, setShowRealTime] = useState(false);
+  const [showBPO, setShowBPO] = useState(false);
   const [isStaffInChargeOpen, setIsStaffInChargeOpen] = useState(false);
   const [isMissingStaffOpen, setIsMissingStaffOpen] = useState(false);
 
@@ -528,8 +529,11 @@ export default function App() {
        return s;
     });
 
-    return updatedSummaries;
-  }, [summaries, calendarData, staffInfoData, globalMinDate, globalMaxDate, latestDate]);
+    return updatedSummaries.filter(s => {
+       const isBPO = (s.lob || '').toLowerCase().includes('bpo');
+       return showBPO ? isBPO : !isBPO;
+    });
+  }, [summaries, calendarData, staffInfoData, globalMinDate, globalMaxDate, latestDate, showBPO]);
 
   // Data exclusively for the "OS - Schedule" tab
   const supportScheduleData = useMemo(() => {
@@ -596,8 +600,12 @@ export default function App() {
             calendarName: c.name,
             dailyRecords: dailyRecords.sort((a, b) => a.date.localeCompare(b.date))
          } as EmployeeSummary;
+      }).filter(s => {
+          if (!s) return false;
+          const isBPO = (s.lob || '').toLowerCase().includes('bpo');
+          return showBPO ? isBPO : !isBPO;
       });
-  }, [calendarData, globalMinDate, globalMaxDate]);
+  }, [calendarData, globalMinDate, globalMaxDate, showBPO]);
 
   const availableFilters = useMemo(() => {
     const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
@@ -1829,29 +1837,39 @@ export default function App() {
                   <div className="shrink-0 z-[50] bg-slate-50/95 backdrop-blur-md border-b border-slate-200 pb-4 pt-4 sm:pt-6 px-4 sm:px-6 -mx-4 sm:-mx-6 -mt-4 sm:-mt-6 mb-8 shadow-sm">
                     <div className="flex flex-col gap-3">
                     <div className="flex flex-col gap-2 items-start">
-                      <h3 className="text-slate-500 text-xs font-bold uppercase tracking-widest leading-none">{t('realtimeMetrics')}</h3>
-                      <button 
-                         onClick={() => {
-                           const nextValue = !showRealTime;
-                           setShowRealTime(nextValue);
-                           if (nextValue) {
-                               setTimeFilter('all');
-                               setSelectedDates(undefined);
-                           }
-                         }}
-                         className={`px-2 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 min-w-max shadow-sm w-fit ${showRealTime ? 'bg-red-500 text-white border-red-500' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
-                       >
-                         <div className={`w-2 h-2 rounded-full ${showRealTime ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
-                         {t('realTime')}
-                       </button>
-                       <button 
-                         onClick={() => setIsStaffInChargeOpen(true)}
-                         className="px-2 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 bg-white text-blue-600 border-blue-200 hover:bg-blue-50 shadow-sm w-fit mt-1"
-                       >
-                         <Users size={12} className="text-blue-500" />
-                         Staff now
-                       </button>
-                       {missingStaffNames.length > 0 && (
+                      <h3 className="text-slate-500 text-xs font-bold uppercase tracking-widest leading-none">Options</h3>
+                      <div className="flex flex-wrap gap-2 items-center">
+                          <button 
+                             onClick={() => {
+                               const nextValue = !showRealTime;
+                               setShowRealTime(nextValue);
+                               if (nextValue) {
+                                   setTimeFilter('all');
+                                   setSelectedDates(undefined);
+                               }
+                             }}
+                             className={`px-2 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 min-w-max shadow-sm w-fit ${showRealTime ? 'bg-red-500 text-white border-red-500' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
+                           >
+                             <div className={`w-2 h-2 rounded-full ${showRealTime ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
+                             {t('realTime')}
+                           </button>
+                           <button 
+                             onClick={() => setShowBPO(!showBPO)}
+                             className={`px-2 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 min-w-max shadow-sm w-fit ${showBPO ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100'}`}
+                           >
+                             <div className={`w-2 h-2 rounded-full ${showBPO ? 'bg-white' : 'bg-indigo-500'}`} />
+                             Show BPO
+                           </button>
+                       </div>
+                       <div className="flex flex-wrap gap-2 items-center">
+                           <button 
+                             onClick={() => setIsStaffInChargeOpen(true)}
+                             className="px-2 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 bg-white text-blue-600 border-blue-200 hover:bg-blue-50 shadow-sm w-fit mt-1"
+                           >
+                             <Users size={12} className="text-blue-500" />
+                             Staff now
+                           </button>
+                           {missingStaffNames.length > 0 && (
                          <button 
                            onClick={() => setIsMissingStaffOpen(true)}
                            className="px-2 py-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap border flex items-center gap-1 bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100 shadow-sm w-fit mt-1"
@@ -1860,6 +1878,7 @@ export default function App() {
                            Missing in Schedule ({missingStaffNames.length})
                          </button>
                        )}
+                    </div>
                     </div>
                     <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 justify-between w-full mt-2">
                       <p className="text-2xl font-black text-slate-900 hidden sm:block whitespace-nowrap">{t('auditResults')}</p>

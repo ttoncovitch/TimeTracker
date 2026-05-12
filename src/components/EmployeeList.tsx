@@ -899,7 +899,7 @@ function EmployeeDetail({ summary: s, allSummaries, latestDate, initialFilter, a
                                
                                if (reports.length > 0) {
                                    reports.forEach(report => {
-                                       body += `--- ${report.title} ---\nTotal Accumulated: ${report.totalStr}\nDetails:\n${report.occurrences}\n`;
+                                       body += `Daily Total (${report.title}):\n\n${report.occurrences}\n`;
                                    });
                                    body += `Could you please check your timeline for these specific times and clarify what happened?\n\n`;
                                } else {
