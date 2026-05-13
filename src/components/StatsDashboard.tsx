@@ -740,6 +740,7 @@ export function StatsDashboard({
            if (isOverbreak) {
               let typeLabel = b.type.toUpperCase();
               if (b.type === 'wc') typeLabel = 'ORGANIC';
+              if (b.type === 'forgot_status') typeLabel = 'IDLE';
               exceptions.push({
                 type: typeLabel,
                 excess: excessTime,
@@ -775,21 +776,21 @@ export function StatsDashboard({
         </div>
 
         {/* Tooltip Hover */}
-        <div className={`absolute bottom-[110%] z-[100] hidden group-hover:block w-64 bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl p-5 text-white animate-in fade-in zoom-in-95 duration-200 ${tooltipPos === 'left' ? 'right-0' : tooltipPos === 'right' ? 'left-0' : 'left-1/2 -translate-x-1/2'}`}>
-          <p className="font-black text-base border-b border-slate-700/50 pb-3 mb-3 text-white tracking-tight">{summary.employeeName}</p>
-          <div className="space-y-2.5 text-xs">
+        <div className={`absolute bottom-[110%] z-[100] hidden group-hover:block w-56 bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-xl shadow-xl p-4 text-white animate-in fade-in zoom-in-95 duration-200 ${tooltipPos === 'left' ? 'right-0' : tooltipPos === 'right' ? 'left-0' : 'left-1/2 -translate-x-1/2'}`}>
+          <p className="font-black text-sm border-b border-slate-700/50 pb-2 mb-2 text-white tracking-tight leading-none">{summary.employeeName}</p>
+          <div className="space-y-1.5 text-xs">
              {(showRealTime || (globalTimeFilter === 'day' && summary.dailyRecords.length === 1)) ? (
                 <>
                    {exceptions.length > 0 ? exceptions.map((exc, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-slate-300 font-bold border-b border-slate-800 pb-2 mb-2 last:border-0 last:pb-0 last:mb-0">
+                      <div key={idx} className="flex justify-between items-center text-slate-300 font-bold border-b border-slate-800 pb-1.5 mb-1.5 last:border-0 last:pb-0 last:mb-0">
                          <div className="flex flex-col">
-                            <span className="text-[10px] text-slate-400">{exc.time}</span>
-                            <span className="text-white text-sm tracking-widest uppercase">{exc.type}</span>
+                            <span className="text-[9px] text-slate-400 leading-none mb-0.5">{exc.time}</span>
+                            <span className="text-white text-xs tracking-widest uppercase leading-none">{exc.type}</span>
                          </div>
-                         <span className="text-rose-400 font-black text-sm">+{exc.excess}m</span>
+                         <span className="text-rose-400 font-black text-xs leading-none">+{exc.excess}m</span>
                       </div>
                    )) : (
-                      <div className="text-center py-2 text-emerald-400 font-black">
+                      <div className="text-center py-1 text-emerald-400 font-black text-[10px]">
                          Nenhum Overbreak
                       </div>
                    )}
@@ -846,9 +847,9 @@ export function StatsDashboard({
                   </div>
                 </>
              )}
-             <div className="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center font-black">
-                <span className="text-rose-400/80 text-[10px] uppercase tracking-wider">{t('totalOverbreakLabel')}:</span>
-                <span className="text-rose-400 text-lg">{summary.totalOverbreakMinutes}m</span>
+             <div className="mt-3 pt-2.5 border-t border-slate-700/50 flex justify-between items-center font-black">
+                <span className="text-rose-400/80 text-[9px] uppercase tracking-wider">{t('totalOverbreakLabel')}:</span>
+                <span className="text-rose-400 text-base">{summary.totalOverbreakMinutes}m</span>
              </div>
           </div>
         </div>

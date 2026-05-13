@@ -20,6 +20,83 @@ const WC_KEYWORDS = [
   'personal break', 'personal'
 ];
 
+export async function detectFileType(file: File): Promise<'extract' | 'calendar' | 'staffInfo' | 'unknown'> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        let firstSheet = workbook.SheetNames[0];
+        if (!firstSheet) return resolve('unknown');
+        
+        const worksheet = workbook.Sheets[firstSheet];
+        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, range: 0, defval: '' }) as any[][];
+        if (rows.length === 0) return resolve('unknown');
+
+        // Check for Staff Info
+        const staffSheet = workbook.SheetNames.find(sn => sn.toLowerCase().includes('staff info'));
+        if (staffSheet) return resolve('staffInfo');
+
+        const isActiveStaffInfo = rows.slice(0, Math.min(10, rows.length)).some(row => 
+             row[0] && row[0].toString().toUpperCase() === 'ACTIVE' && row[1]
+        );
+        if (isActiveStaffInfo) return resolve('staffInfo');
+        
+        // Check for Calendar
+        for (let i = 0; i < Math.min(20, rows.length); i++) {
+           if (!rows[i] || rows[i].length < 3) continue;
+           const rowStrings = rows[i].map(v => String(v).toLowerCase().trim());
+           
+           const hasCalendarName = rowStrings.some(s => s === 'name' || s === 'nome' || s === 'agent' || s === 'moderator' || s === 'agent name' || s === 'employee');
+           
+           let numericDays = 0;
+           for (const v of rows[i]) {
+               if (typeof v === 'number') {
+                   // Numbers usually represent days 1-31, or excel serial dates (40000+)
+                   if ((v >= 1 && v <= 31) || (v > 40000 && v < 50000)) numericDays++;
+               } else if (typeof v === 'string') {
+                   const s = v.trim().toLowerCase();
+                   if (s.match(/^\d{1,2}$/)) {
+                       numericDays++;
+                   } else if (s.match(/^\d{1,2}[\/\-]\d{1,2}/) || 
+                       s.match(/^(mon|tue|wed|thu|fri|sat|sun)\s+\d{1,2}/) || 
+                       s.match(/^[a-z]{3}\s*\d{1,2}$/)) {
+                           numericDays++;
+                   }
+               }
+           }
+           
+           // If we find a Name column and at least 5 days (columns indicating schedule dates)
+           if (hasCalendarName && numericDays >= 5) {
+               return resolve('calendar');
+           }
+        }
+        
+        // Check for Extract
+        for (let i = 0; i < Math.min(10, rows.length); i++) {
+           if (!rows[i] || rows[i].length < 6) continue;
+           const rowStrings = rows[i].map(v => String(v).toLowerCase().trim());
+           
+           const hasEmail = rowStrings.some(c => c.includes('email') || c.includes('e-mail') || c.includes('user'));
+           const hasStatus = rowStrings.some(c => c === 'action' || c === 'status' || c.includes('break name') || c === 'ação' || c === 'estado');
+           
+           // Very likely an extract if it has both email/user column and action/status column
+           if (hasEmail && hasStatus) {
+               return resolve('extract');
+           }
+        }
+
+        resolve('unknown');
+      } catch {
+        resolve('unknown');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -411,8 +488,10 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
       const s1 = String(e.row[schedShiftIdx] || '').trim();
       const s2 = String(e.row[infShiftIdx] || '').trim();
       
-      const combined = s1 || s2;
-      const match = combined.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/);
+      let match = null;
+      if (s2) match = s2.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/);
+      if (!match && s1) match = s1.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/);
+      
       if (match) {
          let startH = parseInt(match[1]);
          let startM = parseInt(match[2]);

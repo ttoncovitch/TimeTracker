@@ -201,7 +201,7 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx, showRealTime
          idleAlerts,
          employeeWithAbsences,
          totalTardiness,
-         topAgents: topAgents.slice(0, 4)
+         topAgents: topAgents
       };
    }, [summaries, selectedLang]);
 
@@ -320,7 +320,7 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx, showRealTime
                 {showRealTime ? 'TOP AGENTS' : t('onlyExceeded')}
               </span>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
               {stats.topAgents.length === 0 ? (
                  <div className="text-[11px] text-slate-400 font-bold py-2 bg-slate-50/50 rounded-lg text-center border border-slate-100/50">{t('noCriticalAgent')}</div>
               ) : stats.topAgents.map((agent, aIdx) => (

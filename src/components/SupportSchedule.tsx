@@ -310,7 +310,7 @@ export function SupportSchedule({ summaries, allSummaries }: SupportScheduleProp
         <div className="relative w-full md:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <Input 
-            placeholder="Search team..." 
+            placeholder="Search staff..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9 bg-white"
@@ -426,7 +426,8 @@ export function SupportSchedule({ summaries, allSummaries }: SupportScheduleProp
                       <tr key={s.employeeName} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-5 py-4 font-medium text-slate-900 sticky left-0 bg-white/90 backdrop-blur-sm z-10 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)] border-b border-slate-100/50 min-w-[250px] max-w-[250px]">
                           <div className="flex flex-col">
-                            <span className="font-bold truncate">{s.employeeName}</span>
+                            <span className="font-bold truncate" title={s.employeeName}>{s.employeeName}</span>
+                            {s.email && <span className="text-[10px] text-slate-400 truncate opacity-80 mt-0.5" title={s.email}>{s.email}</span>}
                             <div className="flex flex-wrap items-center gap-1 mt-1 text-[10px]">
                               {s.role && s.role.toUpperCase() !== 'OS' && <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded tracking-widest font-bold border border-slate-200/50">{s.role}</span>}
                               

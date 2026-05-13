@@ -17,8 +17,8 @@ import { isShiftMismatch } from './lib/shiftUtils';
 import { format } from 'date-fns';
 import { useLanguage } from './contexts/LanguageContext';
 import { EmployeeSummary, EmployeeDayRecord } from './types';
-import { parseExcelFile } from './lib/excel-parser';
-import { exportToPDF } from './lib/pdf-exporter';
+import { parseExcelFile, detectFileType } from './lib/excel-parser';
+import { exportToPDF, exportLOBsToPDF } from './lib/pdf-exporter';
 import { parseCalendarFile } from './lib/calendar-parser';
 import { parseStaffInfoFile, StaffInfoEntry } from './lib/staff-info-parser';
 import { StatsDashboard } from './components/StatsDashboard';
@@ -82,6 +82,7 @@ export default function App() {
   };
   const [summaries, setSummaries] = useState<EmployeeSummary[]>([]);
   const [lastExtractTime, setLastExtractTime] = useState<Date | null>(null);
+  const [wizardStep, setWizardStep] = useState<'intro' | 'staffInfo' | 'calendar' | 'extract' | 'done'>('intro');
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -537,9 +538,19 @@ export default function App() {
 
   // Data exclusively for the "OS - Schedule" tab
   const supportScheduleData = useMemo(() => {
+    const allStaff = staffInfoData.filter(s => s.status === 'ACTIVE' && s.lob !== 'Stranded Resource');
+    const emailToStaff = new Map(allStaff.map(s => [s.email.toLowerCase(), s]));
+
     // Per user: this tab should only use information from the schedule file
-    return calendarData.filter(c => isSupportRole({ role: c.role, lob: c.lob }))
+    return calendarData
+      .filter(c => c.name && c.name.trim().toLowerCase() !== 'saloua tadlaoui')
+      .filter(c => isSupportRole({ role: c.role, lob: c.lob }))
       .map(c => {
+         const staffEntry = (c.email && emailToStaff.get(c.email.toLowerCase())) || 
+                            allStaff.find(si => normalizeName(si.fullName) === normalizeName(c.name));
+         
+         if (!staffEntry && staffInfoData.length > 0) return null;
+
          const dailyRecords: EmployeeDayRecord[] = [];
          if (globalMinDate <= globalMaxDate && c.schedule) {
             let d = new Date(globalMinDate);
@@ -592,7 +603,7 @@ export default function App() {
 
          return {
             employeeName: c.name,
-            email: c.email || '',
+            email: staffEntry?.email || c.email || '',
             lob: c.lob?.toUpperCase() === 'LMG LATAM' ? 'LMEG LATAM' : (c.lob?.toUpperCase() === 'BPO LED QUALITY' ? 'BPO LED Quality' : (c.lob?.toUpperCase() === 'HIGH REPORTED QUEUE' ? 'HRQ' : c.lob)),
             role: c.role,
             shift: c.shift,
@@ -604,8 +615,8 @@ export default function App() {
           if (!s) return false;
           const isBPO = (s.lob || '').toLowerCase().includes('bpo');
           return showBPO ? isBPO : !isBPO;
-      });
-  }, [calendarData, globalMinDate, globalMaxDate, showBPO]);
+      }) as EmployeeSummary[];
+  }, [calendarData, staffInfoData, globalMinDate, globalMaxDate, showBPO]);
 
   const availableFilters = useMemo(() => {
     const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
@@ -675,7 +686,7 @@ export default function App() {
 
     if (r.date !== todayDateStr && r.date !== yesterdayStr) return false;
 
-    const shiftStr = r.scheduledShift || r.inferredShift;
+    const shiftStr = r.inferredShift || r.scheduledShift;
     if (!shiftStr) return false;
 
     const cleaned = cleanShift(shiftStr);
@@ -814,6 +825,11 @@ export default function App() {
 
         if (timeFilter !== 'all') {
            const d = new Date(r.date + 'T12:00:00');
+           const endOfToday = new Date(today);
+           endOfToday.setHours(23, 59, 59, 999);
+           
+           if (d.getTime() > endOfToday.getTime()) return false;
+
            if (timeFilter === 'month') {
               if (d.getMonth() !== tm || d.getFullYear() !== ty) return false;
            }
@@ -1356,6 +1372,7 @@ export default function App() {
       loading: t('processingCalendarStatus'),
       success: ({ data, note }) => {
         setCalendarData(data);
+        setWizardStep('extract');
         setIsCalendarLoading(false);
         let finalNote = getFullMonthName(note, lang);
         if (finalNote === String(note || '').toUpperCase() || finalNote === "SHEET1") {
@@ -1368,8 +1385,7 @@ export default function App() {
            }
         }
         setCalendarNote(finalNote);
-        const filteredCount = data.length;
-        return `${filteredCount} ${t('agentsMapped')}`;
+        return 'Calendário processado com sucesso!';
       },
       error: (err) => {
         console.error(err);
@@ -1380,7 +1396,7 @@ export default function App() {
 
     // Reset input
     event.target.value = '';
-  }, []);
+  }, [lang, t]);
 
   const handleStaffInfoUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1403,8 +1419,9 @@ export default function App() {
       loading: "Processing Staff Info...",
       success: ({ data }) => {
         setStaffInfoData(data);
+        setWizardStep('calendar');
         setIsStaffInfoLoading(false);
-        return `${data.length} staff entries loaded`;
+        return 'Staff Info carregado com sucesso!';
       },
       error: (err) => {
         console.error(err);
@@ -1415,7 +1432,7 @@ export default function App() {
 
     // Reset input
     event.target.value = '';
-  }, []);
+  }, [t]);
 
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1438,9 +1455,10 @@ export default function App() {
       loading: t('processingFile'),
       success: (data) => {
         setSummaries(data);
+        setWizardStep('done');
         setLastExtractTime(new Date());
         setIsLoading(false);
-        return `${data.length} ${t('agentsProcessed')}`;
+        return 'Relatório carregado com sucesso!';
       },
       error: (err) => {
         console.error(err);
@@ -1448,6 +1466,9 @@ export default function App() {
         return t('errorProcessingFile');
       }
     });
+
+    // Reset input
+    event.target.value = '';
   }, [t]);
 
   const handleExport = () => {
@@ -1524,6 +1545,12 @@ export default function App() {
     const nonSupportExport = sortedForExport.filter(s => !isSupportRole(s));
     const totalAgentsCount = periodSummaries.filter(s => !isSupportRole(s)).length;
     const affectedAgentsCount = nonSupportExport.length;
+
+    if (activeTab === 'lobs') {
+      exportLOBsToPDF(filteredSummaries, `${t('lobsPerformance')} - ${periodLabel}`, `LOB_Report_${fileSuffix}`, lang as any);
+      toast.success(t('pdfSuccess'));
+      return;
+    }
 
     exportToPDF(nonSupportExport, titleStr, `Report_${fileSuffix}`, {
       isTardiness: isTardinessOnly,
@@ -1644,32 +1671,36 @@ export default function App() {
         <nav className="flex-1 space-y-6">
           <div className="space-y-1">
             <label className="text-[9px] uppercase font-bold text-slate-500 block px-2 mb-2">{t('viewMode')}</label>
-            <button 
-              onClick={() => setActiveTab('dashboard')}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
-            >
-              <LayoutDashboard size={16} /> {t('overview')}
-            </button>
-            <button 
-              onClick={() => setActiveTab('list')}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'list' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
-            >
-              <ListFilter size={16} /> {t('agents')}
-            </button>
-            <button 
-              onClick={() => setActiveTab('lobs')}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'lobs' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
-            >
-              <Target size={16} /> {t('lobsPerformance')}
-            </button>
-            <button 
-              onClick={() => setActiveTab('support_schedule')}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'support_schedule' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
-            >
-              <Users size={16} /> Staff Schedule
-            </button>
-            
-            <div className="my-3 border-t border-slate-800/80 mx-2"></div>
+            {summaries.length > 0 && (
+              <>
+                <button 
+                  onClick={() => setActiveTab('dashboard')}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                >
+                  <LayoutDashboard size={16} /> {t('overview')}
+                </button>
+                <button 
+                  onClick={() => setActiveTab('list')}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'list' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                >
+                  <ListFilter size={16} /> {t('agents')}
+                </button>
+                <button 
+                  onClick={() => setActiveTab('lobs')}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'lobs' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                >
+                  <Target size={16} /> {t('lobsPerformance')}
+                </button>
+                <button 
+                  onClick={() => setActiveTab('support_schedule')}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'support_schedule' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                >
+                  <Users size={16} /> Staff Schedule
+                </button>
+                
+                <div className="my-3 border-t border-slate-800/80 mx-2"></div>
+              </>
+            )}
             
             <button 
               onClick={() => setActiveTab('howto')}
@@ -1703,16 +1734,18 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-             <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative">
-                <Users size={14} className="text-purple-600" /> 
-                <span className="hidden sm:inline">Upload Staff Info</span>
-                {staffInfoData.length > 0 && (
-                   <span className="absolute -top-2 -right-2 bg-purple-500 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm border border-purple-600">
-                      ✓
-                   </span>
-                )}
-                <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleStaffInfoUpload} />
-             </label>
+             {summaries.length > 0 && (
+               <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative">
+                  <Users size={14} className="text-purple-600" /> 
+                  <span className="hidden sm:inline">Upload Staff Info</span>
+                  {staffInfoData.length > 0 && (
+                     <span className="absolute -top-2 -right-2 bg-purple-500 text-white text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full shadow-sm border border-purple-600">
+                        ✓
+                     </span>
+                  )}
+                  <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleStaffInfoUpload} />
+               </label>
+             )}
             {summaries.length > 0 && (
               <div className="relative">
                 <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative">
@@ -1739,7 +1772,7 @@ export default function App() {
                  <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleCalendarUpload} />
               </label>
             )}
-            {summaries.length > 0 && (
+            {summaries.length > 0 && activeTab !== 'list' && activeTab !== 'howto' && (
               <div className="flex items-center gap-2">
                 <Button onClick={handleExport} className="bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-xs font-bold flex items-center gap-1.5 h-8 px-4 shadow-sm shadow-slate-200">
                   <FileDown size={14} /> <span className="hidden sm:inline">{t('exportPdf')}</span>
@@ -1747,20 +1780,24 @@ export default function App() {
               </div>
             )}
                 <div className="flex lg:hidden gap-1 bg-white border border-slate-200 rounded-lg p-1">
-                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('dashboard')} className={`h-8 w-8 p-0 ${activeTab === 'dashboard' ? 'bg-slate-100' : ''}`}>
-                    <LayoutDashboard size={14} />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('list')} className={`h-8 w-8 p-0 ${activeTab === 'list' ? 'bg-slate-100' : ''}`}>
-                    <ListFilter size={14} />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('lobs')} className={`h-8 w-8 p-0 ${activeTab === 'lobs' ? 'bg-slate-100' : ''}`}>
-                    <Target size={14} />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('support_schedule')} className={`h-8 w-8 p-0 ${activeTab === 'support_schedule' ? 'bg-slate-100' : ''}`}>
-                    <Users size={14} />
-                  </Button>
-                  <div className="w-px bg-slate-200 mx-0.5"></div>
-                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('howto')} className={`h-8 w-8 p-0 ${activeTab === 'howto' ? 'bg-indigo-50 text-indigo-600' : ''}`}>
+                  {summaries.length > 0 && (
+                    <>
+                      <Button variant="ghost" size="sm" onClick={() => setActiveTab('dashboard')} className={`h-8 w-8 p-0 ${activeTab === 'dashboard' ? 'bg-slate-100' : ''}`}>
+                        <LayoutDashboard size={14} />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setActiveTab('list')} className={`h-8 w-8 p-0 ${activeTab === 'list' ? 'bg-slate-100' : ''}`}>
+                        <ListFilter size={14} />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setActiveTab('lobs')} className={`h-8 w-8 p-0 ${activeTab === 'lobs' ? 'bg-slate-100' : ''}`}>
+                        <Target size={14} />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setActiveTab('support_schedule')} className={`h-8 w-8 p-0 ${activeTab === 'support_schedule' ? 'bg-slate-100' : ''}`}>
+                        <Users size={14} />
+                      </Button>
+                      <div className="w-px bg-slate-200 mx-0.5"></div>
+                    </>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => setActiveTab(activeTab === 'howto' ? (summaries.length > 0 ? 'dashboard' : 'dashboard') : 'howto')} className={`h-8 w-8 p-0 ${activeTab === 'howto' ? 'bg-indigo-50 text-indigo-600' : ''}`}>
                     <HelpCircle size={14} />
                   </Button>
                 </div>
@@ -1771,57 +1808,75 @@ export default function App() {
           <AnimatePresence mode="wait">
             {summaries.length === 0 ? (
               activeTab === 'howto' ? (
-                <HowTo />
+                <HowTo onBack={() => setActiveTab('dashboard')} />
               ) : (
               <motion.div 
-                key="uploader"
+                key="wizard"
                 initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, y: 10 }}
-                className="flex flex-col items-center justify-center min-h-[60vh] max-w-2xl mx-auto text-center space-y-8"
+                className="flex flex-col items-center justify-center min-h-[70vh] max-w-2xl mx-auto text-center space-y-8"
               >
-                <div className="space-y-4">
-                  <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-100">
-                    <FileSpreadsheet size={40} />
+                <div className="w-full flex-col flex items-center justify-center bg-white border border-slate-200 rounded-3xl p-10 shadow-2xl shadow-slate-200/50">
+                  <div className="flex w-full gap-4 mb-10 max-w-sm mx-auto">
+                     <span className={`h-2 flex-1 rounded-full transition-colors ${wizardStep === 'intro' ? 'bg-blue-600' : 'bg-slate-200'}`}></span>
+                     <span className={`h-2 flex-1 rounded-full transition-colors ${wizardStep === 'staffInfo' ? 'bg-purple-600' : 'bg-slate-200'}`}></span>
+                     <span className={`h-2 flex-1 rounded-full transition-colors ${wizardStep === 'calendar' ? 'bg-emerald-600' : 'bg-slate-200'}`}></span>
+                     <span className={`h-2 flex-1 rounded-full transition-colors ${wizardStep === 'extract' ? 'bg-blue-600' : 'bg-slate-200'}`}></span>
                   </div>
-                  <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight leading-tight">
-                    {t('homeTitle1')} <span className="text-blue-600 underline decoration-4 underline-offset-8">{t('homeTitleHighlight')}</span> {t('homeTitle2')}
-                  </h2>
-                  <p className="text-slate-500 text-lg max-w-md mx-auto">
-                    {t('homeSubtitle')}
-                  </p>
-                </div>
 
-                <div className="w-full flex flex-col sm:flex-row gap-6">
-                  <label className="relative group flex flex-col items-center justify-center w-full sm:w-1/2 h-80 border-2 border-dashed border-slate-300 rounded-[2.5rem] bg-white hover:bg-slate-50 hover:border-green-400 transition-all cursor-pointer overflow-hidden shadow-xl shadow-slate-200/50 p-6">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6 gap-6 z-10 text-center">
-                      <div className="p-5 bg-slate-900 text-white rounded-2xl group-hover:bg-green-600 transition-colors shadow-lg">
-                        <CalendarIcon size={32} />
-                      </div>
-                      <div>
-                        <p className="mb-1 text-2xl font-bold text-slate-800">{t('homeCalendarTitle')}</p>
-                        <p className="text-slate-500 font-medium text-[13px] leading-tight" dangerouslySetInnerHTML={{ __html: t('homeCalendarDesc') }}></p>
-                      </div>
-                    </div>
-                    <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleCalendarUpload} />
-                  </label>
+                  {wizardStep === 'intro' && (
+                      <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="flex flex-col items-center">
+                        <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-100">
+                          <FileSpreadsheet size={40} />
+                        </div>
+                        <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight mb-4">Bem-vindo ao Live Overview</h2>
+                        <p className="text-slate-500 mb-8 max-w-md mx-auto text-lg">Siga os passos e prepare o ambiente adicionando os relatórios necessários.</p>
+                        <Button onClick={() => setWizardStep('staffInfo')} className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-lg font-bold shadow-xl shadow-blue-600/20 px-12">Vamos começar</Button>
+                      </motion.div>
+                  )}
 
-                  <label className="relative group flex flex-col items-center justify-center w-full sm:w-1/2 h-80 border-2 border-dashed border-slate-300 rounded-[2.5rem] bg-white hover:bg-slate-50 hover:border-blue-400 transition-all cursor-pointer overflow-hidden shadow-2xl shadow-slate-200/50 p-6">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6 gap-6 z-10 text-center">
-                      <div className="p-5 bg-slate-900 text-white rounded-2xl group-hover:bg-blue-600 transition-colors shadow-lg">
-                        <Upload size={32} />
-                      </div>
-                      <div>
-                        <p className="mb-1 text-2xl font-bold text-slate-800">{t('homeExtractTitle')}</p>
-                        <p className="text-slate-500 font-medium text-[13px] leading-tight" dangerouslySetInnerHTML={{ __html: t('homeExtractDesc') }}></p>
-                      </div>
-                    </div>
-                    <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
-                  </label>
-                </div>
-                
-                <div className="mt-4 text-sm text-amber-600 bg-amber-50 rounded-xl p-4 border border-amber-200 shadow-sm">
-                  {t('homeRetroactiveNote')}
+                  {wizardStep === 'staffInfo' && (
+                      <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="flex flex-col items-center">
+                        <div className="w-20 h-20 bg-purple-100 text-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-purple-100">
+                           <Users size={40} />
+                        </div>
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-4">Upload do Staff Info</h2>
+                        <p className="text-slate-500 mb-8 max-w-sm mx-auto text-base">O Staff Info mapeia os agentes pelo e-mail e garante que eles fiquem associados ao LOB, Idioma e Team Leader corretos.</p>
+                        <label className="w-full flex items-center justify-center bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-lg font-bold shadow-xl shadow-purple-600/20 cursor-pointer transition-all px-12 h-12">
+                           Fazer Upload
+                           <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleStaffInfoUpload} />
+                        </label>
+                      </motion.div>
+                  )}
+
+                  {wizardStep === 'calendar' && (
+                      <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="flex flex-col items-center">
+                        <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-emerald-100">
+                           <CalendarIcon size={40} />
+                        </div>
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-4">Upload do Calendário</h2>
+                        <p className="text-slate-500 mb-8 max-w-sm mx-auto text-base">O arquivo de calendário do mês atual permite analisar faltas, atrasos e comparar com os turnos reais corretamente.</p>
+                        <label className="w-full flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-lg font-bold shadow-xl shadow-emerald-600/20 cursor-pointer transition-all px-12 h-12">
+                           Fazer Upload
+                           <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleCalendarUpload} />
+                        </label>
+                      </motion.div>
+                  )}
+
+                  {wizardStep === 'extract' && (
+                      <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="flex flex-col items-center">
+                        <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-100">
+                           <Upload size={40} />
+                        </div>
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-4">Upload do Extract</h2>
+                        <p className="text-slate-500 mb-8 max-w-sm mx-auto text-base">Por fim, extraia o relatório de status atual do Byteworks. Assim que for carregado, o Dashboard aparecerá automaticamente!</p>
+                        <label className="w-full flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-lg font-bold shadow-xl shadow-blue-600/20 cursor-pointer transition-all px-12 h-12">
+                           Fazer Upload
+                           <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
+                        </label>
+                      </motion.div>
+                  )}
                 </div>
               </motion.div>
               )
@@ -2222,43 +2277,10 @@ export default function App() {
                   ) : activeTab === 'support_schedule' ? (
                     <SupportSchedule summaries={supportScheduleData} allSummaries={mergedSummaries} />
                   ) : activeTab === 'howto' ? (
-                    <HowTo />
+                    <HowTo onBack={() => setActiveTab('dashboard')} />
                   ) : (
-                    <EmployeeList availableFilters={availableFilters} summaries={filteredSummaries} allSummaries={mergedSummaries} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalIncludeCheck={includeCheckGlobal} globalShiftFilter={shiftFilter} globalFilterMajorOverbreaks={false} />
+                    <EmployeeList availableFilters={availableFilters} summaries={filteredSummaries} allSummaries={mergedSummaries} staffInfoData={staffInfoData} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalIncludeCheck={includeCheckGlobal} globalShiftFilter={shiftFilter} globalFilterMajorOverbreaks={false} />
                   )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Floating Summary Banner */}
-          <AnimatePresence>
-            {filteredSummaries.length > 0 && !isLoading && !isCalendarLoading && activeTab !== 'support_schedule' && activeTab !== 'lobs' && (
-              <motion.div 
-                initial={{ y: 100, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: 100, opacity: 0 }}
-                className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 px-5 py-2 rounded-full shadow-2xl shadow-indigo-500/20"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="flex flex-col border-r border-slate-700 pr-3">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight">{t('agents')}</span>
-                    <span className="text-sm font-black text-white">{filteredSummaries.length}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight">{t('totalOverbreak')}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-black text-rose-400">
-                        {Math.floor(dashboardStats.totalOverbreakMinutes / 60)}h {dashboardStats.totalOverbreakMinutes % 60}m
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col border-l border-slate-700 pl-3">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight">{t('avgOverbreak')}</span>
-                    <span className="text-sm font-black text-indigo-400">
-                      {summaries.length > 0 ? Math.round(dashboardStats.totalOverbreakMinutes / summaries.length) : 0}m
-                    </span>
-                  </div>
                 </div>
               </motion.div>
             )}
