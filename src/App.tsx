@@ -223,46 +223,52 @@ export default function App() {
   const { globalMinDate, globalMaxDate } = useMemo(() => {
     let min = new Date('2099-01-01');
     let max = new Date('2000-01-01');
+    let hasSummaries = false;
+    
     summaries.forEach(s => s.dailyRecords.forEach(r => {
+      hasSummaries = true;
       const d = new Date(r.date + 'T12:00:00');
       if (d < min) min = d;
       if (d > max) max = d;
     }));
 
-    // Also include calendar dates
-    calendarData.forEach(c => {
-      if (c.schedule) {
-        Object.keys(c.schedule).forEach(dateStr => {
-          // calendar keys are either yyyy-MM-dd or dd/MM/yyyy
-          let d: Date | null = null;
-          if (dateStr.includes('-')) {
-             const parts = dateStr.split('-');
-             if (parts.length === 3) {
-                // Check if YYYY-MM-DD
-                if (parts[0].length === 4) {
-                   d = new Date(dateStr + 'T12:00:00');
-                } else if (parts[2].length === 4) {
-                   // DD-MM-YYYY
-                   d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
-                }
-             }
-          } else if (dateStr.includes('/')) {
-             const parts = dateStr.split('/');
-             if (parts.length === 3) {
-                if (parts[2].length === 4) {
-                  d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
-                } else if (parts[0].length === 4) {
-                  d = new Date(`${parts[0]}-${parts[1]}-${parts[2]}T12:00:00`);
-                }
-             }
-          }
-          if (d && !isNaN(d.getTime())) {
-             if (d < min) min = d;
-             if (d > max) max = d;
-          }
-        });
-      }
-    });
+    // Also include calendar dates ONLY if we have no summaries,
+    // otherwise the calendar boundaries stretch the absence calculations to months we don't have Byteworks data for.
+    if (!hasSummaries) {
+      calendarData.forEach(c => {
+        if (c.schedule) {
+          Object.keys(c.schedule).forEach(dateStr => {
+            // calendar keys are either yyyy-MM-dd or dd/MM/yyyy
+            let d: Date | null = null;
+            if (dateStr.includes('-')) {
+               const parts = dateStr.split('-');
+               if (parts.length === 3) {
+                  // Check if YYYY-MM-DD
+                  if (parts[0].length === 4) {
+                     d = new Date(dateStr + 'T12:00:00');
+                  } else if (parts[2].length === 4) {
+                     // DD-MM-YYYY
+                     d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+                  }
+               }
+            } else if (dateStr.includes('/')) {
+               const parts = dateStr.split('/');
+               if (parts.length === 3) {
+                  if (parts[2].length === 4) {
+                    d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+                  } else if (parts[0].length === 4) {
+                    d = new Date(`${parts[0]}-${parts[1]}-${parts[2]}T12:00:00`);
+                  }
+               }
+            }
+            if (d && !isNaN(d.getTime())) {
+               if (d < min) min = d;
+               if (d > max) max = d;
+            }
+          });
+        }
+      });
+    }
 
     if (min.getFullYear() === 2099) min = new Date();
     if (max.getFullYear() === 2000) max = new Date();

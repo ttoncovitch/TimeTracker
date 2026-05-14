@@ -578,6 +578,7 @@ function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, i
   const [includeEarlyLeave, setIncludeEarlyLeave] = useState(globalIncludeEarlyLeave);
   const [includeShort30Min, setIncludeShort30Min] = useState(globalIncludeShort30Min || false);
   const [includeCheck, setIncludeCheck] = useState(globalIncludeCheck || false);
+  const [includeFaltas, setIncludeFaltas] = useState(false);
 
   const fullSummary = allSummaries.find(as => as.employeeName === s.employeeName) || s;
   
@@ -694,8 +695,9 @@ function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, i
   const hasEarlyLeaveData = viewRecords.some(r => (r.earlyLeaveMinutes || 0) > 0);
   const hasIdleData = viewRecords.some(r => r.idleDuration > 0);
   const hasCheckData = viewRecords.some(r => isShiftMismatch(r.scheduledShift, r.inferredShift));
+  const hasAbsenceData = viewRecords.some(r => r.isAbsence);
 
-  const anyLocalFilterActive = onlyExceptions || includeWc || includeIdle || filterNm || includeTardiness || includeEarlyLeave || includeShort30Min || includeCheck;
+  const anyLocalFilterActive = onlyExceptions || includeWc || includeIdle || filterNm || includeTardiness || includeEarlyLeave || includeShort30Min || includeCheck || includeFaltas;
   if (anyLocalFilterActive) {
     records = records.filter(r => {
       let keep = false;
@@ -715,6 +717,7 @@ function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, i
       if (includeEarlyLeave && (r.earlyLeaveMinutes || 0) > 0) keep = true;
       if (includeShort30Min && r.hasSingleShort30m) keep = true;
       if (includeCheck && isShiftMismatch(r.scheduledShift, r.inferredShift)) keep = true;
+      if (includeFaltas && r.isAbsence) keep = true;
       
       return keep;
     });
@@ -1124,6 +1127,14 @@ function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, i
                               className={`flex-auto px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider transition-colors min-w-fit ${includeIdle ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
                             >
                               IDLE
+                            </button>
+                          )}
+                          {hasAbsenceData && (
+                            <button
+                              onClick={() => setIncludeFaltas(!includeFaltas)}
+                              className={`flex-auto px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider transition-colors min-w-fit ${includeFaltas ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-300'}`}
+                            >
+                              FALTAS
                             </button>
                           )}
                           {hasCheckData && (
