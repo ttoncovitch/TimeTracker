@@ -35,57 +35,104 @@ export async function detectFileType(file: File): Promise<'extract' | 'calendar'
         const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, range: 0, defval: '' }) as any[][];
         if (rows.length === 0) return resolve('unknown');
 
-        // Check for Staff Info
-        const staffSheet = workbook.SheetNames.find(sn => sn.toLowerCase().includes('staff info'));
-        if (staffSheet) return resolve('staffInfo');
-
-        const isActiveStaffInfo = rows.slice(0, Math.min(10, rows.length)).some(row => 
-             row[0] && row[0].toString().toUpperCase() === 'ACTIVE' && row[1]
-        );
-        if (isActiveStaffInfo) return resolve('staffInfo');
-        
         // Check for Calendar
-        for (let i = 0; i < Math.min(20, rows.length); i++) {
-           if (!rows[i] || rows[i].length < 3) continue;
-           const rowStrings = rows[i].map(v => String(v).toLowerCase().trim());
-           
-           const hasCalendarName = rowStrings.some(s => s === 'name' || s === 'nome' || s === 'agent' || s === 'moderator' || s === 'agent name' || s === 'employee');
-           
-           let numericDays = 0;
-           for (const v of rows[i]) {
-               if (typeof v === 'number') {
-                   // Numbers usually represent days 1-31, or excel serial dates (40000+)
-                   if ((v >= 1 && v <= 31) || (v > 40000 && v < 50000)) numericDays++;
-               } else if (typeof v === 'string') {
-                   const s = v.trim().toLowerCase();
-                   if (s.match(/^\d{1,2}$/)) {
-                       numericDays++;
-                   } else if (s.match(/^\d{1,2}[\/\-]\d{1,2}/) || 
-                       s.match(/^(mon|tue|wed|thu|fri|sat|sun)\s+\d{1,2}/) || 
-                       s.match(/^[a-z]{3}\s*\d{1,2}$/)) {
+        for (const sheetName of workbook.SheetNames) {
+            const tempWorksheet = workbook.Sheets[sheetName];
+            const tempRows = XLSX.utils.sheet_to_json(tempWorksheet, { header: 1, range: 0, defval: '' }) as any[][];
+            
+            for (let i = 0; i < Math.min(20, tempRows.length); i++) {
+               if (!tempRows[i] || tempRows[i].length < 3) continue;
+               const rowStrings = tempRows[i].map(v => String(v).toLowerCase().trim());
+               
+               const hasCalendarName = rowStrings.some(s => s === 'name' || s === 'nome' || s === 'agent' || s === 'moderator' || s === 'agent name' || s === 'employee');
+               
+               let numericDays = 0;
+               for (const v of tempRows[i]) {
+                   if (typeof v === 'number') {
+                       // Numbers usually represent days 1-31, or excel serial dates (40000+)
+                       if ((v >= 1 && v <= 31) || (v > 40000 && v < 50000)) numericDays++;
+                   } else if (typeof v === 'string') {
+                       const s = v.trim().toLowerCase();
+                       if (s.match(/^\d{1,2}$/)) {
                            numericDays++;
+                       } else if (s.match(/^\d{1,2}[\/\-]\d{1,2}/) || 
+                           s.match(/^(mon|tue|wed|thu|fri|sat|sun)\s+\d{1,2}/) || 
+                           s.match(/^[a-z]{3}\s*\d{1,2}$/)) {
+                               numericDays++;
+                       }
                    }
                }
-           }
-           
-           // If we find a Name column and at least 5 days (columns indicating schedule dates)
-           if (hasCalendarName && numericDays >= 5) {
-               return resolve('calendar');
-           }
+               
+               // If we find a Name column and at least 5 days (columns indicating schedule dates)
+               if (hasCalendarName && numericDays >= 5) {
+                   return resolve('calendar');
+               }
+            }
         }
         
+        // Check for Staff Info
+        const staffSheetName = workbook.SheetNames.find(sn => sn.toLowerCase().includes('staff info'));
+        if (staffSheetName) return resolve('staffInfo');
+
+        // Check if any sheet looks like Staff Info
+        for (const sheetName of workbook.SheetNames) {
+            const tempWorksheet = workbook.Sheets[sheetName];
+            const tempRows = XLSX.utils.sheet_to_json(tempWorksheet, { header: 1, range: 0, defval: '' }) as any[][];
+            
+            const isStaffInfo = tempRows.slice(0, Math.min(50, tempRows.length)).some(row => {
+                if (!row || row.length < 2) return false;
+                
+                const rowStr = row.map(v => String(v).trim().toUpperCase());
+                const joined = rowStr.join('|');
+                
+                // Staff info typically has LOB, LANGUAGE, TEAM LEADER, ROLE, or SUPERVISOR.
+                // Extract does not have these.
+                if (joined.includes('LOB|') || joined.includes('|LOB') || joined.includes('LANGUAGE') || joined.includes('TEAM LEADER') || joined.includes('SUPERVISOR') || joined.includes('ROLE')) {
+                    if (joined.includes('ACTIVE') || joined.includes('STATUS') || joined.includes('NAME') || joined.includes('EMAIL') || joined.includes('UID') || joined.includes('EMPLID')) {
+                        return true;
+                    }
+                }
+                
+                // If it explicitly has a column exactly "ACTIVE" and another exactly "NAME" or "LOB", it's probably Staff Info.
+                let hasActive = false;
+                let hasLob = false;
+                let hasLanguage = false;
+                for (let c = 0; c < Math.min(50, row.length); c++) {
+                    const val = rowStr[c];
+                    if (val === 'ACTIVE') hasActive = true;
+                    if (val === 'LOB') hasLob = true;
+                    if (val === 'LANGUAGE' || val === 'IDIOMA') hasLanguage = true;
+                }
+                
+                if (hasActive && (hasLob || hasLanguage)) return true;
+                if (hasLob && hasLanguage) return true;
+                
+                return false;
+            });
+            
+            if (isStaffInfo) {
+                return resolve('staffInfo');
+            }
+        }
+
         // Check for Extract
-        for (let i = 0; i < Math.min(10, rows.length); i++) {
-           if (!rows[i] || rows[i].length < 6) continue;
-           const rowStrings = rows[i].map(v => String(v).toLowerCase().trim());
-           
-           const hasEmail = rowStrings.some(c => c.includes('email') || c.includes('e-mail') || c.includes('user'));
-           const hasStatus = rowStrings.some(c => c === 'action' || c === 'status' || c.includes('break name') || c === 'ação' || c === 'estado');
-           
-           // Very likely an extract if it has both email/user column and action/status column
-           if (hasEmail && hasStatus) {
-               return resolve('extract');
-           }
+        for (const sheetName of workbook.SheetNames) {
+            const tempWorksheet = workbook.Sheets[sheetName];
+            const tempRows = XLSX.utils.sheet_to_json(tempWorksheet, { header: 1, range: 0, defval: '' }) as any[][];
+            
+            for (let i = 0; i < Math.min(10, tempRows.length); i++) {
+               if (!tempRows[i] || tempRows[i].length < 4) continue;
+               const rowStrings = tempRows[i].map(v => String(v).toLowerCase().trim());
+               
+               const hasEmailOrAgent = rowStrings.some(c => c.includes('email') || c.includes('e-mail') || c.includes('user') || c.includes('agent') || c.includes('employee') || c.includes('name') || c.includes('nome'));
+               const hasTimeOrDuration = rowStrings.some(c => c.includes('duration') || c.includes('duração') || c.includes('time') || c.includes('start') || c.includes('end') || c.includes('início') || c.includes('fim'));
+               const hasActionOrStatus = rowStrings.some(c => c === 'action' || c === 'status' || c.includes('break name') || c === 'ação' || c === 'estado');
+               
+               // Extracts will generally have an email/agent column and time/duration or action/status columns.
+               if (hasEmailOrAgent && (hasTimeOrDuration || hasActionOrStatus)) {
+                   return resolve('extract');
+               }
+            }
         }
 
         resolve('unknown');

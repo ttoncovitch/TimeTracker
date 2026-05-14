@@ -53,6 +53,9 @@ function getAbsenceStatusText(s: EmployeeSummary, allSummaries: EmployeeSummary[
     checkProp = 'isLOA';
   } else if (hasPTO) {
     statusName = "PTO (VAC)";
+    if (filteredRecords.some(r => r.isPTO && String(r.scheduledShift || r.inferredShift || '').toUpperCase().includes('MAR'))) {
+       statusName = "MAR";
+    }
     checkProp = 'isPTO';
   }
 
@@ -129,7 +132,7 @@ function getAbsenceStatusText(s: EmployeeSummary, allSummaries: EmployeeSummary[
 function isLeaveShift(sh: string) {
   if (!sh) return false;
   const upper = sh.toUpperCase();
-  return upper === 'PTO' || upper.includes('VAC') || upper.includes('FÉRIAS') || upper === 'SL' || upper.includes('SICK') || upper.includes('MEDICO') || upper.includes('ATESTADO') || upper === 'LOA' || upper.includes('LICENÇA');
+  return upper === 'PTO' || upper.includes('VAC') || upper.includes('MAR') || upper.includes('FÉRIAS') || upper === 'SL' || upper.includes('SICK') || upper.includes('MEDICO') || upper.includes('ATESTADO') || upper === 'LOA' || upper.includes('LICENÇA');
 }
 
 export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDate, initialFilter = 'all', availableFilters, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeMinorTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalShiftFilter, globalFilterMajorOverbreaks }: EmployeeListProps) {
@@ -139,6 +142,7 @@ export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDat
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLob, setSelectedLob] = useState<string>('ALL');
+  const [selectedTL, setSelectedTL] = useState<string>('ALL');
   const [selectedLang, setSelectedLang] = useState<string>('ALL');
   const [selectedEmp, setSelectedEmp] = useState<EmployeeSummary | null>(null);
   const [sortBy, setSortBy] = useState<'maiores' | 'menores' | 'alfabetica' | string>('maiores');
@@ -151,6 +155,7 @@ export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDat
      const upper = l.toUpperCase();
      return !['CSR', 'BA', 'TL', 'RTA', 'QA', 'TRAINER', 'MANAGER', 'OS', 'LMG', 'LMG BADNESS', 'LMG ES', 'LMG LATAM'].includes(upper);
   }).sort() as string[];
+  const tls = Array.from(new Set(summaries.map(s => s.supervisor?.trim()).filter(Boolean))).sort() as string[];
   const languages = selectedLob === 'ALL' 
     ? [] 
     : Array.from(new Set(summaries.filter(s => s.lob === selectedLob).map(s => s.language?.toUpperCase().trim()).filter(Boolean))).sort() as string[];
@@ -159,7 +164,8 @@ export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDat
     const matchesSearch = normalizeName(s.employeeName).includes(normalizeName(searchTerm));
     const matchesLob = selectedLob === 'ALL' || s.lob === selectedLob;
     const matchesLang = selectedLang === 'ALL' || s.language?.toUpperCase().trim() === selectedLang;
-    return matchesSearch && matchesLob && matchesLang;
+    const matchesTL = selectedTL === 'ALL' || s.supervisor?.trim() === selectedTL;
+    return matchesSearch && matchesLob && matchesLang && matchesTL;
   }).sort((a, b) => {
     // If using predefined sorts
     if (sortBy === 'maiores') return b.totalOverbreakMinutes - a.totalOverbreakMinutes;
@@ -218,6 +224,12 @@ export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDat
               <select className="h-11 bg-white border border-slate-200 text-slate-700 rounded-xl px-3 text-xs font-bold w-full sm:w-auto shadow-sm outline-none cursor-pointer" value={selectedLob} onChange={e => { setSelectedLob(e.target.value); setSelectedLang('ALL'); }}>
                 <option value="ALL">Todos os LOB's</option>
                 {lobs.map(l => <option key={l} value={l}>{formatLOB(l)}</option>)}
+              </select>
+            )}
+            {tls.length > 0 && (
+              <select className="h-11 bg-white border border-slate-200 text-slate-700 rounded-xl px-3 text-xs font-bold w-full sm:w-auto shadow-sm outline-none cursor-pointer" value={selectedTL} onChange={e => setSelectedTL(e.target.value)}>
+                <option value="ALL">Todos os TL's</option>
+                {tls.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             )}
             {selectedLob !== 'ALL' && languages.length > 0 && (
@@ -499,7 +511,7 @@ export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDat
                         ) : s.isLOA ? (
                             <span className="inline-block px-1.5 py-0.5 bg-indigo-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">LOA</span>
                         ) : s.isPTO ? (
-                            <span className="inline-block px-1.5 py-0.5 bg-cyan-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">PTO</span>
+                            <span className="inline-block px-1.5 py-0.5 bg-cyan-500 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">{String(s.shift || '').toUpperCase().includes('MAR') ? 'MAR' : 'PTO'}</span>
                         ) : s.isSL ? (
                             <span className="inline-block px-1.5 py-0.5 bg-rose-400 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">SL</span>
                         ) : s.isSUSPP ? (
@@ -1208,7 +1220,14 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
     }
 
     if ((record.isOFF || record.isLOA || record.isPTO || record.isSL || record.isSUSPP || record.isATT) && record.actualStartTime == null && record.totalWorkTimeMillis < 60000) {
-        const typeLabel = record.isATT ? 'ATT / SAÍDA' : record.isLOA ? 'LICENÇA' : record.isPTO ? 'FÉRIAS' : record.isSL ? 'ATESTADO' : record.isSUSPP ? 'SUSPENSÃO' : 'OFF';
+        let typeLabel = record.isATT ? 'ATT / SAÍDA' : record.isLOA ? 'LICENÇA' : record.isPTO ? 'FÉRIAS' : record.isSL ? 'ATESTADO' : record.isSUSPP ? 'SUSPENSÃO' : 'OFF';
+
+        if (record.isPTO) {
+            const shiftUpper = String(record.scheduledShift || record.inferredShift || '').toUpperCase();
+            if (shiftUpper.includes('MAR')) {
+                typeLabel = 'MAR';
+            }
+        }
         return (
              <div className="flex flex-col p-4 border rounded-xl shadow-sm bg-white border-slate-100">
                 <div className="flex items-center gap-3">

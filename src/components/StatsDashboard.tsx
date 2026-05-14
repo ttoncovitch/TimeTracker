@@ -245,54 +245,58 @@ export function StatsDashboard({
         
         // Find all contiguous blocks of the status
         const sortedAll = [...fullEmp.dailyRecords].sort((a,b) => a.date.localeCompare(b.date));
-        const blocks: {start: string, end: string, returnDate: string}[] = [];
-        
-        let inBlock = false;
-        let blockStart = "";
-        let lastStatusDate = "";
+        let currentBlock: { start: string, lastStatus: string } | null = null;
+        const tempBlocks: typeof currentBlock[] = [];
 
-        sortedAll.forEach((r, idx) => {
+        sortedAll.forEach((r) => {
             const hasStatus = !!r[attrKey as keyof typeof r];
-            const isOff = r.isOFF;
-
+            
             if (hasStatus) {
-                if (!inBlock) {
-                    inBlock = true;
-                    blockStart = r.date;
+                if (!currentBlock) {
+                    currentBlock = { start: r.date, lastStatus: r.date };
+                } else {
+                    currentBlock.lastStatus = r.date;
                 }
-                lastStatusDate = r.date;
-            } else if (isOff) {
-                // Stay in block during OFF days
+            } else if (r.isOFF && currentBlock) {
+                // Stay in block during OFF days to bridge weekends
             } else {
-                if (inBlock) {
-                    blocks.push({ 
-                        start: blockStart, 
-                        end: lastStatusDate, 
-                        returnDate: r.date
-                    });
-                    inBlock = false;
+                if (currentBlock) {
+                    tempBlocks.push(currentBlock);
+                    currentBlock = null;
                 }
             }
         });
-        if (inBlock) {
-            const nextDay = new Date(lastStatusDate);
-            nextDay.setDate(nextDay.getDate() + 1);
-            blocks.push({ 
-                start: blockStart, 
-                end: lastStatusDate, 
-                returnDate: format(nextDay, 'yyyy-MM-dd') 
-            });
+        
+        if (currentBlock) {
+            tempBlocks.push(currentBlock);
         }
+
+        const blocks = tempBlocks.map(b => {
+             const nextDay = new Date(b.lastStatus + "T12:00:00");
+             nextDay.setDate(nextDay.getDate() + 1);
+             return {
+                 start: b.start,
+                 end: b.lastStatus,
+                 returnDate: format(nextDay, 'yyyy-MM-dd')
+             };
+        });
 
         if (blocks.length === 0) return;
 
         // Determine which block to show based on today/refDate
         const currentRef = isMonthOrAll ? todayStr : refDateStr;
+        const currentRefDate = new Date(currentRef + 'T12:00:00');
+        currentRefDate.setDate(currentRefDate.getDate() + 1);
+        const tomorrowStr = format(currentRefDate, 'yyyy-MM-dd');
         
         // 1. Check if currently in a block
         const activeBlock = blocks.find(b => b.start <= currentRef && b.returnDate > currentRef);
         if (activeBlock) {
-            out.push({ summary: s, startDate: activeBlock.start, endDate: activeBlock.end, returnDate: activeBlock.returnDate });
+            if (activeBlock.returnDate === tomorrowStr) {
+                soon.push({ summary: s, startDate: activeBlock.start, endDate: activeBlock.end, returnDate: activeBlock.returnDate });
+            } else {
+                out.push({ summary: s, startDate: activeBlock.start, endDate: activeBlock.end, returnDate: activeBlock.returnDate });
+            }
             return;
         }
 
@@ -1455,42 +1459,26 @@ export function StatsDashboard({
                 const isMonthOrAll = globalTimeFilter === 'all' || globalTimeFilter === 'month';
                 if (isMonthOrAll) {
                    const todayStr = format(new Date(), 'yyyy-MM-dd');
-                   const hasBack = extData.out.some((d:any) => d.returnDate > todayStr) || extData.soon.some((d:any) => d.returnDate > todayStr);
-                   const cols = hasBack ? 3 : 2;
-                   const cl = cols === 3 ? "lg:col-span-4" : "lg:col-span-6";
+                   const tomorrowStr = format(new Date(new Date().getTime() + 86400000), 'yyyy-MM-dd');
+                   const dayAfterTomorrowStr = format(new Date(new Date().getTime() + 172800000), 'yyyy-MM-dd');
+                   
+                   const backAgents = [...extData.out, ...extData.soon]
+                     .filter((d:any) => d.returnDate === tomorrowStr || d.returnDate === dayAfterTomorrowStr)
+                     .sort((a:any, b:any) => a.returnDate.localeCompare(b.returnDate));
+                     
+                   const extStatusName = activeExtraStatus.split(' (')[0];
+                   
+                   const cols = 3;
+                   const cl = "lg:col-span-4";
                    
                    return (
                      <>
-                        <Card className={`${cl} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
-                         <CardHeader className="bg-slate-50/50 border-b border-slate-200 py-4 shrink-0 rounded-t-2xl">
-                           <CardTitle className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2">
-                             <AlertCircle size={16} /> Agentes que tiveram {activeExtraStatus.split(' (')[0]}
-                           </CardTitle>
-                           <CardDescription className="text-xs text-slate-600/80 mt-1">Agentes que já voltaram</CardDescription>
-                         </CardHeader>
-                         <CardContent className="p-0 flex-1 flex flex-col min-h-0">
-                           <div className="flex-1 overflow-hidden h-[600px] custom-scrollbar">
-                              <PaginatedAgentList items={extData.back} renderItem={(d, i) => (
-                                <AgentLine 
-                                   key={`${d.summary.employeeName}-${i}`} 
-                                   summary={d.summary} 
-                                   rank={i+1} 
-                                   metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
-                                   metricLabel=""
-                                   colorClass="text-slate-700"
-                                   
-                                />
-                              )} />
-                           </div>
-                         </CardContent>
-                       </Card>
-
                        <Card className={`${cl} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                          <CardHeader className="bg-rose-50/50 border-b border-rose-100 py-4 shrink-0 rounded-t-2xl">
                            <CardTitle className="text-sm font-black uppercase tracking-widest text-rose-800 flex items-center gap-2">
                              <AlertCircle size={16} /> AGENTES EM {activeExtraStatus}
                            </CardTitle>
-                           <CardDescription className="text-xs text-rose-600/80 mt-1">Agentes que ainda estão no status</CardDescription>
+                           <CardDescription className="text-xs text-rose-600/80 mt-1">Agentes que estão no status</CardDescription>
                          </CardHeader>
                          <CardContent className="p-0 flex-1 flex flex-col min-h-0">
                            <div className="flex-1 overflow-hidden h-[600px] custom-scrollbar">
@@ -1502,38 +1490,57 @@ export function StatsDashboard({
                                    metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
                                    metricLabel=""
                                    colorClass="text-rose-700"
-                                   
                                 />
                               )} />
                            </div>
                          </CardContent>
                        </Card>
 
-                       {hasBack && (
                        <Card className={`${cl} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                          <CardHeader className="bg-emerald-50/50 border-b border-emerald-100 py-4 shrink-0 rounded-t-2xl">
                            <CardTitle className="text-sm font-black uppercase tracking-widest text-emerald-800 flex items-center gap-2">
-                             <AlertCircle size={16} /> Agentes {isPTO ? 'Back' : 'Back'}
+                             <AlertCircle size={16} /> Agentes Back
                            </CardTitle>
-                           <CardDescription className="text-xs text-emerald-600/80 mt-1">Agentes que voltam no futuro</CardDescription>
+                           <CardDescription className="text-xs text-emerald-600/80 mt-1">Agentes que voltam nos próximos 1-2 dias</CardDescription>
                          </CardHeader>
                          <CardContent className="p-0 flex-1 flex flex-col min-h-0">
                            <div className="flex-1 overflow-hidden h-[600px] custom-scrollbar">
-                              <PaginatedAgentList items={[...extData.out, ...extData.soon].filter((d:any) => d.returnDate > todayStr).sort((a:any, b:any) => a.returnDate.localeCompare(b.returnDate))} renderItem={(d:any, i:any) => (
+                              <PaginatedAgentList items={backAgents} renderItem={(d:any, i:any) => (
+                                <AgentLine 
+                                   key={`${d.summary.employeeName}-${i}`} 
+                                   summary={d.summary} 
+                                   rank={i+1} 
+                                   metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
+                                   metricLabel={format(new Date(d.returnDate), 'dd/MM/yyyy')} 
+                                   colorClass="text-emerald-700"
+                                />
+                              )} />
+                           </div>
+                         </CardContent>
+                       </Card>
+
+                       <Card className={`${cl} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
+                         <CardHeader className="bg-amber-50/50 border-b border-amber-100 py-4 shrink-0 rounded-t-2xl">
+                           <CardTitle className="text-sm font-black uppercase tracking-widest text-amber-800 flex items-center gap-2">
+                             <AlertCircle size={16} /> NEXT {extStatusName}'s
+                           </CardTitle>
+                           <CardDescription className="text-xs text-amber-600/80 mt-1">Próximos agentes a entrar no status</CardDescription>
+                         </CardHeader>
+                         <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+                           <div className="flex-1 overflow-hidden h-[600px] custom-scrollbar">
+                              <PaginatedAgentList items={extData.soon} renderItem={(d:any, i:any) => (
                                 <AgentLine 
                                    key={`${d.summary.employeeName}-${i}`} 
                                    summary={d.summary} 
                                    rank={i+1} 
                                    metricValue={d.startDate === d.endDate ? format(new Date(d.startDate), 'dd/MM/yyyy') : `${format(new Date(d.startDate), 'dd/MM/yyyy')} a ${format(new Date(d.endDate), 'dd/MM/yyyy')}`}
                                    metricLabel="" 
-                                   colorClass="text-emerald-700"
-                                   
+                                   colorClass="text-amber-700"
                                 />
                               )} />
                            </div>
                          </CardContent>
                        </Card>
-                       )}
                      </>
                    );
                 } 
@@ -1573,7 +1580,7 @@ export function StatsDashboard({
                             <AlertCircle size={16} /> {isPTO ? 'Agentes em PTO/VAC (Soon)' : 'Agentes voltando'}
                           </CardTitle>
                           <CardDescription className="text-xs text-amber-600/80 mt-1">
-                             {isPTO ? 'Agentes que iniciarão o status no futuro' : 'Agentes que vão voltar de status futuramente'}
+                             {isPTO ? 'Agentes que iniciarão o status ou retornam amanhã' : 'Agentes que vão voltar de status futuramente'}
                           </CardDescription>
                         </CardHeader>
                         <CardContent className="p-0 flex-1 flex flex-col min-h-0">
@@ -1655,7 +1662,7 @@ export function StatsDashboard({
                     <div>
                       <span className="font-bold text-sm text-slate-800">{s.employeeName}</span>
                       <p className="text-[10px] text-slate-500 mt-0.5">
-                        {isCheckOnly ? t('workedOutsideShiftDesc') : isWcOnly ? t('organicUsedDesc') : isIdleOnly ? t('criticalIdleDesc') : isTardinessOnly ? t('tardinessRecordedDesc') : isEarlyLeaveOnly ? t('earlyLeaveRecordedDesc') : s.idleAlerts > 0 ? t('criticalIdleDesc') : s.wcAlerts > 0 ? t('organicExcessDesc') : t('exceededBreaksDesc')}
+                        {isCheckOnly ? t('workedOutsideShiftDesc') : isWcOnly ? t('organicUsedDesc') : isIdleOnly ? t('criticalIdleDesc') : isNonModOnly ? t('nonModDesc') : isTardinessOnly ? t('tardinessRecordedDesc') : isEarlyLeaveOnly ? t('earlyLeaveRecordedDesc') : t('exceededBreaksDesc')}
                       </p>
                     </div>
                   </div>

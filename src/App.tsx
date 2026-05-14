@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { Calendar as CalendarIcon, Upload, FileDown, LogOut, FileSpreadsheet, LayoutDashboard, ListFilter, Trash2, Target, HelpCircle, Users, UserX } from 'lucide-react';
+import { Calendar as CalendarIcon, Upload, FileDown, LogOut, FileSpreadsheet, LayoutDashboard, ListFilter, Trash2, Target, HelpCircle, Users, UserX, ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -123,6 +123,7 @@ export default function App() {
   const [showBPO, setShowBPO] = useState(false);
   const [isStaffInChargeOpen, setIsStaffInChargeOpen] = useState(false);
   const [isMissingStaffOpen, setIsMissingStaffOpen] = useState(false);
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
   const normalizeName = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/[\.,\-]/g, ' ');
 
@@ -220,9 +221,10 @@ export default function App() {
     return new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
   }, []);
 
-  const { globalMinDate, globalMaxDate } = useMemo(() => {
+  const { globalMinDate, globalMaxDate, maxByteworksDate } = useMemo(() => {
     let min = new Date('2099-01-01');
     let max = new Date('2000-01-01');
+    let maxBw = new Date('2000-01-01');
     let hasSummaries = false;
     
     summaries.forEach(s => s.dailyRecords.forEach(r => {
@@ -230,50 +232,48 @@ export default function App() {
       const d = new Date(r.date + 'T12:00:00');
       if (d < min) min = d;
       if (d > max) max = d;
+      if (d > maxBw) maxBw = d;
     }));
 
-    // Also include calendar dates ONLY if we have no summaries,
-    // otherwise the calendar boundaries stretch the absence calculations to months we don't have Byteworks data for.
-    if (!hasSummaries) {
-      calendarData.forEach(c => {
-        if (c.schedule) {
-          Object.keys(c.schedule).forEach(dateStr => {
-            // calendar keys are either yyyy-MM-dd or dd/MM/yyyy
-            let d: Date | null = null;
-            if (dateStr.includes('-')) {
-               const parts = dateStr.split('-');
-               if (parts.length === 3) {
-                  // Check if YYYY-MM-DD
-                  if (parts[0].length === 4) {
-                     d = new Date(dateStr + 'T12:00:00');
-                  } else if (parts[2].length === 4) {
-                     // DD-MM-YYYY
-                     d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
-                  }
-               }
-            } else if (dateStr.includes('/')) {
-               const parts = dateStr.split('/');
-               if (parts.length === 3) {
-                  if (parts[2].length === 4) {
-                    d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
-                  } else if (parts[0].length === 4) {
-                    d = new Date(`${parts[0]}-${parts[1]}-${parts[2]}T12:00:00`);
-                  }
-               }
-            }
-            if (d && !isNaN(d.getTime())) {
-               if (d < min) min = d;
-               if (d > max) max = d;
-            }
-          });
-        }
-      });
-    }
+    calendarData.forEach(c => {
+      if (c.schedule) {
+        Object.keys(c.schedule).forEach(dateStr => {
+          // calendar keys are either yyyy-MM-dd or dd/MM/yyyy
+          let d: Date | null = null;
+          if (dateStr.includes('-')) {
+             const parts = dateStr.split('-');
+             if (parts.length === 3) {
+                // Check if YYYY-MM-DD
+                if (parts[0].length === 4) {
+                   d = new Date(dateStr + 'T12:00:00');
+                } else if (parts[2].length === 4) {
+                   // DD-MM-YYYY
+                   d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+                }
+             }
+          } else if (dateStr.includes('/')) {
+             const parts = dateStr.split('/');
+             if (parts.length === 3) {
+                if (parts[2].length === 4) {
+                  d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+                } else if (parts[0].length === 4) {
+                  d = new Date(`${parts[0]}-${parts[1]}-${parts[2]}T12:00:00`);
+                }
+             }
+          }
+          if (d && !isNaN(d.getTime())) {
+             if (d < min) min = d;
+             if (d > max) max = d;
+          }
+        });
+      }
+    });
 
     if (min.getFullYear() === 2099) min = new Date();
     if (max.getFullYear() === 2000) max = new Date();
+    if (maxBw.getFullYear() === 2000) maxBw = max;
 
-    return { globalMinDate: min, globalMaxDate: max };
+    return { globalMinDate: min, globalMaxDate: max, maxByteworksDate: maxBw };
   }, [summaries, calendarData]);
 
   const mergedSummaries = useMemo(() => {
@@ -283,8 +283,16 @@ export default function App() {
 
     // Map summary to staff info if possible
     let mergedSummaries = summaries.map(s => {
-       const staffEntry = (s.email && emailToStaff.get(s.email.toLowerCase())) || 
-                          allStaff.find(si => normalizeName(si.fullName) === normalizeName(s.employeeName));
+       let emailToUse = s.email;
+       let nameToUse = s.employeeName;
+       const normName = normalizeName(nameToUse);
+       if (normName === 'ricardo ribeiro' || normName === 'ricardo antunes ribeiro') {
+           emailToUse = 'ricardo.ribeiro2@concentrix.com';
+           nameToUse = 'Ricardo Antunes Ribeiro';
+       }
+
+       const staffEntry = (emailToUse && emailToStaff.get(emailToUse.toLowerCase())) || 
+                          allStaff.find(si => normalizeName(si.fullName) === normalizeName(nameToUse));
        
        if (!staffEntry) return null; // "Somente os agentes cujo email está no byteworks e consecutivamente no staff info"
 
@@ -292,8 +300,8 @@ export default function App() {
        let finalLang = s.language;
        let finalRole = s.role;
        let finalSup = s.supervisor;
-       let finalName = s.employeeName;
-       let finalEmail = s.email;
+       let finalName = nameToUse;
+       let finalEmail = emailToUse;
 
        if (staffEntry) {
           finalName = staffEntry.fullName;
@@ -388,8 +396,9 @@ export default function App() {
                     if (shiftForDay) {
                         const schedUpper = String(shiftForDay).toUpperCase();
                         const isWorkingShift = /\d{1,2}:\d{2}/.test(schedUpper);
-                        const isWorkday = !schedUpper.includes('OFF') && !schedUpper.includes('VAC') && !schedUpper.includes('FESTA') && !schedUpper.includes('HOLIDAY') && !schedUpper.includes('LOA') && !schedUpper.includes('PTO') && !schedUpper.includes('SL') && !schedUpper.includes('ATT') && !schedUpper.includes('SUSPP');
+                        const isWorkday = !schedUpper.includes('OFF') && !schedUpper.includes('VAC') && !schedUpper.includes('MAR') && !schedUpper.includes('FESTA') && !schedUpper.includes('HOLIDAY') && !schedUpper.includes('LOA') && !schedUpper.includes('PTO') && !schedUpper.includes('SL') && !schedUpper.includes('ATT') && !schedUpper.includes('SUSPP');
                         const latestDateStr = format(latestDate, 'yyyy-MM-dd');
+                        const maxBwStr = format(maxByteworksDate, 'yyyy-MM-dd');
                         
                         let hasShiftStarted = true;
                         
@@ -397,7 +406,7 @@ export default function App() {
                           const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
                           const todayStr = format(now, 'yyyy-MM-dd');
                           
-                          if (dateStr > latestDateStr) {
+                          if (dateStr > latestDateStr || dateStr > maxBwStr) {
                              hasShiftStarted = false;
                           } else if (dateStr === latestDateStr && isWorkingShift) {
                              const match = schedUpper.match(/(\d{1,2}):(\d{2})/);
@@ -481,7 +490,7 @@ export default function App() {
               const shiftUpper = (scheduledShift || inferredShift || '').toUpperCase();
               const isWorkingShift = /\d{1,2}:\d{2}/.test(shiftUpper);
               const isOffShift = shiftUpper.includes('OFF') || shiftUpper.includes('FOLGA');
-              const isVacationShift = (shiftUpper.includes('VAC') || shiftUpper.includes('PTO') || shiftUpper.includes('FÉRIAS')) && !isWorkingShift;
+              const isVacationShift = (shiftUpper.includes('VAC') || shiftUpper.includes('MAR') || shiftUpper.includes('PTO') || shiftUpper.includes('FÉRIAS')) && !isWorkingShift;
               const isSickShift = (shiftUpper.includes('SL') || shiftUpper.includes('SICK') || shiftUpper.includes('MEDICO') || shiftUpper.includes('ATESTADO')) && !isWorkingShift;
               const isLoaShift = (shiftUpper.includes('LOA') || shiftUpper.includes('LICENÇA')) && !isWorkingShift;
               const isSusppShift = (shiftUpper.includes('SUSPP') || shiftUpper.includes('SUSPENSÃO')) && !isWorkingShift;
@@ -552,8 +561,16 @@ export default function App() {
       .filter(c => c.name && c.name.trim().toLowerCase() !== 'saloua tadlaoui')
       .filter(c => isSupportRole({ role: c.role, lob: c.lob }))
       .map(c => {
-         const staffEntry = (c.email && emailToStaff.get(c.email.toLowerCase())) || 
-                            allStaff.find(si => normalizeName(si.fullName) === normalizeName(c.name));
+         let emailToUse = c.email;
+         let nameToUse = c.name;
+         const normName = normalizeName(nameToUse);
+         if (normName === 'ricardo ribeiro' || normName === 'ricardo antunes ribeiro') {
+             emailToUse = 'ricardo.ribeiro2@concentrix.com';
+             nameToUse = 'Ricardo Antunes Ribeiro';
+         }
+
+         const staffEntry = (emailToUse && emailToStaff.get(emailToUse.toLowerCase())) || 
+                            allStaff.find(si => normalizeName(si.fullName) === normalizeName(nameToUse));
 
          const dailyRecords: EmployeeDayRecord[] = [];
          if (globalMinDate <= globalMaxDate && c.schedule) {
@@ -593,7 +610,7 @@ export default function App() {
                      inferredShift: schedule,
                      lob: c.lob?.toUpperCase() === 'LMG LATAM' ? 'LMEG LATAM' : (c.lob?.toUpperCase() === 'BPO LED QUALITY' ? 'BPO LED Quality' : (c.lob?.toUpperCase() === 'HIGH REPORTED QUEUE' ? 'HRQ' : c.lob)),
                      isOFF: shiftUpper.includes('OFF') || shiftUpper.includes('FOLGA'),
-                     isPTO: shiftUpper.includes('VAC') || shiftUpper.includes('PTO') || shiftUpper.includes('FÉRIAS'),
+                     isPTO: shiftUpper.includes('VAC') || shiftUpper.includes('MAR') || shiftUpper.includes('PTO') || shiftUpper.includes('FÉRIAS'),
                      isSL: shiftUpper.includes('SL') || shiftUpper.includes('SICK'),
                      isLOA: shiftUpper.includes('LOA'),
                      isSUSPP: shiftUpper.includes('SUSPP'),
@@ -620,7 +637,7 @@ export default function App() {
           const isBPO = (s.lob || '').toLowerCase().includes('bpo');
           return showBPO ? isBPO : !isBPO;
       }) as EmployeeSummary[];
-  }, [calendarData, staffInfoData, globalMinDate, globalMaxDate, showBPO]);
+  }, [calendarData, staffInfoData, globalMinDate, globalMaxDate, maxByteworksDate, showBPO]);
 
   const availableFilters = useMemo(() => {
     const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
@@ -1362,7 +1379,19 @@ export default function App() {
 
     if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls') && !file.name.endsWith('.csv')) {
       toast.error(t('invalidFormat'));
+      event.target.value = '';
       return;
+    }
+
+    const fileType = await detectFileType(file);
+    if (fileType !== 'calendar' && fileType !== 'unknown') {
+      toast.error(`Arquivo inválido. Detectado como: ${fileType.toUpperCase()}. Por favor, insira o arquivo de Calendário.`);
+      event.target.value = '';
+      return;
+    } else if (fileType === 'unknown' && !file.name.toLowerCase().includes('calendar') && !file.name.toLowerCase().includes('calend')) {
+        toast.error("Não foi possível identificar o arquivo. Tem certeza que é o Calendário?");
+        event.target.value = '';
+        return;
     }
 
     setIsCalendarLoading(true);
@@ -1408,7 +1437,19 @@ export default function App() {
 
     if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls') && !file.name.endsWith('.csv')) {
       toast.error(t('invalidFormat'));
+      event.target.value = '';
       return;
+    }
+
+    const fileType = await detectFileType(file);
+    if (fileType !== 'staffInfo' && fileType !== 'unknown') {
+      toast.error(`Arquivo inválido. Detectado como: ${fileType.toUpperCase()}. Por favor, insira o arquivo de Staff Info.`);
+      event.target.value = '';
+      return;
+    } else if (fileType === 'unknown' && !file.name.toLowerCase().includes('staff')) {
+        toast.error("Não foi possível identificar o arquivo. Tem certeza que é o Staff Info?");
+        event.target.value = '';
+        return;
     }
 
     setIsStaffInfoLoading(true);
@@ -1444,7 +1485,19 @@ export default function App() {
 
     if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls') && !file.name.endsWith('.csv')) {
       toast.error(t('invalidFormat'));
+      event.target.value = '';
       return;
+    }
+
+    const fileType = await detectFileType(file);
+    if (fileType !== 'extract' && fileType !== 'unknown') {
+      toast.error(`Arquivo inválido. Detectado como: ${fileType.toUpperCase()}. Por favor, insira o arquivo de Extract.`);
+      event.target.value = '';
+      return;
+    } else if (fileType === 'unknown' && !file.name.toLowerCase().includes('extract') && !file.name.toLowerCase().includes('status')) {
+        toast.error("Não foi possível identificar o arquivo. Tem certeza que é o Extract?");
+        event.target.value = '';
+        return;
     }
 
     setIsLoading(true);
@@ -2379,9 +2432,19 @@ export default function App() {
                  <div className="space-y-6">
                    {Object.entries(groupedStaff).map(([category, st]) => (
                      <div key={category} className="space-y-3">
-                       <h3 className="text-xs font-black uppercase text-slate-500 tracking-widest border-b border-slate-100 pb-2">{category}</h3>
-                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                         {(st as EmployeeSummary[]).map(s => {
+                       <h3 
+                          className="text-xs font-black uppercase text-slate-500 tracking-widest border-b border-slate-100 pb-2 flex justify-between items-center cursor-pointer hover:text-blue-600 transition-colors"
+                          onClick={() => setCollapsedCategories(prev => ({...prev, [category]: !prev[category]}))}
+                       >
+                          <span className="flex items-center gap-2">
+                             {category} 
+                             <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-[10px]">{(st as EmployeeSummary[]).length}</span>
+                             {collapsedCategories[category] ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                          </span>
+                       </h3>
+                       {!collapsedCategories[category] && (
+                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                           {(st as EmployeeSummary[]).map(s => {
                             const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
                             const todayStr = format(now, 'yyyy-MM-dd');
                             const record = s.dailyRecords.find(r => r.date === todayStr);
@@ -2438,6 +2501,7 @@ export default function App() {
                             );
                          })}
                        </div>
+                       )}
                      </div>
                    ))}
                  </div>

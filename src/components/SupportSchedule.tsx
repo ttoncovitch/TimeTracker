@@ -4,7 +4,7 @@ import { isSupportRole } from './LOBAnalytics';
 import { formatLOB } from '../lib/shiftUtils';
 import { format, parseISO } from 'date-fns';
 import { ptBR, enUS } from 'date-fns/locale';
-import { Calendar, Clock, User, UserCheck, Search, Users, UserX, Activity, LayoutList } from 'lucide-react';
+import { Calendar, Clock, User, UserCheck, Search, Users, UserX, Activity, LayoutList, ChevronUp, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -21,6 +21,7 @@ export function SupportSchedule({ summaries, allSummaries }: SupportScheduleProp
   const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'prevMonth' | 'week' | 'yesterday' | 'today'>('all');
   const [shiftFilter, setShiftFilter] = useState<string[]>([]);
   const [selectedTL, setSelectedTL] = useState<string | null>(null);
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
   const getLobColorClasses = (lob: string) => {
     const hash = lob.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -401,15 +402,22 @@ export function SupportSchedule({ summaries, allSummaries }: SupportScheduleProp
         <div className="space-y-8">
           {groupedStaff.map(([role, staff]) => (
             <div key={role} className="flex flex-col gap-3">
-              <h3 className="text-lg font-black text-slate-800 border-b pb-2 flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                {role}
-                <span className="text-xs font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full ml-2">
-                  {staff.length}
-                </span>
+              <h3 
+                className="text-lg font-black text-slate-800 border-b pb-2 flex justify-between items-center cursor-pointer hover:text-blue-600 transition-colors"
+                onClick={() => setCollapsedCategories(prev => ({...prev, [role]: !prev[role]}))}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                  {role}
+                  <span className="text-xs font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full mx-2">
+                    {staff.length}
+                  </span>
+                  {collapsedCategories[role] ? <ChevronDown size={20} className="text-slate-400" /> : <ChevronUp size={20} className="text-slate-400" />}
+                </div>
               </h3>
 
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto">
+              {!collapsedCategories[role] && (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-slate-50/80 border-b border-slate-200">
                     <tr>
@@ -525,6 +533,7 @@ export function SupportSchedule({ summaries, allSummaries }: SupportScheduleProp
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           ))}
         </div>
@@ -585,7 +594,11 @@ export function SupportSchedule({ summaries, allSummaries }: SupportScheduleProp
                                       <span className="font-bold text-slate-400 uppercase tracking-widest text-[8px] mr-1">Shift:</span>
                                       {todayRecord ? (
                                         <span className={`font-black px-1.5 py-0.5 rounded text-[8.5px] tracking-tight whitespace-nowrap text-center ${todayRecord.isOFF || todayRecord.isPTO || todayRecord.isSL ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-700'}`}>
-                                            {todayRecord.isOFF ? 'OFF' : (todayRecord.isPTO ? 'PTO' : (todayRecord.isSL ? 'SL' : (todayRecord.scheduledShift || 'None')))}
+                                            {todayRecord.isOFF ? 'OFF' : (todayRecord.isPTO ? (String(todayRecord.scheduledShift || '').toUpperCase().includes('MAR') ? 'MAR' : 'PTO') : (todayRecord.isSL ? 'SL' : (todayRecord.scheduledShift || agent.shift || 'None')))}
+                                        </span>
+                                      ) : agent.shift ? (
+                                        <span className="font-black px-1.5 py-0.5 rounded text-[8.5px] tracking-tight whitespace-nowrap text-center bg-slate-100 text-slate-700">
+                                            {agent.shift}
                                         </span>
                                       ) : (
                                         <span className="font-bold text-slate-400 italic text-[9px]">No Data</span>

@@ -20,6 +20,47 @@ export async function parseStaffInfoFile(file: File): Promise<{ data: StaffInfoE
         const workbook = XLSX.read(data, { type: 'array' });
         
         let sheetName = workbook.SheetNames.find(sn => sn.toLowerCase().includes('staff info'));
+        
+        if (!sheetName) {
+            // Find the sheet that has Staff Info data
+            for (const name of workbook.SheetNames) {
+                const tempWorksheet = workbook.Sheets[name];
+                const tempRows = XLSX.utils.sheet_to_json(tempWorksheet, { header: 1, range: 0, defval: '' }) as any[][];
+                
+                const isStaffInfo = tempRows.slice(0, Math.min(50, tempRows.length)).some(row => {
+                    if (!row || row.length < 2) return false;
+                    const rowStr = row.map(v => String(v).trim().toUpperCase());
+                    const joined = rowStr.join('|');
+                    
+                    if (joined.includes('LOB|') || joined.includes('|LOB') || joined.includes('LANGUAGE') || joined.includes('TEAM LEADER') || joined.includes('SUPERVISOR') || joined.includes('ROLE')) {
+                        if (joined.includes('ACTIVE') || joined.includes('STATUS') || joined.includes('NAME') || joined.includes('EMAIL') || joined.includes('UID') || joined.includes('EMPLID')) {
+                            return true;
+                        }
+                    }
+                    
+                    let hasActive = false;
+                    let hasLob = false;
+                    let hasLanguage = false;
+                    for (let c = 0; c < Math.min(50, row.length); c++) {
+                        const val = rowStr[c];
+                        if (val === 'ACTIVE') hasActive = true;
+                        if (val === 'LOB') hasLob = true;
+                        if (val === 'LANGUAGE' || val === 'IDIOMA') hasLanguage = true;
+                    }
+                    
+                    if (hasActive && (hasLob || hasLanguage)) return true;
+                    if (hasLob && hasLanguage) return true;
+                    
+                    return false;
+                });
+                
+                if (isStaffInfo) {
+                    sheetName = name;
+                    break;
+                }
+            }
+        }
+        
         if (!sheetName) sheetName = workbook.SheetNames[0]; // fallback
         
         const worksheet = workbook.Sheets[sheetName];
@@ -31,17 +72,21 @@ export async function parseStaffInfoFile(file: File): Promise<{ data: StaffInfoE
         }
 
         const entries: StaffInfoEntry[] = [];
+
+        let headerRowIndex = 0;
+        let maxPopulated = 0;
         
-        // Assume row 0 or 1 is headers. We can just use indices as requested:
-        // E = 4
-        // P or something (wait, let's verify indices)
-        // A=0, B=1, C=2, D=3, E=4 (Name)
-        // F=5, G=6, H=7, I=8, J=9, K=10, L=11, M=12, N=13, O=14, P=15, Q=16, R=17 (LOB)
-        // AE: A=1..Z=26, AA=27, AB=28, AC=29, AD=30, AE=31
-        // BN: B is 2, N is 14 -> 26*1 + 14 = 40 (wait... A=1..Z=26. AA=27..AZ=52. BA=53..BN=53+13=66. index 65)
+        // Find the most populated row in the first 20 rows, usually that's the header
+        for (let r = 0; r < Math.min(20, rows.length); r++) {
+            const populated = rows[r].filter(c => String(c).trim() !== '').length;
+            if (populated > maxPopulated) {
+                maxPopulated = populated;
+                headerRowIndex = r;
+            }
+        }
 
         let langIndex = 30; // Default AE
-        const headers = rows[0] || [];
+        const headers = rows[headerRowIndex] || [];
         for (let j = 0; j < headers.length; j++) {
             const h = String(headers[j] || '').trim().toLowerCase();
             if (h === 'language' || h === 'idioma' || h === 'língua' || h === 'lingua' || h === 'language / skill') {
@@ -50,20 +95,54 @@ export async function parseStaffInfoFile(file: File): Promise<{ data: StaffInfoE
             }
         }
 
-        for (let i = 1; i < rows.length; i++) {
+        let statusIndex = 0;
+        for (let j = 0; j < Math.min(50, headers.length); j++) {
+            const h = String(headers[j] || '').trim().toLowerCase();
+            if (h === 'status' || h === 'estado') {
+                statusIndex = j;
+                break;
+            }
+        }
+        
+        // If not found by header, guess by first occurrence of ACTIVE
+        if (statusIndex === 0) {
+           for (let r = 0; r < Math.min(30, rows.length); r++) {
+               for (let c = 0; c < Math.min(50, (rows[r]||[]).length); c++) {
+                   if (String(rows[r][c] || '').trim().toUpperCase() === 'ACTIVE') {
+                       statusIndex = c;
+                       break;
+                   }
+               }
+           }
+        }
+
+        let nameIndex = 4;
+        let roleIndex = 5;
+        let lobIndex = 17;
+        let tlIndex = 9;
+        
+        for (let j = 0; j < Math.min(100, headers.length); j++) {
+            const h = String(headers[j] || '').trim().toLowerCase();
+            if (h === 'name' || h === 'nome' || h === 'employee name' || h.includes('full name')) nameIndex = j;
+            if (h === 'role' || h === 'cargo' || h.includes('job title')) roleIndex = j;
+            if (h === 'lob' || h.includes('line of business') || h === 'campaign') lobIndex = j;
+            if (h === 'tl' || h === 'team leader' || h === 'supervisor' || h.includes('manager')) tlIndex = j;
+        }
+
+        for (let i = headerRowIndex + 1; i < rows.length; i++) {
            const row = rows[i];
-           if (!row || row.length < 5) continue;
+           if (!row || row.length < 2) continue; // some rows might be shorter
            
-           const statusStr = String(row[0] || '').trim().toUpperCase();
+           const statusStr = String(row[statusIndex] || '').trim().toUpperCase();
            if (statusStr !== 'ACTIVE') continue;
 
-           const name = String(row[4] || '').trim();
-           // if name is empty skip
+           const name = String(row[nameIndex] || '').trim();
+           // if name is empty try looking at nearby columns
            if (!name) continue;
 
-           const roleStr = String(row[5] || '').trim();
-           const lobStr = String(row[17] || '').trim();
-           const langStr = String(row[langIndex] || '').trim(); // AE is index 30 or dynamic
+           const roleStr = String(row[roleIndex] || '').trim();
+           const lobStr = String(row[lobIndex] || '').trim();
+           const langStr = String(row[langIndex] || '').trim(); 
            let emailStr = String(row[65] || '').trim().toLowerCase();
            if (!emailStr.includes('@')) {
                for (let c = row.length - 1; c >= 0; c--) {
