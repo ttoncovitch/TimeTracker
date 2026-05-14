@@ -6,6 +6,7 @@ import { translations, Language } from './i18n';
 import { isShiftMismatch } from './shiftUtils';
 
 export interface PDFOptions {
+  showCheck?: boolean;
   isTardiness?: boolean;
   isMinorTardiness?: boolean;
   isEarlyLeave?: boolean;
@@ -74,7 +75,7 @@ export function exportLOBsToPDF(summaries: EmployeeSummary[], title: string = "L
     lobs[lob].push(s);
   });
 
-  const head = [['LOB', t('pdfAgentCount') || 'Agents', t('pdfOverbreakTime') || 'Overbreaks', t('pdfAbsences') || 'Absences', t('pdfTardinessMins') || 'Tardiness']];
+  const head = [['LOB', t('pdfAgentCount' as any) || 'Agents', t('pdfOverbreakTime' as any) || 'Overbreaks', t('pdfAbsences' as any) || 'Absences', t('pdfTardinessMins' as any) || 'Tardiness']];
   const tableData: any[][] = [];
 
   const sortedLobs = Object.keys(lobs).sort();
@@ -206,7 +207,7 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
     records.forEach(r => {
         const sortedBreaks = [...r.breaks].sort((a,b) => String(a.startTime).localeCompare(String(b.startTime)));
         sortedBreaks.forEach(b => {
-             let label = b.type;
+             let label: string = b.type;
              if (b.type === 'other') label = b.rawStatus || b.type;
              else if (b.type === 'forgot_status') label = 'IDLE';
              else if (b.type === 'non_moderating' && b.subType) label = b.subType;

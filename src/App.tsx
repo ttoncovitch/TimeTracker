@@ -13,7 +13,7 @@ import { Calendar } from "@/components/ui/calendar"
 import { Toaster } from '@/components/ui/sonner';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toast } from 'sonner';
-import { isShiftMismatch } from './lib/shiftUtils';
+import { isShiftMismatch, formatLOB } from './lib/shiftUtils';
 import { format } from 'date-fns';
 import { useLanguage } from './contexts/LanguageContext';
 import { EmployeeSummary, EmployeeDayRecord } from './types';
@@ -548,8 +548,6 @@ export default function App() {
       .map(c => {
          const staffEntry = (c.email && emailToStaff.get(c.email.toLowerCase())) || 
                             allStaff.find(si => normalizeName(si.fullName) === normalizeName(c.name));
-         
-         if (!staffEntry && staffInfoData.length > 0) return null;
 
          const dailyRecords: EmployeeDayRecord[] = [];
          if (globalMinDate <= globalMaxDate && c.schedule) {
@@ -1695,7 +1693,7 @@ export default function App() {
                   onClick={() => setActiveTab('support_schedule')}
                   className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${activeTab === 'support_schedule' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
                 >
-                  <Users size={16} /> Staff Schedule
+                  <Users size={16} /> Staff details
                 </button>
                 
                 <div className="my-3 border-t border-slate-800/80 mx-2"></div>
@@ -1726,7 +1724,7 @@ export default function App() {
         <header className="sticky top-0 z-[60] flex justify-between items-center py-3 px-4 sm:px-6 bg-white/95 backdrop-blur-md border-b border-slate-200">
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold text-slate-900 hidden sm:block">
-              {summaries.length > 0 ? (activeTab === 'howto' ? t('howtoMenu') : activeTab === 'dashboard' ? t('overview') : activeTab === 'lobs' ? t('lobsPerformance') : activeTab === 'support_schedule' ? 'Staff Schedule' : t('agents')) : ''}
+              {summaries.length > 0 ? (activeTab === 'howto' ? t('howtoMenu') : activeTab === 'dashboard' ? t('overview') : activeTab === 'lobs' ? t('lobsPerformance') : activeTab === 'support_schedule' ? 'Staff details' : t('agents')) : ''}
             </h2>
             <div className="lg:hidden flex items-center gap-2">
               <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white">SC</div>
@@ -2365,7 +2363,7 @@ export default function App() {
               const groupedStaff = activeStaff.reduce((acc, s) => {
                 const category = (s.role && !['OS', 'CSR', 'AGENT', 'OPERATIONAL SUPPORT'].includes(s.role.toUpperCase())) 
                                   ? s.role 
-                                  : ((s.lob && !['OS', 'OPERATIONAL SUPPORT'].includes(s.lob.toUpperCase())) ? s.lob : 'Other Support');
+                                  : ((s.lob && !['OS', 'OPERATIONAL SUPPORT'].includes(s.lob.toUpperCase())) ? formatLOB(s.lob) : 'Other Support');
                 if (!acc[category]) acc[category] = [];
                 acc[category].push(s);
                 return acc;
@@ -2398,7 +2396,8 @@ export default function App() {
                                        if (resArr && Object.keys(resArr).length > 0) {
                                           return Object.keys(resArr).sort().map(lob => {
                                              const langs = Array.from(resArr[lob]).sort();
-                                             const comb = langs.length > 0 ? `${lob} | ${langs.join('-')}` : lob;
+                                             const formattedLob = formatLOB(lob);
+                                             const comb = langs.length > 0 ? `${formattedLob} | ${langs.join('-')}` : formattedLob;
                                              const colorClass = getLobColorClassesStaff(lob);
                                              return (
                                                  <span key={comb} className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border truncate ${colorClass}`}>
@@ -2411,7 +2410,7 @@ export default function App() {
                                           <>
                                             {s.lob && !['OS', 'OPERATIONAL SUPPORT'].includes(s.lob.toUpperCase()) && (
                                               <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border truncate ${getLobColorClassesStaff(s.lob)}`}>
-                                                {s.lob}
+                                                {formatLOB(s.lob)}
                                               </span>
                                             )}
                                             {s.language && s.language.toUpperCase() !== 'ALL' && !hideLanguage && (

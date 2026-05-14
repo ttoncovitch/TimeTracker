@@ -104,7 +104,7 @@ export function HowTo({ onBack }: HowToProps) {
                </li>
                <li className="flex gap-3">
                   <div className="mt-1"><span className="w-2 h-2 rounded-full bg-indigo-400 block"></span></div>
-                  <div><strong>Abas e LOBs:</strong> Pelos menus da interface você entra na visão de agentes detalhada, cruza relatórios por desempenho de grupos de negócio (LOB Analytics) ou vê métricas e comparecimentos de times no Support Schedule.</div>
+                  <div><strong>Abas e LOBs:</strong> Pelos menus da interface você entra na visão de agentes detalhada, cruza relatórios por desempenho de grupos de negócio (LOB Analytics) ou vê métricas e comparecimentos de times no Staff details.</div>
                </li>
             </ul>
           </div>
@@ -178,7 +178,7 @@ export function HowTo({ onBack }: HowToProps) {
             <h3 className="text-lg font-black text-slate-800">5. Support Staff e Mapeamento de Times</h3>
           </div>
           <div className="text-slate-600 space-y-4 leading-relaxed text-sm">
-             <p>A aba de <strong>Staff Schedule</strong> permite visualizar a cobertura do time de suporte ao longo do dia, cruzando as presenças com os times operacionais que eles gerenciam.</p>
+             <p>A aba de <strong>Staff details</strong> permite visualizar a cobertura do time de suporte ao longo do dia, cruzando as presenças com os times operacionais que eles gerenciam.</p>
               <ul className="list-disc pl-5 mt-2 space-y-2 text-slate-600">
                <li><strong className="text-slate-800">Botão Details:</strong> Clique no botão de detalhes no final da linha do supervisor para abrir a janela "Support Staff in Charge", revelando exatamente os agentes pertencentes a ele e comparando as estatísticas em tempo real, lado-a-lado.</li>
                <li><strong className="text-slate-800">Cobertura de Turno:</strong> Os horários no calendário ajudam a identificar se existem buracos de liderança em determinados momentos-chave do schedule diário.</li>

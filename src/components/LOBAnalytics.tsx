@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Users, AlertTriangle, Clock, CalendarX, TrendingDown, Target, Globe, ChevronDown, ChevronUp } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { format } from 'date-fns';
+import { formatLOB } from '../lib/shiftUtils';
 
 interface LOBAnalyticsProps {
   summaries: EmployeeSummary[];
@@ -23,7 +24,7 @@ export function isSupportRole(summary: { role?: string; lob?: string }): boolean
   if (roleUpper === 'OS' || lobUpper === 'OS') return true;
   
   // Known support roles - check both Role and LOB to catch RTA or QA listed under LOB
-  const supportRegex = /\b(QA|RTA|TRAINER|SUPERVISOR|MANAGER|TL|WFM|REAL TIME|OPS|COORDINATOR|QUALITY|OPERATIONAL SUPPORT)\b/i;
+  const supportRegex = /\b(QA|RTA|TRAINER|SUPERVISOR|MANAGER|TL|TEAM LEADER|WFM|REAL TIME|OPS|COORDINATOR|QUALITY|OPERATIONAL SUPPORT)\b/i;
   
   if (supportRegex.test(roleUpper) || supportRegex.test(lobUpper)) {
     return true;
@@ -57,12 +58,15 @@ export function LOBAnalytics({ summaries, showRealTime }: LOBAnalyticsProps) {
     return lobs;
   }, [summaries]);
 
-  const lobNames = Object.keys(lobsData).sort();
+  const allLobNames = Object.keys(lobsData).sort();
+  const [selectedGlobalLob, setSelectedGlobalLob] = useState<string>('ALL');
+
+  const lobNames = selectedGlobalLob === 'ALL' ? allLobNames : [selectedGlobalLob];
 
   const mostCriticalLOB = useMemo(() => {
-    if (lobNames.length === 0) return null;
+    if (allLobNames.length === 0) return null;
     
-    const lobScores = lobNames.map(lobName => {
+    const lobScores = allLobNames.map(lobName => {
        const lobSummaries = lobsData[lobName];
        let score = 0;
        lobSummaries.forEach(s => {
@@ -82,9 +86,9 @@ export function LOBAnalytics({ summaries, showRealTime }: LOBAnalyticsProps) {
       return lobScores[1];
     }
     return biggest;
-  }, [lobsData, lobNames]);
+  }, [lobsData, allLobNames]);
 
-  if (lobNames.length === 0) {
+  if (allLobNames.length === 0) {
      return (
         <div className="mt-12 mb-24 px-4 text-center">
            <h2 className="text-xl font-bold text-slate-500">{t('noLobFound')}</h2>
@@ -103,6 +107,20 @@ export function LOBAnalytics({ summaries, showRealTime }: LOBAnalyticsProps) {
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">{t('lobsPerformance')}</h2>
             <p className="text-sm font-bold text-slate-500 uppercase tracking-wider">{t('lobPerformanceSubtitle')}</p>
           </div>
+          {allLobNames.length > 1 && (
+             <div className="ml-4">
+                <select
+                   value={selectedGlobalLob}
+                   onChange={(e) => setSelectedGlobalLob(e.target.value)}
+                   className="h-10 bg-white border border-slate-200 text-slate-700 rounded-xl px-3 text-sm font-bold outline-none cursor-pointer shadow-sm hover:border-indigo-300 focus:border-indigo-500 transition-colors"
+                >
+                   <option value="ALL">Todos os LOB's</option>
+                   {allLobNames.map(lob => (
+                      <option key={lob} value={lob}>{formatLOB(lob)}</option>
+                   ))}
+                </select>
+             </div>
+          )}
         </div>
 
         {mostCriticalLOB && (
@@ -110,7 +128,7 @@ export function LOBAnalytics({ summaries, showRealTime }: LOBAnalyticsProps) {
              <AlertTriangle className="w-5 h-5 text-rose-500" />
              <div className="flex flex-col">
                <span className="text-[10px] font-black uppercase text-rose-500 tracking-widest">{t('biggestInfractor')}</span>
-               <span className="text-sm font-black text-rose-800">{mostCriticalLOB.name}</span>
+               <span className="text-sm font-black text-rose-800">{formatLOB(mostCriticalLOB.name)}</span>
              </div>
           </div>
         )}
@@ -217,7 +235,7 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx, showRealTime
         <div className="relative z-10 flex flex-col flex-1">
           <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
             <div className="flex flex-col">
-              <h3 className="text-xl font-black text-slate-900 leading-tight">{lobName}</h3>
+              <h3 className="text-xl font-black text-slate-900 leading-tight">{formatLOB(lobName)}</h3>
               <div className="flex items-center gap-2 mt-1">
                 <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
                    <Users className="w-3 h-3" /> {stats.agentCount} {t('agentsString')}

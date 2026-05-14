@@ -6,7 +6,7 @@ import { AlertCircle, Users, CheckCircle2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useLanguage } from '../contexts/LanguageContext';
 import { format } from 'date-fns';
-import { isShiftMismatch } from '../lib/shiftUtils';
+import { isShiftMismatch, formatLOB } from '../lib/shiftUtils';
 import { PaginatedAgentList } from './PaginatedAgentList';
 
 interface StatsDashboardProps {
@@ -760,7 +760,7 @@ export function StatsDashboard({
             <p className="font-bold text-xs text-slate-800 truncate">{summary.employeeName}</p>
             {summary.email && <p className="text-[9px] text-slate-500 truncate">{summary.email}</p>}
             <div className="flex gap-1 mt-1">
-              {summary.lob && <span className="bg-blue-50 text-blue-600 text-[8px] px-1.5 py-0.5 rounded font-black tracking-widest">{summary.lob}</span>}
+              {summary.lob && <span className="bg-blue-50 text-blue-600 text-[8px] px-1.5 py-0.5 rounded font-black tracking-widest">{formatLOB(summary.lob)}</span>}
               {summary.language && <span className="bg-purple-50 text-purple-600 text-[8px] px-1.5 py-0.5 rounded font-black tracking-widest">{summary.language}</span>}
             </div>
             <p className="text-[10px] text-slate-400 truncate mt-0.5">

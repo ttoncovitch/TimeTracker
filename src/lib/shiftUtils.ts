@@ -1,3 +1,16 @@
+export const formatLOB = (lob: string): string => {
+  if (!lob) return lob;
+  const name = lob.trim();
+  const lower = name.toLowerCase();
+  
+  if (lower === 'high reported queue') return 'HRQ';
+  if (lower === 'live joint labeling') return 'LJL';
+  if (lower === 'ms taxonomy') return 'MS TAX';
+  if (lower === 'multi-guest live labeling') return 'MGLL';
+  
+  return name;
+};
+
 export const isShiftMismatch = (scheduledShift?: string | null, inferredShift?: string | null): boolean => {
   if (!scheduledShift || !inferredShift) return false;
   

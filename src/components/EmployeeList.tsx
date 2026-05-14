@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { EmployeeSummary, EmployeeDayRecord } from '../types';
 import { format } from 'date-fns';
-import { isShiftMismatch } from '../lib/shiftUtils';
+import { isShiftMismatch, formatLOB } from '../lib/shiftUtils';
 import { Calendar as CalendarIcon, Search, ChevronRight, AlertTriangle, Info, ArrowUpDown, Clock, Mail, FileDown } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -216,8 +216,8 @@ export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDat
             </div>
             {lobs.length > 0 && (
               <select className="h-11 bg-white border border-slate-200 text-slate-700 rounded-xl px-3 text-xs font-bold w-full sm:w-auto shadow-sm outline-none cursor-pointer" value={selectedLob} onChange={e => { setSelectedLob(e.target.value); setSelectedLang('ALL'); }}>
-                <option value="ALL">LOB's</option>
-                {lobs.map(l => <option key={l} value={l}>{l}</option>)}
+                <option value="ALL">Todos os LOB's</option>
+                {lobs.map(l => <option key={l} value={l}>{formatLOB(l)}</option>)}
               </select>
             )}
             {selectedLob !== 'ALL' && languages.length > 0 && (
@@ -355,7 +355,7 @@ export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDat
                           <div className="flex flex-col gap-1 mt-1">
                             <div className="flex flex-wrap gap-1">
                               {s.role && !['OS', 'CSR'].includes(s.role.toUpperCase()) && <span className="bg-slate-100 text-slate-700 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest border border-slate-200">{s.role}</span>}
-                              {s.lob && <span className="bg-blue-50 text-blue-600 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.lob}</span>}
+                              {s.lob && <span className="bg-blue-50 text-blue-600 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{formatLOB(s.lob)}</span>}
                               {s.language && <span className="bg-purple-50 text-purple-600 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.language}</span>}
                               {dispShift && !isLeaveShift(dispShift) && (
                                 <span className={`border text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest ${s.isOffboarded || s.isATT ? 'bg-slate-200 text-slate-900 border-slate-300' : shiftDiffers ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200'}`}>
@@ -997,10 +997,10 @@ function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, i
                                    isMinorTardiness: isMinorTardinessOnly,
                                    isEarlyLeave: isEarlyLeaveOnly,
                                    showCheck: globalIncludeCheck,
-                                   isShort30: isShort30MinOnly,
-                                   isWcOnly,
-                                   isIdleOnly,
-                                   isNonModOnly,
+                                   isShort30Min: isShort30MinOnly,
+                                   isWc: isWcOnly,
+                                   isIdle: isIdleOnly,
+                                   isNonMod: isNonModOnly,
                                    isAgentDetail: true,
                                    lang: t('pdfAgentCount') === 'Agents' ? 'en' : 'pt' // ugly hack but valid
                                });
@@ -1034,7 +1034,7 @@ function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, i
                      <div className="flex flex-col gap-1 mt-2">
                        <div className="flex flex-wrap gap-1">
                          {s.role && !['OS', 'CSR'].includes(s.role.toUpperCase()) && <span className="bg-slate-700 text-slate-300 border border-slate-500 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.role}</span>}
-                         {s.lob && <span className="bg-blue-50/10 text-blue-300 border border-blue-500/30 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.lob}</span>}
+                         {s.lob && <span className="bg-blue-50/10 text-blue-300 border border-blue-500/30 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{formatLOB(s.lob)}</span>}
                          {s.language && <span className="bg-purple-50/10 text-purple-300 border border-purple-500/30 text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest">{s.language}</span>}
                          {dispShift && !isLeaveShift(dispShift) && <span className={`border text-[9px] px-1.5 py-0.5 rounded font-black tracking-widest ${shiftDiffers ? 'bg-amber-500/20 text-amber-300 border-amber-500/50' : 'bg-emerald-50/10 text-emerald-300 border-emerald-500/30'}`}>{dispShift} {shiftDiffers && '(CHECK)'}</span>}
                          {s.supervisor && <span className="bg-slate-800 text-slate-300 border border-slate-600 text-[9px] px-1.5 py-0.5 rounded font-bold">TL: {s.supervisor}</span>}
