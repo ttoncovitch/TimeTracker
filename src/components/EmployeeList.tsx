@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { EmployeeSummary, EmployeeDayRecord } from '../types';
 import { format } from 'date-fns';
@@ -21,11 +21,14 @@ interface EmployeeListProps {
   globalIncludeWc: boolean;
   globalIncludeIdle: boolean;
   globalIncludeNonMod: boolean;
+  globalIncludeRa?: boolean;
+  globalIncludeAt?: boolean;
   globalIncludeTardiness: boolean;
   globalIncludeMinorTardiness?: boolean;
   globalIncludeEarlyLeave: boolean;
   globalIncludeShort30Min?: boolean;
   globalIncludeCheck?: boolean;
+  globalIncludeAbsences?: boolean;
   globalShiftFilter?: string[];
   globalFilterMajorOverbreaks: boolean;
 }
@@ -135,10 +138,22 @@ function isLeaveShift(sh: string) {
   return upper === 'PTO' || upper.includes('VAC') || upper.includes('MAR') || upper.includes('FÉRIAS') || upper === 'SL' || upper.includes('SICK') || upper.includes('MEDICO') || upper.includes('ATESTADO') || upper === 'LOA' || upper.includes('LICENÇA');
 }
 
-export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDate, initialFilter = 'all', availableFilters, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeMinorTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalShiftFilter, globalFilterMajorOverbreaks }: EmployeeListProps) {
+export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDate, initialFilter = 'all', availableFilters, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeRa, globalIncludeAt, globalIncludeTardiness, globalIncludeMinorTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalIncludeAbsences, globalShiftFilter, globalFilterMajorOverbreaks }: EmployeeListProps) {
   const { t } = useLanguage();
-  const isWcOnly = globalTypeFilter === 'all' && globalIncludeWc && !globalIncludeShort30Min && !globalIncludeNonMod && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave;
-  const isShort30MinOnly = globalTypeFilter === 'all' && globalIncludeShort30Min && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave;
+  const isWcOnly = globalTypeFilter === 'all' && globalIncludeWc && !globalIncludeShort30Min && !globalIncludeNonMod && !globalIncludeRa && !globalIncludeAt && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave;
+  const isIdleOnly = globalTypeFilter === 'all' && globalIncludeIdle && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeRa && !globalIncludeAt && !globalIncludeTardiness && !globalIncludeEarlyLeave;
+  const isNmRaAtOnly = globalTypeFilter === 'all' && (globalIncludeNonMod || globalIncludeRa || globalIncludeAt) && !globalIncludeShort30Min && !globalIncludeWc && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck;
+  const isShort30MinOnly = globalTypeFilter === 'all' && globalIncludeShort30Min && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeRa && !globalIncludeAt && !globalIncludeIdle && !globalIncludeTardiness && !globalIncludeEarlyLeave;
+  
+  const getAgentNmRaAtTotal = (s: EmployeeSummary) => {
+      let sum = 0;
+      s.dailyRecords.forEach(r => {
+          if (globalIncludeNonMod) sum += (r.nonModDuration || 0);
+          if (globalIncludeRa) sum += (r.reviewAndAppealDuration || 0);
+          if (globalIncludeAt) sum += (r.awaitingTasksDuration || 0);
+      });
+      return sum;
+  };
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLob, setSelectedLob] = useState<string>('ALL');
@@ -160,42 +175,67 @@ export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDat
     ? [] 
     : Array.from(new Set(summaries.filter(s => s.lob === selectedLob).map(s => s.language?.toUpperCase().trim()).filter(Boolean))).sort() as string[];
 
-  const filtered = summaries.filter(s => {
-    const matchesSearch = normalizeName(s.employeeName).includes(normalizeName(searchTerm));
-    const matchesLob = selectedLob === 'ALL' || s.lob === selectedLob;
-    const matchesLang = selectedLang === 'ALL' || s.language?.toUpperCase().trim() === selectedLang;
-    const matchesTL = selectedTL === 'ALL' || s.supervisor?.trim() === selectedTL;
-    return matchesSearch && matchesLob && matchesLang && matchesTL;
-  }).sort((a, b) => {
-    // If using predefined sorts
-    if (sortBy === 'maiores') return b.totalOverbreakMinutes - a.totalOverbreakMinutes;
-    if (sortBy === 'menores') return a.totalOverbreakMinutes - b.totalOverbreakMinutes;
-    if (sortBy === 'alfabetica') return a.employeeName.localeCompare(b.employeeName);
-    
-    // Custom column sort
-    let aVal = 0, bVal = 0;
-    if (sortBy === 'tasks') { aVal = a.totalTasks || 0; bVal = b.totalTasks || 0; }
-    if (sortBy === 'meal') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.mealOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.mealOverbreak, 0); }
-    if (sortBy === 'short') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.shortOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.shortOverbreak, 0); }
-    if (sortBy === 'wellness') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.wellnessOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.wellnessOverbreak, 0); }
-    if (sortBy === 'praying') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.prayingOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.prayingOverbreak, 0); }
-    if (sortBy === 'wc') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.wcOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.wcOverbreak, 0); }
-    if (sortBy === 'idle') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0); }
-    if (sortBy === 'tardiness') { aVal = a.totalTardinessMinutes; bVal = b.totalTardinessMinutes; }
-    if (sortBy === 'earlyLeave') { aVal = a.totalEarlyLeaveMinutes; bVal = b.totalEarlyLeaveMinutes; }
-    if (sortBy === 'absences') { aVal = a.totalAbsences || 0; bVal = b.totalAbsences || 0; }
-    if (sortBy === 'short30Min') { aVal = a.totalShort30MinRecords || 0; bVal = b.totalShort30MinRecords || 0; }
-    if (sortBy === 'nonMod') { 
-        aVal = a.dailyRecords.reduce((acc, r) => acc + r.breaks.filter(b => b.type === 'non_moderating').reduce((s, b) => s + b.durationMinutes, 0), 0); 
-        bVal = b.dailyRecords.reduce((acc, r) => acc + r.breaks.filter(b => b.type === 'non_moderating').reduce((s, b) => s + b.durationMinutes, 0), 0); 
-    }
-    if (sortBy === 'reviewAndAppeal') { aVal = a.totalReviewAndAppealMinutes; bVal = b.totalReviewAndAppealMinutes; }
-    if (sortBy === 'awaitingTasks') { aVal = a.totalAwaitingTasksMinutes; bVal = b.totalAwaitingTasksMinutes; }
-    if (sortBy === 'total') { aVal = a.totalOverbreakMinutes; bVal = b.totalOverbreakMinutes; }
-    
-    if (aVal === bVal) return 0;
-    return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-  });
+  const filtered = useMemo(() => {
+    return summaries.filter(s => {
+      const matchesSearch = normalizeName(s.employeeName).includes(normalizeName(searchTerm));
+      const matchesLob = selectedLob === 'ALL' || s.lob === selectedLob;
+      const matchesLang = selectedLang === 'ALL' || s.language?.toUpperCase().trim() === selectedLang;
+      const matchesTL = selectedTL === 'ALL' || s.supervisor?.trim() === selectedTL;
+      return matchesSearch && matchesLob && matchesLang && matchesTL;
+    }).sort((a, b) => {
+      // If using predefined sorts
+      if (sortBy === 'maiores') return b.totalOverbreakMinutes - a.totalOverbreakMinutes;
+      if (sortBy === 'menores') return a.totalOverbreakMinutes - b.totalOverbreakMinutes;
+      if (sortBy === 'alfabetica') return a.employeeName.localeCompare(b.employeeName);
+      
+      // Custom column sort
+      let aVal = 0, bVal = 0;
+      if (sortBy === 'tasks') { aVal = a.totalTasks || 0; bVal = b.totalTasks || 0; }
+      if (sortBy === 'meal') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.mealOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.mealOverbreak, 0); }
+      if (sortBy === 'short') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.shortOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.shortOverbreak, 0); }
+      if (sortBy === 'wellness') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.wellnessOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.wellnessOverbreak, 0); }
+      if (sortBy === 'praying') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.prayingOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.prayingOverbreak, 0); }
+      if (sortBy === 'wc') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.wcOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.wcOverbreak, 0); }
+      if (sortBy === 'idle') { aVal = a.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0); bVal = b.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0); }
+      if (sortBy === 'tardiness') { aVal = a.totalTardinessMinutes; bVal = b.totalTardinessMinutes; }
+      if (sortBy === 'earlyLeave') { aVal = a.totalEarlyLeaveMinutes; bVal = b.totalEarlyLeaveMinutes; }
+      if (sortBy === 'absences') { aVal = a.totalAbsences || 0; bVal = b.totalAbsences || 0; }
+      if (sortBy === 'short30Min') { aVal = a.totalShort30MinRecords || 0; bVal = b.totalShort30MinRecords || 0; }
+      if (sortBy === 'nonMod') { 
+          aVal = a.dailyRecords.reduce((acc, r) => acc + r.breaks.filter(b => b.type === 'non_moderating').reduce((s, b) => s + b.durationMinutes, 0), 0); 
+          bVal = b.dailyRecords.reduce((acc, r) => acc + r.breaks.filter(b => b.type === 'non_moderating').reduce((s, b) => s + b.durationMinutes, 0), 0); 
+      }
+      if (sortBy === 'reviewAndAppeal') { aVal = a.totalReviewAndAppealMinutes; bVal = b.totalReviewAndAppealMinutes; }
+      if (sortBy === 'awaitingTasks') { aVal = a.totalAwaitingTasksMinutes; bVal = b.totalAwaitingTasksMinutes; }
+      if (sortBy === 'total') { 
+          if (isNmRaAtOnly) {
+              aVal = getAgentNmRaAtTotal(a);
+              bVal = getAgentNmRaAtTotal(b);
+          } else {
+              aVal = a.totalOverbreakMinutes; 
+              bVal = b.totalOverbreakMinutes; 
+          }
+      }
+      
+      if (aVal === bVal) return 0;
+      return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+  }, [summaries, searchTerm, selectedLob, selectedLang, selectedTL, sortBy, sortDirection, isNmRaAtOnly]);
+
+  const { exportedTeamProductiveMinutes, exportedTeamNonModMinutes } = useMemo(() => {
+     let prod: number | undefined = undefined;
+     let nom: number | undefined = undefined;
+     if (globalIncludeNonMod || globalIncludeRa || globalIncludeAt) {
+          prod = Math.round(filtered.reduce((acc, sum) => 
+              acc + sum.dailyRecords.reduce((acc2, r) => 
+                  acc2 + r.breaks.filter(b => b.type === 'moderating').reduce((acc3, b) => acc3 + b.durationMinutes, 0), 0), 0));
+          nom = Math.round(filtered.reduce((acc, sum) => 
+              acc + sum.dailyRecords.reduce((acc2, r) => 
+                  acc2 + r.breaks.filter(b => b.type === 'non_moderating').reduce((acc3, b) => acc3 + b.durationMinutes, 0), 0), 0));
+     }
+     return { exportedTeamProductiveMinutes: prod, exportedTeamNonModMinutes: nom };
+  }, [filtered, globalIncludeNonMod, globalIncludeRa, globalIncludeAt]);
+
 
   const handleSort = (column: string) => {
      if (sortBy === column) {
@@ -240,15 +280,83 @@ export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDat
             )}
         </div>
         
-        <select 
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as any)}
-          className="bg-white border text-sm font-bold border-slate-200 text-slate-700 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
-        >
-           <option value="maiores">{t('biggestViolators')}</option>
-           <option value="menores">{t('smallestViolators')}</option>
-           <option value="alfabetica">{t('alphabeticalMatch')}</option>
-        </select>
+        <div className="flex flex-col sm:flex-row items-center gap-2">
+           <button 
+             onClick={() => {
+                let periodLabelStr = '';
+                if (initialFilter === 'day') periodLabelStr = `(${latestDate ? format(latestDate, 'dd/MM/yyyy') : t('filtered')})`;
+                if (initialFilter === 'week') periodLabelStr = `(${t('week')})`;
+                if (initialFilter === 'month') periodLabelStr = `(${t('month')})`;
+                if (initialFilter === 'all') periodLabelStr = `(${t('all')})`;
+                
+                let mainFilterLabel = '';
+                let filenameFilter = '';
+                if (selectedTL !== 'ALL') {
+                    mainFilterLabel = ` - ${selectedTL}`;
+                    filenameFilter = `_${selectedTL.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                } else if (selectedLob !== 'ALL') {
+                    mainFilterLabel = ` - ${formatLOB(selectedLob)}`;
+                    filenameFilter = `_${formatLOB(selectedLob).replace(/[^a-zA-Z0-9]/g, '_')}`;
+                    if (selectedLang !== 'ALL') {
+                        mainFilterLabel += ` (${selectedLang})`;
+                        filenameFilter += `_${selectedLang.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                    }
+                } else {
+                    mainFilterLabel = ` - (${t('all')})`;
+                }
+                
+                let typeParts = [];
+                if (globalTypeFilter === 'idle_overbreak_wc') typeParts.push('Overbreaks');
+                if (globalIncludeShort30Min) typeParts.push('30min');
+                if (globalIncludeWc) typeParts.push('Organic');
+                if (globalIncludeIdle) typeParts.push('Idle');
+                if (globalIncludeNonMod) typeParts.push('Non-Mod');
+                if (globalIncludeRa) typeParts.push('R&A');
+                if (globalIncludeAt) typeParts.push('A.T');
+                if (globalIncludeTardiness) typeParts.push('Tardiness');
+                if (globalIncludeMinorTardiness) typeParts.push('Minor Tardiness');
+                if (globalIncludeEarlyLeave) typeParts.push('Early Leave');
+                if (globalIncludeCheck) typeParts.push('Check');
+                
+                let statusFiltersText = typeParts.length > 0 ? `Status info: ${typeParts.join(', ')}` : undefined;
+
+                exportToPDF(filtered, `${t('agents')}${mainFilterLabel}`, `Extract${filenameFilter}_${format(new Date(), 'yyyy-MM-dd')}`, {
+                    isTardiness: globalIncludeTardiness,
+                    isMinorTardiness: globalIncludeMinorTardiness,
+                    isEarlyLeave: globalIncludeEarlyLeave,
+                    showCheck: globalIncludeCheck,
+                    isShort30Min: globalIncludeShort30Min,
+                    isWc: globalIncludeWc,
+                    isIdle: globalIncludeIdle,
+                    isNonMod: globalIncludeNonMod,
+                    isRa: globalIncludeRa,
+                    isAt: globalIncludeAt,
+                    isOverbreaks: globalTypeFilter === 'idle_overbreak_wc',
+                    isAgentDetail: (globalIncludeIdle || globalIncludeWc || globalIncludeShort30Min || globalIncludeNonMod || globalIncludeRa || globalIncludeAt || globalTypeFilter === 'idle_overbreak_wc') || !(globalIncludeTardiness || globalIncludeMinorTardiness || globalIncludeEarlyLeave || globalIncludeCheck || globalIncludeAbsences),
+                    showAllTimeline: typeParts.length === 0,
+                    statusFiltersText,
+                    periodFilter: initialFilter,
+                    lang: t('pdfAgentCount') === 'Agents' ? 'en' : 'pt',
+                    teamProductiveMinutes: exportedTeamProductiveMinutes,
+                    teamNonModMinutes: exportedTeamNonModMinutes
+                });
+             }}
+             title={t('updateExtract')}
+             className="h-11 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl px-4 text-xs font-bold inline-flex items-center gap-2 transition-colors whitespace-nowrap shadow-sm"
+           >
+             <FileDown size={16} className="text-emerald-600" />
+             <span className="hidden sm:inline">Extract</span>
+           </button>
+           <select 
+             value={sortBy}
+             onChange={(e) => setSortBy(e.target.value as any)}
+             className="bg-white border text-sm font-bold border-slate-200 text-slate-700 rounded-xl px-4 h-11 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+           >
+              <option value="maiores">{t('biggestViolators')}</option>
+              <option value="menores">{t('smallestViolators')}</option>
+              <option value="alfabetica">{t('alphabeticalMatch')}</option>
+           </select>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto custom-scrollbar relative">
@@ -336,7 +444,7 @@ export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDat
                         {(() => {
                           const overrideStatus = getAbsenceStatusText(s, allSummaries, s.dailyRecords, latestDate);
 
-                          const schedShifts = Array.from(new Set(s.dailyRecords.map(r => r.inferredShift || r.scheduledShift).filter(Boolean)));
+                          const schedShifts = Array.from(new Set(s.dailyRecords.map(r => r.inferredShift || r.scheduledShift).filter((sh): sh is string => !!sh)));
                           const realSchedShifts = schedShifts.filter(sh => sh.toLowerCase() !== 'off');
                           let dispShift = s.shift;
                           let shiftDiffers = false;
@@ -497,9 +605,19 @@ export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDat
                         </span>
                       </td>
 
-                      <td className="py-2.5 px-2 text-center" title={s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m ${isWcOnly ? 'Organic' : t('overbreakExceeded')}` : 'No overbreak'}>
-                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${s.totalOverbreakMinutes > 0 ? (isWcOnly ? 'bg-amber-100 border border-amber-200 text-amber-600 font-black' : 'bg-rose-100 text-rose-700 font-black') : 'bg-emerald-50 text-emerald-600 font-bold'}`}>
-                          {s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m` : t('okShort')}
+                      <td className="py-2.5 px-2 text-center" title={
+                          isNmRaAtOnly 
+                            ? `${getAgentNmRaAtTotal(s)}m no total` 
+                            : s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m ${isWcOnly ? 'Organic' : t('overbreakExceeded')}` : 'No overbreak'
+                      }>
+                        <span className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${
+                          isNmRaAtOnly 
+                            ? (getAgentNmRaAtTotal(s) > 0 ? 'bg-indigo-100 text-indigo-700 font-black border border-indigo-200' : 'text-slate-300 font-bold')
+                            : s.totalOverbreakMinutes > 0 ? (isWcOnly ? 'bg-amber-100 border border-amber-200 text-amber-600 font-black' : 'bg-rose-100 text-rose-700 font-black') : 'bg-emerald-50 text-emerald-600 font-bold'
+                        }`}>
+                          {isNmRaAtOnly 
+                            ? (getAgentNmRaAtTotal(s) > 0 ? `${getAgentNmRaAtTotal(s)}m` : '0m')
+                            : s.totalOverbreakMinutes > 0 ? `${s.totalOverbreakMinutes}m` : t('okShort')}
                         </span>
                       </td>
 
@@ -555,14 +673,14 @@ export function EmployeeList({ summaries, allSummaries, staffInfoData, latestDat
 
       <Dialog open={!!selectedEmp} onOpenChange={(open) => !open && setSelectedEmp(null)}>
         <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] flex flex-col rounded-[2rem] border-slate-200 p-0 overflow-hidden shadow-2xl">
-           {selectedEmp && <EmployeeDetail summary={selectedEmp} allSummaries={allSummaries} staffInfoData={staffInfoData} latestDate={latestDate || new Date()} initialFilter={initialFilter} availableFilters={availableFilters} t={t} globalTypeFilter={globalTypeFilter} globalIncludeWc={globalIncludeWc} globalIncludeIdle={globalIncludeIdle} globalIncludeNonMod={globalIncludeNonMod} globalIncludeTardiness={globalIncludeTardiness} globalIncludeMinorTardiness={globalIncludeMinorTardiness} globalIncludeEarlyLeave={globalIncludeEarlyLeave} globalIncludeShort30Min={globalIncludeShort30Min} globalIncludeCheck={globalIncludeCheck} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} />}
+           {selectedEmp && <EmployeeDetail summary={selectedEmp} allSummaries={allSummaries} staffInfoData={staffInfoData} latestDate={latestDate || new Date()} initialFilter={initialFilter} availableFilters={availableFilters} t={t} globalTypeFilter={globalTypeFilter} globalIncludeWc={globalIncludeWc} globalIncludeIdle={globalIncludeIdle} globalIncludeNonMod={globalIncludeNonMod} globalIncludeRa={globalIncludeRa} globalIncludeAt={globalIncludeAt} globalIncludeTardiness={globalIncludeTardiness} globalIncludeMinorTardiness={globalIncludeMinorTardiness} globalIncludeEarlyLeave={globalIncludeEarlyLeave} globalIncludeShort30Min={globalIncludeShort30Min} globalIncludeCheck={globalIncludeCheck} globalIncludeAbsences={globalIncludeAbsences} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} />}
         </DialogContent>
       </Dialog>
     </>
   );
 }
 
-function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, initialFilter, availableFilters, t, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeTardiness, globalIncludeMinorTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalFilterMajorOverbreaks }: { summary: EmployeeSummary; allSummaries: EmployeeSummary[]; staffInfoData?: any[]; latestDate: Date, initialFilter: string, availableFilters: string[], t: any, globalTypeFilter: 'all' | 'idle_overbreak_wc', globalIncludeWc: boolean, globalIncludeIdle: boolean, globalIncludeNonMod: boolean, globalIncludeTardiness: boolean, globalIncludeMinorTardiness?: boolean, globalIncludeEarlyLeave: boolean, globalIncludeShort30Min?: boolean, globalIncludeCheck?: boolean, globalFilterMajorOverbreaks: boolean }) {
+function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, initialFilter, availableFilters, t, globalTypeFilter, globalIncludeWc, globalIncludeIdle, globalIncludeNonMod, globalIncludeRa, globalIncludeAt, globalIncludeTardiness, globalIncludeMinorTardiness, globalIncludeEarlyLeave, globalIncludeShort30Min, globalIncludeCheck, globalIncludeAbsences, globalFilterMajorOverbreaks }: { summary: EmployeeSummary; allSummaries: EmployeeSummary[]; staffInfoData?: any[]; latestDate: Date, initialFilter: string, availableFilters: string[], t: any, globalTypeFilter: 'all' | 'idle_overbreak_wc', globalIncludeWc: boolean, globalIncludeIdle: boolean, globalIncludeNonMod: boolean, globalIncludeRa?: boolean, globalIncludeAt?: boolean, globalIncludeTardiness: boolean, globalIncludeMinorTardiness?: boolean, globalIncludeEarlyLeave: boolean, globalIncludeShort30Min?: boolean, globalIncludeCheck?: boolean, globalIncludeAbsences?: boolean, globalFilterMajorOverbreaks: boolean }) {
   const today = latestDate;
   
   const getInitialView = () => {
@@ -585,6 +703,8 @@ function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, i
   const [includeWc, setIncludeWc] = useState(globalIncludeWc);
   const [includeIdle, setIncludeIdle] = useState(globalIncludeIdle);
   const [filterNm, setFilterNm] = useState(globalIncludeNonMod);
+  const [filterRa, setFilterRa] = useState(globalIncludeRa || false);
+  const [filterAt, setFilterAt] = useState(globalIncludeAt || false);
   const [includeTardiness, setIncludeTardiness] = useState(globalIncludeTardiness);
   const [includeMinorTardiness, setIncludeMinorTardiness] = useState(globalIncludeMinorTardiness || false);
   const [includeEarlyLeave, setIncludeEarlyLeave] = useState(globalIncludeEarlyLeave);
@@ -736,13 +856,22 @@ function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, i
   }
 
   // Se SOMENTE o respectivo filtro estiver selecionado localmente em relacao as outras opcoes de overbreaks/excecoes
-  const isWcOnly = includeWc && !includeShort30Min && !includeIdle && !filterNm && !includeTardiness && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
-  const isIdleOnly = includeIdle && !includeShort30Min && !includeWc && !filterNm && !includeTardiness && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
-  const isTardinessOnly = includeTardiness && !includeMinorTardiness && !includeShort30Min && !includeIdle && !includeWc && !filterNm && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
-  const isMinorTardinessOnly = includeTardiness && includeMinorTardiness && !includeShort30Min && !includeIdle && !includeWc && !filterNm && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
-  const isEarlyLeaveOnly = includeEarlyLeave && !includeShort30Min && !includeIdle && !includeWc && !filterNm && !includeTardiness && !includeCheck && globalTypeFilter === 'all';
-  const isShort30MinOnly = includeShort30Min && !includeEarlyLeave && !includeIdle && !includeWc && !filterNm && !includeTardiness && !includeCheck && globalTypeFilter === 'all';
-  const isCheckOnly = includeCheck && !includeShort30Min && !includeEarlyLeave && !includeIdle && !includeWc && !filterNm && !includeTardiness && globalTypeFilter === 'all';
+  const isWcOnly = includeWc && !includeShort30Min && !includeIdle && !filterNm && !filterRa && !filterAt && !includeTardiness && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
+  const isIdleOnly = includeIdle && !includeShort30Min && !includeWc && !filterNm && !filterRa && !filterAt && !includeTardiness && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
+  const isNmRaAtOnlyLocal = (filterNm || filterRa || filterAt) && !includeWc && !includeIdle && !includeTardiness && !includeEarlyLeave && !includeShort30Min && !includeCheck && globalTypeFilter === 'all';
+  const isTardinessOnly = includeTardiness && !includeMinorTardiness && !includeShort30Min && !includeIdle && !includeWc && !filterNm && !filterRa && !filterAt && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
+  const isMinorTardinessOnly = includeTardiness && includeMinorTardiness && !includeShort30Min && !includeIdle && !includeWc && !filterNm && !filterRa && !filterAt && !includeEarlyLeave && !includeCheck && globalTypeFilter === 'all';
+  const isEarlyLeaveOnly = includeEarlyLeave && !includeShort30Min && !includeIdle && !includeWc && !filterNm && !filterRa && !filterAt && !includeTardiness && !includeCheck && globalTypeFilter === 'all';
+  const isShort30MinOnly = includeShort30Min && !includeEarlyLeave && !includeIdle && !includeWc && !filterNm && !filterRa && !filterAt && !includeTardiness && !includeCheck && globalTypeFilter === 'all';
+  const isCheckOnly = includeCheck && !includeShort30Min && !includeEarlyLeave && !includeIdle && !includeWc && !filterNm && !filterRa && !filterAt && !includeTardiness && globalTypeFilter === 'all';
+
+  const totalPeriodNmRaAt = records.reduce((acc, r) => {
+    let sum = 0;
+    if (filterNm) sum += (r.nonModDuration || 0);
+    if (filterRa) sum += (r.reviewAndAppealDuration || 0);
+    if (filterAt) sum += (r.awaitingTasksDuration || 0);
+    return acc + sum;
+  }, 0);
 
   const totalPeriodOverbreak = records.reduce((acc, r) => {
     if (isWcOnly) return acc + r.wcDuration;
@@ -1007,17 +1136,39 @@ function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, i
                                  totalTasks: records.reduce((acc, r) => acc + (r.tasks || 0), 0)
                                };
                                
-                               exportToPDF([exportedSummary], `${s.employeeName} - ${t('agentReport')} - ${periodLabelStr}`, `Report_${sanitizedName}`, {
-                                   isTardiness: isTardinessOnly,
-                                   isMinorTardiness: isMinorTardinessOnly,
-                                   isEarlyLeave: isEarlyLeaveOnly,
+                               let typeParts = [];
+                               if (globalTypeFilter === 'idle_overbreak_wc') typeParts.push('Overbreaks');
+                               if (globalIncludeShort30Min) typeParts.push('30min');
+                               if (globalIncludeWc) typeParts.push('Organic');
+                               if (globalIncludeIdle) typeParts.push('Idle');
+                               if (globalIncludeNonMod) typeParts.push('Non-Mod');
+                               if (globalIncludeRa) typeParts.push('R&A');
+                               if (globalIncludeAt) typeParts.push('A.T');
+                               if (globalIncludeTardiness) typeParts.push('Tardiness');
+                               if (globalIncludeMinorTardiness) typeParts.push('Minor Tardiness');
+                               if (globalIncludeEarlyLeave) typeParts.push('Early Leave');
+                               if (globalIncludeCheck) typeParts.push('Check');
+
+                               let statusFiltersText = typeParts.length > 0 ? `Status info: ${typeParts.join(', ')}` : undefined;
+
+                               exportToPDF([exportedSummary], `${s.employeeName} - ${t('agentReport')}`, `Report_${sanitizedName}`, {
+                                   isTardiness: globalIncludeTardiness,
+                                   isMinorTardiness: globalIncludeMinorTardiness,
+                                   isEarlyLeave: globalIncludeEarlyLeave,
                                    showCheck: globalIncludeCheck,
-                                   isShort30Min: isShort30MinOnly,
-                                   isWc: isWcOnly,
-                                   isIdle: isIdleOnly,
-                                   isNonMod: isNonModOnly,
-                                   isAgentDetail: true,
-                                   lang: t('pdfAgentCount') === 'Agents' ? 'en' : 'pt' // ugly hack but valid
+                                   isShort30Min: globalIncludeShort30Min,
+                                   isWc: globalIncludeWc,
+                                   isIdle: globalIncludeIdle,
+                                   isNonMod: globalIncludeNonMod,
+                                   isRa: globalIncludeRa,
+                                   isAt: globalIncludeAt,
+                                   isOverbreaks: globalTypeFilter === 'idle_overbreak_wc',
+                                   isAgentDetail: (globalIncludeIdle || globalIncludeWc || globalIncludeShort30Min || globalIncludeNonMod || globalIncludeRa || globalIncludeAt || globalTypeFilter === 'idle_overbreak_wc') || !(globalIncludeTardiness || globalIncludeMinorTardiness || globalIncludeEarlyLeave || globalIncludeCheck || globalIncludeAbsences),
+                                   statusFiltersText,
+                                   periodFilter: initialFilter,
+                                   lang: t('pdfAgentCount') === 'Agents' ? 'en' : 'pt',
+                                   teamProductiveMinutes: exportedTeamProductiveMinutes,
+                                   teamNonModMinutes: exportedTeamNonModMinutes
                                });
                            }}
                            className="p-1 rounded bg-slate-800 text-slate-300 hover:bg-rose-500 hover:text-white transition-colors border border-slate-700 ml-1"
@@ -1157,10 +1308,17 @@ function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, i
                               CHECK
                             </button>
                           )}
-                          <div className={`flex-auto px-1.5 py-0.5 flex items-center justify-center gap-1 bg-slate-700/50 rounded border border-slate-600/50 min-w-fit ${totalPeriodOverbreak === 0 ? 'opacity-50' : ''}`}>
-                             <span className="text-[8.5px] font-bold tracking-widest text-slate-400 uppercase">TOTAL</span>
-                             <span className="text-[9px] font-black text-rose-400">+{totalPeriodOverbreak}m</span>
-                          </div>
+                          {isNmRaAtOnlyLocal ? (
+                            <div className={`flex-auto px-1.5 py-0.5 flex items-center justify-center gap-1 bg-slate-700/50 rounded border border-slate-600/50 min-w-fit ${totalPeriodNmRaAt === 0 ? 'opacity-50' : ''}`}>
+                               <span className="text-[8.5px] font-bold tracking-widest text-slate-400 uppercase">TEMPO TOTAL</span>
+                               <span className="text-[9px] font-black text-indigo-400">{Math.floor(totalPeriodNmRaAt / 60)}h {totalPeriodNmRaAt % 60}m</span>
+                            </div>
+                          ) : (
+                            <div className={`flex-auto px-1.5 py-0.5 flex items-center justify-center gap-1 bg-slate-700/50 rounded border border-slate-600/50 min-w-fit ${totalPeriodOverbreak === 0 ? 'opacity-50' : ''}`}>
+                               <span className="text-[8.5px] font-bold tracking-widest text-slate-400 uppercase">TOTAL OVERBREAK</span>
+                               <span className="text-[9px] font-black text-rose-400">+{totalPeriodOverbreak}m</span>
+                            </div>
+                          )}
                     </div>
                   )}
                   {isWcOnly && (
@@ -1184,7 +1342,7 @@ function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, i
         <div className="p-6 md:p-8">
           <div className="space-y-6">
             {records.length > 0 ? records.map((day, idx) => (
-              <DayRecordCard key={`${day.date}-${idx}`} record={day} isWcOnly={isWcOnly} isIdleOnly={isIdleOnly} isTardinessOnly={isTardinessOnly} isMinorTardinessOnly={isMinorTardinessOnly} filterNm={filterNm} includeWc={includeWc} includeIdle={includeIdle} includeTardiness={includeTardiness} includeMinorTardiness={includeMinorTardiness} includeEarlyLeave={includeEarlyLeave} includeCheck={includeCheck} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} onlyExceptions={onlyExceptions} />
+              <DayRecordCard key={`${day.date}-${idx}`} record={day} isWcOnly={isWcOnly} isIdleOnly={isIdleOnly} isTardinessOnly={isTardinessOnly} isMinorTardinessOnly={isMinorTardinessOnly} filterNm={filterNm} filterRa={filterRa} filterAt={filterAt} includeWc={includeWc} includeIdle={includeIdle} includeTardiness={includeTardiness} includeMinorTardiness={includeMinorTardiness} includeEarlyLeave={includeEarlyLeave} includeCheck={includeCheck} globalFilterMajorOverbreaks={globalFilterMajorOverbreaks} onlyExceptions={onlyExceptions} />
             )) : (
               <div className="text-center py-12">
                  <p className="text-slate-400 font-bold uppercase tracking-widest text-xs italic">Nenhum registro para o período.</p>
@@ -1197,7 +1355,7 @@ function EmployeeDetail({ summary: s, allSummaries, staffInfoData, latestDate, i
   );
 }
 
-const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; isIdleOnly?: boolean; isTardinessOnly?: boolean; isMinorTardinessOnly?: boolean; filterNm?: boolean; includeWc?: boolean; includeIdle?: boolean; includeTardiness?: boolean; includeMinorTardiness?: boolean; includeEarlyLeave?: boolean; includeCheck?: boolean; globalFilterMajorOverbreaks: boolean; onlyExceptions?: boolean }> = ({ record, isWcOnly, isIdleOnly, isTardinessOnly, isMinorTardinessOnly, filterNm, includeWc, includeIdle, includeTardiness, includeMinorTardiness, includeEarlyLeave, includeCheck, globalFilterMajorOverbreaks, onlyExceptions }) => {
+const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; isIdleOnly?: boolean; isTardinessOnly?: boolean; isMinorTardinessOnly?: boolean; filterNm?: boolean; filterRa?: boolean; filterAt?: boolean; includeWc?: boolean; includeIdle?: boolean; includeTardiness?: boolean; includeMinorTardiness?: boolean; includeEarlyLeave?: boolean; includeCheck?: boolean; globalFilterMajorOverbreaks: boolean; onlyExceptions?: boolean }> = ({ record, isWcOnly, isIdleOnly, isTardinessOnly, isMinorTardinessOnly, filterNm, filterRa, filterAt, includeWc, includeIdle, includeTardiness, includeMinorTardiness, includeEarlyLeave, includeCheck, globalFilterMajorOverbreaks, onlyExceptions }) => {
     const { t } = useLanguage();
     if (record.isAbsence) {
         return (
@@ -1323,7 +1481,9 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
         }
 
         // Otherwise, show if it matches ANY selected filter
-        if (filterNm && (b.type === 'non_moderating' || b.type === 'forgot_status')) return true;
+        if (filterNm && b.type === 'non_moderating') return true;
+        if (filterRa && (b.type === 'non_moderating' && (b.subType?.toLowerCase().includes('review') || b.subType?.toLowerCase().includes('appeal')))) return true;
+        if (filterAt && (b.type === 'non_moderating' && b.subType?.toLowerCase().includes('awaiting tasks'))) return true;
         if (includeWc && b.type === 'wc') return true;
         if (includeIdle && b.type === 'idle') return true;
         if (onlyExceptions && b.isOverbreak) return true;
@@ -1365,11 +1525,15 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                            )}
                        </div>
                     )}
-                    {(record.mealOverbreak > 0 || record.shortOverbreak > 0 || record.wellnessOverbreak > 0 || record.prayingOverbreak > 0 || record.idleOverbreak > 0 || isWcAlert) && !filterNm && (
+                    {(record.mealOverbreak > 0 || record.shortOverbreak > 0 || record.wellnessOverbreak > 0 || record.prayingOverbreak > 0 || record.idleOverbreak > 0) && !filterNm && !filterRa && !filterAt ? (
                       <span className="px-2 py-0.5 bg-rose-100 text-rose-700 rounded text-[10px] font-black uppercase tracking-wider">
                         Overbreak
                       </span>
-                    )}
+                    ) : isWcAlert && !filterNm && !filterRa && !filterAt ? (
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-black uppercase tracking-wider">
+                        Organic
+                      </span>
+                    ) : null}
                 </div>
             </div>
 
@@ -1457,7 +1621,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                                     {isWcOnly ? (
                                         <span className="text-amber-600">{Math.floor(record.wcDuration/60)}h {record.wcDuration%60}m</span>
                                     ) : (
-                                        <span className={isWcAlert ? "text-rose-500" : "text-emerald-500"}>{record.wcDuration}m</span>
+                                        <span className={isWcAlert ? "text-amber-600" : "text-emerald-500"}>{record.wcDuration}m</span>
                                     )}
                                 </div>
                             </div>
@@ -1551,11 +1715,11 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                             const durFormat = dur > 59 ? `${Math.floor(dur / 60)}h${dur % 60 > 0 ? ` ${dur % 60}m` : ''}` : `${dur}m`;
                             
                             return (
-                                <div key={i} className={`flex items-center px-1.5 py-0.5 rounded text-[10px] border gap-1.5 shadow-sm ${isOverbreak ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-200'}`}>
+                                <div key={i} className={`flex items-center px-1.5 py-0.5 rounded text-[10px] border gap-1.5 shadow-sm ${isOverbreak ? (b.type === 'wc' ? 'bg-amber-50 border-amber-200' : 'bg-rose-50 border-rose-200') : 'bg-white border-slate-200'}`}>
                                     <span className={`w-2 h-2 rounded-full ${dotColor}`} />
-                                    <span className={`font-bold ${isOverbreak ? 'text-rose-900' : 'text-slate-700'}`}>
+                                    <span className={`font-bold ${isOverbreak ? (b.type === 'wc' ? 'text-amber-900' : 'text-rose-900') : 'text-slate-700'}`}>
                                         {format(b.startTime, 'HH:mm')} 
-                                        <span className={`font-normal mx-0.5 ${isOverbreak ? 'text-rose-400' : 'text-slate-400'}`}>a</span> 
+                                        <span className={`font-normal mx-0.5 ${isOverbreak ? (b.type === 'wc' ? 'text-amber-400' : 'text-rose-400') : 'text-slate-400'}`}>a</span> 
                                         {format(b.endTime, 'HH:mm')}
                                     </span>
                                     <span className={`text-[9px] font-black uppercase ml-1 flex-1 ${textColor}`} title={b.rawStatus}>
@@ -1565,7 +1729,7 @@ const DayRecordCard: React.FC<{ record: EmployeeDayRecord; isWcOnly?: boolean; i
                                         {isOverbreak ? (
                                            <>
                                               {b.allowed > 0 && <span className="font-black text-emerald-600 bg-emerald-50 px-1 rounded shadow-sm">{b.allowed}m</span>}
-                                              {b.excess > 0 && <span className="font-black text-amber-600 bg-amber-50 px-1 rounded shadow-sm">+{b.excess}m</span>}
+                                              {b.excess > 0 && <span className={`font-black ${b.type === 'wc' ? 'text-orange-600 bg-orange-50' : 'text-amber-600 bg-amber-50'} px-1 rounded shadow-sm`}>+{b.excess}m</span>}
                                            </>
                                         ) : (
                                            <span className="font-black text-slate-700 text-right">{durFormat}</span>

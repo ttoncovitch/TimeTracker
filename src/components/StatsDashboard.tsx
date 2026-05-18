@@ -425,8 +425,10 @@ export function StatsDashboard({
           metricTotal = s.dailyRecords.reduce((acc, r) => acc + (r.wcDuration || 0), 0);
       } else if (isOnlyIdle) {
           metricTotal = s.dailyRecords.reduce((acc, r) => acc + (r.idleDuration || 0), 0);
-      } else if (isOnlyTardiness) {
+      } else if (isTardinessOnly) {
           metricTotal = s.dailyRecords.reduce((acc, r) => acc + ((r.tardinessMinutes || 0) >= 15 ? r.tardinessMinutes! : 0), 0);
+      } else if (isEarlyLeaveOnly) {
+          metricTotal = s.dailyRecords.reduce((acc, r) => acc + (r.earlyLeaveMinutes || 0), 0);
       } else if (isMinorTardinessOnly) {
           metricTotal = s.dailyRecords.reduce((acc, r) => acc + ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15 ? r.tardinessMinutes! : 0), 0);
       } else {
@@ -487,9 +489,14 @@ export function StatsDashboard({
              stats[shiftLabel].minutes += r.idleDuration;
              stats[shiftLabel].occurrences += 1;
            }
-        } else if (isOnlyTardiness) {
+        } else if (isTardinessOnly) {
            if ((r.tardinessMinutes || 0) >= 15) {
              stats[shiftLabel].minutes += r.tardinessMinutes || 0;
+             stats[shiftLabel].occurrences += 1;
+           }
+        } else if (isEarlyLeaveOnly) {
+           if ((r.earlyLeaveMinutes || 0) > 0) {
+             stats[shiftLabel].minutes += r.earlyLeaveMinutes || 0;
              stats[shiftLabel].occurrences += 1;
            }
         } else if (isMinorTardinessOnly) {
@@ -1035,7 +1042,7 @@ export function StatsDashboard({
                        isNonModOnly ? t('avgNonModDay') :
                        isWcOnly ? t('avgOrganicDay') :
                        isIdleOnly ? t('avgIdleDay') :
-                       isTardinessOnly ? t('avgTardinessDay') :
+                       (isTardinessOnly || isMinorTardinessOnly) ? t('avgTardinessDay') :
                        isEarlyLeaveOnly ? t('avgEarlyLeaveDay') :
                        isShort30MinOnly ? t('avg30minDay') :
                        t('avgOverbreakDay')}
@@ -1132,7 +1139,7 @@ export function StatsDashboard({
                 {showOverbreakCard && (
                   <Card className="rounded-2xl shadow-sm border border-rose-200 overflow-hidden bg-rose-50">
                     <CardContent className="p-5">
-                      <p className="text-[10px] font-bold text-rose-800 uppercase tracking-widest mb-1">{isTardinessOnly ? t('totalTardinessTime') : t('totalOverbreakTime')}</p>
+                      <p className="text-[10px] font-bold text-rose-800 uppercase tracking-widest mb-1">{(isTardinessOnly || isMinorTardinessOnly) ? t('totalTardinessTime') : t('totalOverbreakTime')}</p>
                       <div className="flex items-baseline gap-2">
                         <p className="text-2xl font-black text-rose-600">
                            {totalOverbreak > 59 ? (
@@ -1153,17 +1160,17 @@ export function StatsDashboard({
                 {showBottom10 && (
                 <Card className={`${paneSpan} rounded-2xl shadow-sm border border-slate-200 bg-white flex flex-col overflow-visible`}>
                   <CardHeader className={`${isCheckOnly ? 'bg-amber-50/50 border-amber-100/50' : isWcOnly ? 'bg-amber-50/50 border-amber-100/50' : isNonModOnly || isShort30MinOnly ? 'bg-emerald-50/50 border-emerald-100/50' : 'bg-rose-50/50 border-rose-100/50'} border-b py-4 shrink-0 rounded-t-2xl`}>
-                      <CardTitle className={`text-sm font-black uppercase tracking-widest ${isCheckOnly ? 'text-amber-800' : isWcOnly ? 'text-amber-800' : isNonModOnly || isShort30MinOnly ? 'text-emerald-800' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-800' : 'text-rose-800'} flex items-center gap-2`}>
-                        <AlertCircle size={16} /> {isCheckOnly ? (globalTimeFilter === 'day' ? t('mismatchDetails') : t('top10Mismatch')) : isWcOnly ? t('top10Organic') : isNonModOnly ? "BOTTOM 10" : isShort30MinOnly ? "TOP 10" : isIdleOnly ? t('totalIdleTime') : isTardinessOnly ? t('top10Tardiness') : isEarlyLeaveOnly ? t('top10EarlyLeave') : t('totalOverbreakTime')}
+                      <CardTitle className={`text-sm font-black uppercase tracking-widest ${isCheckOnly ? 'text-amber-800' : isWcOnly ? 'text-amber-800' : isNonModOnly || isShort30MinOnly ? 'text-emerald-800' : isTardinessOnly || isEarlyLeaveOnly || isMinorTardinessOnly ? 'text-orange-800' : 'text-rose-800'} flex items-center gap-2`}>
+                        <AlertCircle size={16} /> {isCheckOnly ? (globalTimeFilter === 'day' ? t('mismatchDetails') : t('top10Mismatch')) : isWcOnly ? t('top10Organic') : isNonModOnly ? "BOTTOM 10" : isShort30MinOnly ? "TOP 10" : isIdleOnly ? t('totalIdleTime') : (isTardinessOnly || isMinorTardinessOnly) ? t('top10Tardiness') : isEarlyLeaveOnly ? t('top10EarlyLeave') : t('totalOverbreakTime')}
                       </CardTitle>
-                    <CardDescription className={`text-xs ${isCheckOnly ? 'text-amber-600/80' : isWcOnly ? 'text-amber-600/80' : isNonModOnly || isShort30MinOnly ? 'text-emerald-600/80' : isTardinessOnly || isEarlyLeaveOnly ? 'text-orange-600/80' : 'text-rose-600/80'} mt-1`}>
+                    <CardDescription className={`text-xs ${isCheckOnly ? 'text-amber-600/80' : isWcOnly ? 'text-amber-600/80' : isNonModOnly || isShort30MinOnly ? 'text-emerald-600/80' : isTardinessOnly || isEarlyLeaveOnly || isMinorTardinessOnly ? 'text-orange-600/80' : 'text-rose-600/80'} mt-1`}>
                       {isCheckOnly 
                          ? (globalTimeFilter === 'day' ? t('mismatchDescShort') : t('mismatchDaysDesc'))
                          : isWcOnly
                          ? t('topOrganicDesc')
                          : isNonModOnly 
                          ? t('lessNonModDesc')
-                         : isShort30MinOnly ? t('agentsWith1BreakDesc') : isIdleOnly ? t('idleDesc') : isTardinessOnly ? t('tardinessDesc') : isEarlyLeaveOnly ? t('earlyLeaveDesc') : t('mostOverbreakTimeDesc')}
+                         : isShort30MinOnly ? t('agentsWith1BreakDesc') : isIdleOnly ? t('idleDesc') : (isTardinessOnly || isMinorTardinessOnly) ? t('tardinessDesc') : isEarlyLeaveOnly ? t('earlyLeaveDesc') : t('mostOverbreakTimeDesc')}
                     </CardDescription>
                    </CardHeader>
                   <CardContent className="p-0 flex-1">
@@ -1211,7 +1218,7 @@ export function StatsDashboard({
                                key={`${s.employeeName}-${i}`} 
                                summary={s} 
                                rank={i+1} 
-                               metricValue={`${Math.round(s.totalWcDur)}m`} 
+                               metricValue={s.totalWcDur >= 60 ? `${Math.floor(s.totalWcDur / 60)}h ${Math.round(s.totalWcDur % 60)}m` : `${Math.round(s.totalWcDur)}m`} 
                                metricLabel="total" 
                                colorClass="text-amber-700"
                             />
@@ -1251,7 +1258,7 @@ export function StatsDashboard({
                               key={`${s.employeeName}-${i}`} 
                               summary={s} 
                               rank={i+1} 
-                              metricValue={`${Math.round(s.totalWcDur)}m`} 
+                              metricValue={s.totalWcDur >= 60 ? `${Math.floor(s.totalWcDur / 60)}h ${Math.round(s.totalWcDur % 60)}m` : `${Math.round(s.totalWcDur)}m`} 
                               metricLabel="total" 
                               colorClass="text-amber-700"
                            />
@@ -1639,7 +1646,7 @@ export function StatsDashboard({
                isNonModOnly ? t('nonModAlerts') : 
                isWcOnly ? t('organicAlerts') : 
                isIdleOnly ? t('idleAlertsTitle') : 
-               isTardinessOnly ? t('tardinessAlerts') :
+               (isTardinessOnly || isMinorTardinessOnly) ? t('tardinessAlerts') :
                isEarlyLeaveOnly ? t('earlyLeaveAlerts') :
                t('auditLogOverbreak')}
             </CardTitle>
@@ -1648,7 +1655,7 @@ export function StatsDashboard({
                isNonModOnly ? t('nonModDesc') : 
                isWcOnly ? t('organicDesc') : 
                isIdleOnly ? t('idleDesc') : 
-               isTardinessOnly ? t('tardinessDesc') :
+               (isTardinessOnly || isMinorTardinessOnly) ? t('tardinessDesc') :
                isEarlyLeaveOnly ? t('earlyLeaveDesc') :
                t('needAttentionDesc')}
             </CardDescription>
@@ -1662,7 +1669,7 @@ export function StatsDashboard({
                     <div>
                       <span className="font-bold text-sm text-slate-800">{s.employeeName}</span>
                       <p className="text-[10px] text-slate-500 mt-0.5">
-                        {isCheckOnly ? t('workedOutsideShiftDesc') : isWcOnly ? t('organicUsedDesc') : isIdleOnly ? t('criticalIdleDesc') : isNonModOnly ? t('nonModDesc') : isTardinessOnly ? t('tardinessRecordedDesc') : isEarlyLeaveOnly ? t('earlyLeaveRecordedDesc') : t('exceededBreaksDesc')}
+                        {isCheckOnly ? t('workedOutsideShiftDesc') : isWcOnly ? t('organicUsedDesc') : isIdleOnly ? t('criticalIdleDesc') : isNonModOnly ? t('nonModDesc') : (isTardinessOnly || isMinorTardinessOnly) ? t('tardinessRecordedDesc') : isEarlyLeaveOnly ? t('earlyLeaveRecordedDesc') : t('exceededBreaksDesc')}
                       </p>
                     </div>
                   </div>

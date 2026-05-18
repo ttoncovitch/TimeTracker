@@ -97,12 +97,14 @@ export default function App() {
   const [isStaffInfoLoading, setIsStaffInfoLoading] = useState(false);
   const [calendarNote, setCalendarNote] = useState<string>('');
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'prev_month' | 'week' | 'day' | 'yesterday'>('day');
+  const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'current_month' | 'prev_month' | 'week' | 'day' | 'yesterday'>('day');
   const [typeFilter, setTypeFilter] = useState<'all' | 'idle_overbreak_wc'>('all');
   const [shiftFilter, setShiftFilter] = useState<string[]>([]);
   const [includeWcGlobal, setIncludeWcGlobal] = useState(false);
   const [includeIdleGlobal, setIncludeIdleGlobal] = useState(false);
   const [includeNonModGlobal, setIncludeNonModGlobal] = useState(false);
+  const [includeRaGlobal, setIncludeRaGlobal] = useState(false);
+  const [includeAtGlobal, setIncludeAtGlobal] = useState(false);
   const [includeTardinessGlobal, setIncludeTardinessGlobal] = useState(false);
   const [includeMinorTardinessGlobal, setIncludeMinorTardinessGlobal] = useState(false);
   const [includeEarlyLeaveGlobal, setIncludeEarlyLeaveGlobal] = useState(false);
@@ -687,7 +689,7 @@ export default function App() {
                 if (s.dailyRecords) {
                     s.dailyRecords.forEach(r => {
                         const d = new Date(r.date + 'T12:00:00');
-                        if (d.getMonth() === tm && d.getFullYear() === ty) filters.add('month');
+                        if (d.getMonth() === tm && d.getFullYear() === ty) { filters.add('month'); filters.add('current_month'); }
                         if (d.getMonth() === pmM && d.getFullYear() === pmY) filters.add('prev_month');
                     });
                 }
@@ -739,19 +741,31 @@ export default function App() {
                 }
             }
 
-            if (shiftMatchesNow) {
+            let latestBreak: any = null;
+            if (r.breaks && r.breaks.length > 0) {
+                for (const b of r.breaks) {
+                    if (!latestBreak || b.endTime.getTime() > latestBreak.endTime.getTime()) {
+                        latestBreak = b;
+                    }
+                }
+            }
+
+            // Consider active if they are working right now, even if their shift has ended.
+            // Check if their latest recorded state indicates they are still active and it's somewhat recent.
+            let isWorkingOvertime = false;
+            if (latestBreak && latestBreak.type !== 'offline' && latestBreak.type !== 'forgot_status') {
+                const diffMin = (now.getTime() - latestBreak.endTime.getTime()) / 60000;
+                // If their last active state ended recently (e.g. within 90 minutes), they are likely still online and working past their shift.
+                if (diffMin <= 90) {
+                    isWorkingOvertime = true;
+                }
+            }
+
+            if (shiftMatchesNow || isWorkingOvertime) {
                 if (requireActivity) {
                     const hasRealActivity = r.actualStartTime != null || r.totalWorkTimeMillis > 0 || (r.breaks && r.breaks.length > 0);
                     if (!hasRealActivity) {
                         return false;
-                    }
-                }
-                let latestBreak: any = null;
-                if (r.breaks && r.breaks.length > 0) {
-                    for (const b of r.breaks) {
-                        if (!latestBreak || b.endTime.getTime() > latestBreak.endTime.getTime()) {
-                            latestBreak = b;
-                        }
                     }
                 }
 
@@ -851,7 +865,13 @@ export default function App() {
            
            if (d.getTime() > endOfToday.getTime()) return false;
 
-           if (timeFilter === 'month') {
+           if (timeFilter === 'current_month') {
+               const maxDateStr = format(maxByteworksDate, 'yyyy-MM-dd');
+               const dStr = format(d, 'yyyy-MM-dd');
+               const startOfMonth = new Date(maxByteworksDate.getFullYear(), maxByteworksDate.getMonth(), 1);
+               if (d < startOfMonth || dStr > maxDateStr) return false;
+            }
+            if (timeFilter === 'month') {
               if (d.getMonth() !== tm || d.getFullYear() !== ty) return false;
            }
            if (timeFilter === 'prev_month') {
@@ -1053,16 +1073,18 @@ export default function App() {
         let prayingOverbreak = Math.max(0, prayingDur - 15);
         let idleOverbreak = idleDur;
 
-        const isWcOnly = includeWcGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isIdleOnly = includeIdleGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isNonModOnly = includeNonModGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isTardinessOnly = includeTardinessGlobal && !includeMinorTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isMinorTardinessOnly = includeTardinessGlobal && includeMinorTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
-        const isShort30MinOnly = includeShort30MinGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isAbsencesOnly = includeAbsencesGlobal && !includeOffboardedGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isOffboardedOnly = includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-        const isOverbreakOnly = typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal;
+        const isWcOnly = includeWcGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isIdleOnly = includeIdleGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isNonModOnly = includeNonModGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isRaOnly = includeRaGlobal && !includeNonModGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isAtOnly = includeAtGlobal && !includeNonModGlobal && !includeRaGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isTardinessOnly = includeTardinessGlobal && !includeMinorTardinessGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isMinorTardinessOnly = includeTardinessGlobal && includeMinorTardinessGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
+        const isShort30MinOnly = includeShort30MinGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isAbsencesOnly = includeAbsencesGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isOffboardedOnly = includeOffboardedGlobal && !includeRaGlobal && !includeAtGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+        const isOverbreakOnly = typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeRaGlobal && !includeAtGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal;
 
         let dailyOverbreak = mealOverbreak + shortOverbreak + wellnessOverbreak + prayingOverbreak;
         if (isIdleOnly) {
@@ -1122,7 +1144,7 @@ export default function App() {
         } else if (isIdleOnly) {
            if (r.idleDuration <= 0) return false;
         } else if (isNonModOnly) {
-           if (!r.breaks.some(b => b.type === 'non_moderating')) return false;
+           if (!r.breaks.some(b => b.type === 'non_moderating' && !b.subType?.toLowerCase().includes('review') && !b.subType?.toLowerCase().includes('appeal') && !b.subType?.toLowerCase().includes('awaiting task'))) return false;
         } else if (isTardinessOnly) {
            if ((r.tardinessMinutes || 0) < 15) return false;
         } else if (isMinorTardinessOnly) {
@@ -1134,14 +1156,16 @@ export default function App() {
            if (!r.hasSingleShort30m) return false;
         } else if (isAbsencesOnly) {
            if (!r.isAbsence) return false;
-        } else if (typeFilter === 'idle_overbreak_wc' && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal) {
+        } else if (typeFilter === 'idle_overbreak_wc' && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeRaGlobal && !includeAtGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal) {
            if (r.totalOverbreak <= 0 && (r.wcDuration || 0) <= 0 && (r.idleDuration || 0) <= 0) return false;
-        } else if (includeWcGlobal || includeIdleGlobal || includeNonModGlobal || includeTardinessGlobal || includeEarlyLeaveGlobal || includeShort30MinGlobal || includeAbsencesGlobal || includeOffboardedGlobal || typeFilter === 'idle_overbreak_wc') {
+        } else if (includeWcGlobal || includeIdleGlobal || includeNonModGlobal || includeRaGlobal || includeAtGlobal || includeTardinessGlobal || includeEarlyLeaveGlobal || includeShort30MinGlobal || includeAbsencesGlobal || includeOffboardedGlobal || typeFilter === 'idle_overbreak_wc') {
            // Mixed filters logic
            let keep = false;
            if (includeWcGlobal && r.wcDuration > 0) keep = true;
            if (includeIdleGlobal && r.idleDuration > 0) keep = true;
-           if (includeNonModGlobal && r.breaks.some(b => b.type === 'non_moderating')) keep = true;
+           if (includeNonModGlobal && r.breaks.some(b => b.type === 'non_moderating' && !b.subType?.toLowerCase().includes('review') && !b.subType?.toLowerCase().includes('appeal') && !b.subType?.toLowerCase().includes('awaiting task'))) keep = true;
+           if (includeRaGlobal && (r.reviewAndAppealDuration || 0) > 0) keep = true;
+           if (includeAtGlobal && (r.awaitingTasksDuration || 0) > 0) keep = true;
            if (includeTardinessGlobal) {
                if (includeMinorTardinessGlobal) {
                    if ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15) keep = true;
@@ -1211,7 +1235,7 @@ export default function App() {
     }).filter(Boolean) as EmployeeSummary[];
 
     return filtered;
-  }, [periodSummaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, includeTardinessGlobal, includeMinorTardinessGlobal, includeEarlyLeaveGlobal, filterMinorOverbreaks, includeShort30MinGlobal, includeAbsencesGlobal, includeOffboardedGlobal, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeCheckGlobal, showRealTime]);
+  }, [periodSummaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, includeRaGlobal, includeAtGlobal, includeTardinessGlobal, includeMinorTardinessGlobal, includeEarlyLeaveGlobal, filterMinorOverbreaks, includeShort30MinGlobal, includeAbsencesGlobal, includeOffboardedGlobal, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeCheckGlobal, showRealTime]);
 
   const activeAnyStatus = includeATTGlobal || includeLOAGlobal || includePTOGlobal || includeSLGlobal || includeSUSPPGlobal || includeOFFGlobal || includeOffboardedGlobal || includeAbsencesGlobal;
 
@@ -1336,6 +1360,25 @@ export default function App() {
     });
   }, [processedSummaries, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeOffboardedGlobal, includeAbsencesGlobal]);
 
+  const [periodTeamProductiveMinutes, setPeriodTeamProductiveMinutes] = useState<number | undefined>(undefined);
+  const [periodTeamNonModMinutes, setPeriodTeamNonModMinutes] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+     if (includeNonModGlobal || includeRaGlobal || includeAtGlobal || typeFilter !== 'idle_overbreak_wc') { // calculate mostly always now, just in case
+        const productive = Math.round(periodSummaries.filter(s => !isSupportRole(s)).reduce((acc, sum) => 
+            acc + sum.dailyRecords.reduce((acc2, r) => 
+                acc2 + r.breaks.filter(b => b.type === 'moderating').reduce((acc3, b) => acc3 + b.durationMinutes, 0), 0), 0));
+        const nonMod = Math.round(periodSummaries.filter(s => !isSupportRole(s)).reduce((acc, sum) => 
+            acc + sum.dailyRecords.reduce((acc2, r) => 
+                acc2 + r.breaks.filter(b => b.type === 'non_moderating').reduce((acc3, b) => acc3 + b.durationMinutes, 0), 0), 0));
+        setPeriodTeamProductiveMinutes(productive);
+        setPeriodTeamNonModMinutes(nonMod);
+     } else {
+        setPeriodTeamProductiveMinutes(undefined);
+        setPeriodTeamNonModMinutes(undefined);
+     }
+  }, [periodSummaries, includeNonModGlobal, includeRaGlobal, includeAtGlobal, typeFilter]);
+
   const dashboardStats = useMemo(() => {
     return {
       totalEmployees: filteredSummaries.length,
@@ -1365,6 +1408,8 @@ export default function App() {
     setIncludeWcGlobal(false);
     setIncludeIdleGlobal(false);
     setIncludeNonModGlobal(false);
+    setIncludeRaGlobal(false);
+    setIncludeAtGlobal(false);
     setIncludeTardinessGlobal(false);
     setIncludeEarlyLeaveGlobal(false);
     setIncludeAbsencesGlobal(false);
@@ -1541,17 +1586,19 @@ export default function App() {
       return a.employeeName.localeCompare(b.employeeName);
     });
 
-    const isWcOnly = includeWcGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-    const isIdleOnly = includeIdleGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-    const isNonModOnly = includeNonModGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-    const isTardinessOnly = includeTardinessGlobal && !includeMinorTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-    const isMinorTardinessOnly = includeTardinessGlobal && includeMinorTardinessGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-    const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
-    const isShort30MinOnly = includeShort30MinGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-    const isAbsencesOnly = includeAbsencesGlobal && !includeOffboardedGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
-    const isCheckOnly = includeCheckGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isWcOnly = includeWcGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isIdleOnly = includeIdleGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isNonModOnly = includeNonModGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isRaOnly = includeRaGlobal && !includeNonModGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isAtOnly = includeAtGlobal && !includeNonModGlobal && !includeRaGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isTardinessOnly = includeTardinessGlobal && !includeMinorTardinessGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isMinorTardinessOnly = includeTardinessGlobal && includeMinorTardinessGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isEarlyLeaveOnly = includeEarlyLeaveGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && typeFilter === 'all';
+    const isShort30MinOnly = includeShort30MinGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isAbsencesOnly = includeAbsencesGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
+    const isCheckOnly = includeCheckGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
 
-    const baseNoFilters = !includeShort30MinGlobal && !includeAbsencesGlobal && !includeOffboardedGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && !includeCheckGlobal && typeFilter === 'all';
+    const baseNoFilters = !includeShort30MinGlobal && !includeRaGlobal && !includeAtGlobal && !includeAbsencesGlobal && !includeOffboardedGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && !includeCheckGlobal && typeFilter === 'all';
     const isATTOnly = includeATTGlobal && baseNoFilters && !includeLOAGlobal && !includePTOGlobal && !includeSLGlobal && !includeSUSPPGlobal && !includeOFFGlobal;
     const isLOAOnly = includeLOAGlobal && baseNoFilters && !includeATTGlobal && !includePTOGlobal && !includeSLGlobal && !includeSUSPPGlobal && !includeOFFGlobal;
     const isPTOOnly = includePTOGlobal && baseNoFilters && !includeATTGlobal && !includeLOAGlobal && !includeSLGlobal && !includeSUSPPGlobal && !includeOFFGlobal;
@@ -1564,6 +1611,7 @@ export default function App() {
 
     let periodLabel = t('allTime');
     if (timeFilter === 'month') periodLabel = t('filterMonth');
+    if (timeFilter === 'current_month') periodLabel = 'Mês atual';
     if (timeFilter === 'week') periodLabel = t('filterWeek');
     if (timeFilter === 'yesterday') periodLabel = t('filterYesterday');
     if (timeFilter === 'day') periodLabel = t('filterDay');
@@ -1599,7 +1647,15 @@ export default function App() {
         fileSuffix += "_only_overbreaks";
     }
 
-    const nonSupportExport = sortedForExport.filter(s => !isSupportRole(s));
+    const nonSupportExport = sortedForExport.filter(s => !isSupportRole(s)).map(s => ({
+      ...s,
+      dailyRecords: s.dailyRecords.filter(r => {
+        if (timeFilter === 'current_month') {
+            return r.date <= format(maxByteworksDate, 'yyyy-MM-dd');
+        }
+        return true;
+      })
+    }));
     const totalAgentsCount = periodSummaries.filter(s => !isSupportRole(s)).length;
     const affectedAgentsCount = nonSupportExport.length;
 
@@ -1609,21 +1665,54 @@ export default function App() {
       return;
     }
 
+    let typeParts = [];
+    if (typeFilter === 'idle_overbreak_wc') typeParts.push('Overbreaks');
+    if (includeShort30MinGlobal) typeParts.push('30min');
+    if (includeWcGlobal) typeParts.push('Organic');
+    if (includeIdleGlobal) typeParts.push('Idle');
+    if (includeNonModGlobal) typeParts.push('Non-Mod');
+    if (includeRaGlobal) typeParts.push('R&A');
+    if (includeAtGlobal) typeParts.push('A.T');
+    if (includeTardinessGlobal) typeParts.push('Tardiness');
+    if (includeMinorTardinessGlobal) typeParts.push('Minor Tardiness');
+    if (includeEarlyLeaveGlobal) typeParts.push('Early Leave');
+    if (includeCheckGlobal) typeParts.push('Check');
+    
+    let statusFiltersText = typeParts.length > 0 ? `Status info: ${typeParts.join(', ')}` : undefined;
+
+    let dashTeamProductiveMinutes = undefined;
+    let dashTeamNonModMinutes = undefined;
+    if (includeNonModGlobal || includeRaGlobal || includeAtGlobal || typeFilter !== 'idle_overbreak_wc') { // mostly always fallback
+        dashTeamProductiveMinutes = Math.round(nonSupportExport.reduce((acc, sum) => 
+            acc + sum.dailyRecords.reduce((acc2, r) => 
+                acc2 + r.breaks.filter(b => b.type === 'moderating').reduce((acc3, b) => acc3 + b.durationMinutes, 0), 0), 0));
+        dashTeamNonModMinutes = Math.round(nonSupportExport.reduce((acc, sum) => 
+            acc + sum.dailyRecords.reduce((acc2, r) => 
+                acc2 + r.breaks.filter(b => b.type === 'non_moderating').reduce((acc3, b) => acc3 + b.durationMinutes, 0), 0), 0));
+    }
+
     exportToPDF(nonSupportExport, titleStr, `Report_${fileSuffix}`, {
       isTardiness: isTardinessOnly,
       isMinorTardiness: isMinorTardinessOnly,
       isEarlyLeave: isEarlyLeaveOnly,
       isAbsences: isAbsencesOnly,
-      isShort30Min: isShort30MinOnly,
-      isWc: isWcOnly,
-      isIdle: isIdleOnly,
-      isNonMod: isNonModOnly,
-      isCheck: isCheckOnly,
+      isShort30Min: includeShort30MinGlobal,
+      isWc: includeWcGlobal,
+      isIdle: includeIdleGlobal,
+      isNonMod: includeNonModGlobal,
+      isRa: includeRaGlobal,
+      isAt: includeAtGlobal,
+      isOverbreaks: typeFilter === 'idle_overbreak_wc',
+      isCheck: includeCheckGlobal,
+      statusFiltersText,
       activeExtraStatus: activeExtraStatus,
       attrKey: attrKey,
       totalAgentsCount,
       affectedAgentsCount,
-      lang: lang as 'pt' | 'en'
+      lang: lang as 'pt' | 'en',
+      periodFilter: timeFilter,
+      teamProductiveMinutes: dashTeamProductiveMinutes,
+      teamNonModMinutes: dashTeamNonModMinutes
     });
     toast.success(t('pdfSuccess'));
   };
@@ -1994,133 +2083,132 @@ export default function App() {
                     </div>
                     <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 justify-between w-full mt-2">
                       <p className="text-2xl font-black text-slate-900 hidden sm:block whitespace-nowrap">{t('auditResults')}</p>
-                      <div className="flex flex-col items-end gap-2 w-full">
-                        {/* Top Filter Row: Shift Select */}
-                        <div className="flex gap-1 items-center overflow-x-auto w-full sm:w-auto">
-                           <div className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded-xl shadow-sm min-w-max">
-                             <span className="text-[9px] font-black uppercase text-slate-400 px-2">{t('shift')}:</span>
-                             <button 
-                                onClick={() => {
-                                   setShowRealTime(false);
-                                   setShiftFilter([]);
-                                }}
-                                className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${shiftFilter.length === 0 ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
-                              >
-                                {t('all')}
-                             </button>
-                          {availableShifts.map(shift => (
-                             <button 
-                               key={shift}
-                               onClick={() => {
-                                 setShowRealTime(false);
-                                 if (shiftFilter.includes(shift)) {
-                                   setShiftFilter(shiftFilter.filter(s => s !== shift));
-                                 } else {
-                                   setShiftFilter([...shiftFilter, shift]);
-                                 }
-                               }}
-                               className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${shiftFilter.includes(shift) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
-                             >
-                               {shift}
-                             </button>
-                          ))}
-
-                           </div>
-                         </div>
-
-                        {/* Bottom Filter Row: Calendars and Options */}
-                        <div className="flex gap-2 flex-wrap justify-end w-full">
-                          <div className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto">
-                            <span className="text-[9px] font-black uppercase text-slate-400 px-2">{t('period')}:</span>
-                            <Popover>
-                              <PopoverTrigger
-                                   className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${(!showRealTime && selectedDates && selectedDates.length > 0) ? 'bg-amber-500 text-white shadow-md hover:bg-amber-600' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
-                                 >
-                                   <CalendarIcon size={12} />
-                                   {t('calendar')} {selectedDates && selectedDates.length > 0 ? `(${selectedDates.length})` : ''}
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0" align="start">
-                                  <div className="p-2 border-b border-slate-100 flex justify-between gap-2 bg-slate-50">
-                                     <Button 
-                                       variant="outline" 
-                                       size="sm" 
-                                       className="text-[9px] font-bold uppercase h-7 px-2 border-slate-200 rounded-full"
-                                       onClick={() => {
-                                          setShowRealTime(false);
-                                          const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
-                                          const start = new Date(now.getFullYear(), now.getMonth(), 1);
-                                          const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-                                          const days = [];
-                                          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                                             days.push(new Date(d));
-                                          }
-                                          setSelectedDates(days);
-                                          setTimeFilter('all');
-                                       }}
-                                     >
-                                       {t('filterMonth')}
-                                     </Button>
-                                     <Button 
-                                       variant="outline" 
-                                       size="sm" 
-                                       className="text-[9px] font-bold uppercase h-7 px-2 border-slate-200 rounded-full"
-                                       onClick={() => {
-                                          setShowRealTime(false);
-                                          const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
-                                          const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                                          const end = new Date(now.getFullYear(), now.getMonth(), 0);
-                                          const days = [];
-                                          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                                             days.push(new Date(d));
-                                          }
-                                          setSelectedDates(days);
-                                          setTimeFilter('all');
-                                       }}
-                                     >
-                                       {t('filterPrevMonth')}
-                                     </Button>
-                                     <Button 
-                                       variant="ghost" 
-                                       size="sm" 
-                                       className="text-[9px] font-bold uppercase h-7 px-2 text-rose-500 hover:text-rose-600 rounded-full"
-                                       onClick={() => setSelectedDates(undefined)}
-                                     >
-                                       {t('clearBtn')}
-                                     </Button>
-                                  </div>
-                                  <CustomCalendar
-                                      summaries={summaries}
-                                      selectedDates={selectedDates}
-                                      onSelectDates={(dates) => {
-                                          setShowRealTime(false);
-                                          setSelectedDates(dates);
-                                          if (dates && dates.length > 0) setTimeFilter('all');
-                                      }}
-                                  />
-                              </PopoverContent>
-                            </Popover>
-                            {(['month', 'prev_month', 'week', 'yesterday', 'day'] as const)
-                               .filter(filter => availableFilters.includes(filter))
-                               .map(filter => (
+                        <div className="flex flex-col items-end gap-2 w-full">
+                          {/* Top Filter Row: Shift Select */}
+                          <div className="flex gap-2 items-center flex-wrap justify-end w-full sm:w-auto">
+                             <div className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded-xl shadow-sm min-w-max order-2 sm:order-2">
+                               <span className="text-[9px] font-black uppercase text-slate-400 px-2">{t('shift')}:</span>
                                <button 
-                                 key={filter}
-                                 onClick={() => {
+                                  onClick={() => {
                                      setShowRealTime(false);
-                                     if (timeFilter === filter) {
-                                         setTimeFilter('all');
-                                     } else {
-                                         setTimeFilter(filter);
-                                         setSelectedDates(undefined);
-                                     }
+                                     setShiftFilter([]);
+                                  }}
+                                  className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${shiftFilter.length === 0 ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                                >
+                                  {t('all')}
+                               </button>
+                            {availableShifts.map(shift => (
+                               <button 
+                                 key={shift}
+                                 onClick={() => {
+                                   setShowRealTime(false);
+                                   if (shiftFilter.includes(shift)) {
+                                     setShiftFilter(shiftFilter.filter(s => s !== shift));
+                                   } else {
+                                     setShiftFilter([...shiftFilter, shift]);
+                                   }
                                  }}
-                                 className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${(!showRealTime && timeFilter === filter && (!selectedDates || selectedDates.length === 0)) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                                 className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${shiftFilter.includes(shift) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
                                >
-                                 {filter === 'month' ? t('filterMonth') : filter === 'prev_month' ? t('filterPrevMonth') : filter === 'week' ? t('filterWeek') : filter === 'yesterday' ? t('filterYesterday') : t('filterDay')}
+                                 {shift}
                                </button>
                             ))}
+                             </div>
+
+                             <div className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded-[2rem] shadow-sm overflow-x-auto min-w-max order-1 sm:order-1">
+                               <span className="text-[9px] font-black uppercase text-slate-400 px-2">{t('period')}:</span>
+                               <Popover>
+                                 <PopoverTrigger
+                                      className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${(!showRealTime && selectedDates && selectedDates.length > 0) ? 'bg-amber-500 text-white shadow-md hover:bg-amber-600' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                                    >
+                                      <CalendarIcon size={12} />
+                                      {t('calendar')} {selectedDates && selectedDates.length > 0 ? `(${selectedDates.length})` : ''}
+                                 </PopoverTrigger>
+                                 <PopoverContent className="w-auto p-0" align="start">
+                                     <div className="p-2 border-b border-slate-100 flex justify-between gap-2 bg-slate-50">
+                                        <Button 
+                                          variant="outline" 
+                                          size="sm" 
+                                          className="text-[9px] font-bold uppercase h-7 px-2 border-slate-200 rounded-full"
+                                          onClick={() => {
+                                             setShowRealTime(false);
+                                             const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+                                             const start = new Date(now.getFullYear(), now.getMonth(), 1);
+                                             const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                                             const days = [];
+                                             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                                                days.push(new Date(d));
+                                             }
+                                             setSelectedDates(days);
+                                             setTimeFilter('all');
+                                          }}
+                                        >
+                                          {t('filterMonth')}
+                                        </Button>
+                                        <Button 
+                                          variant="outline" 
+                                          size="sm" 
+                                          className="text-[9px] font-bold uppercase h-7 px-2 border-slate-200 rounded-full"
+                                          onClick={() => {
+                                             setShowRealTime(false);
+                                             const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+                                             const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                                             const end = new Date(now.getFullYear(), now.getMonth(), 0);
+                                             const days = [];
+                                             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                                                days.push(new Date(d));
+                                             }
+                                             setSelectedDates(days);
+                                             setTimeFilter('all');
+                                          }}
+                                        >
+                                          {t('filterPrevMonth')}
+                                        </Button>
+                                        <Button 
+                                          variant="ghost" 
+                                          size="sm" 
+                                          className="text-[9px] font-bold uppercase h-7 px-2 text-rose-500 hover:text-rose-600 rounded-full"
+                                          onClick={() => setSelectedDates(undefined)}
+                                        >
+                                          {t('clearBtn')}
+                                        </Button>
+                                     </div>
+                                     <CustomCalendar
+                                         summaries={summaries}
+                                         selectedDates={selectedDates}
+                                         onSelectDates={(dates) => {
+                                             setShowRealTime(false);
+                                             setSelectedDates(dates);
+                                             if (dates && dates.length > 0) setTimeFilter('all');
+                                         }}
+                                     />
+                                 </PopoverContent>
+                               </Popover>
+                               {(['month', 'current_month', 'prev_month', 'week', 'yesterday', 'day'] as const)
+                                  .filter(filter => availableFilters.includes(filter))
+                                  .map(filter => (
+                                  <button 
+                                    key={filter}
+                                    onClick={() => {
+                                        setShowRealTime(false);
+                                        if (timeFilter === filter) {
+                                            setTimeFilter('all');
+                                        } else {
+                                            setTimeFilter(filter);
+                                            setSelectedDates(undefined);
+                                        }
+                                    }}
+                                    className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${(!showRealTime && timeFilter === filter && (!selectedDates || selectedDates.length === 0)) ? 'bg-blue-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                                  >
+                                    {filter === 'month' ? t('filterMonth') : filter === 'current_month' ? t('filterCurrentMonth') : filter === 'prev_month' ? t('filterPrevMonth') : filter === 'week' ? t('filterWeek') : filter === 'yesterday' ? t('filterYesterday') : t('filterDay')}
+                                  </button>
+                               ))}
+                             </div>
                           </div>
-                          
-                          <div className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto">
+
+                          {/* Bottom Filter Row: Calendars and Options */}
+                          <div className="flex gap-2 flex-wrap justify-end w-full">
+                            <div className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto">
                              <span className="text-[9px] font-black uppercase text-slate-400 px-2 shrink-0">Status:</span>
                              <button 
                                onClick={() => { setTypeFilter(typeFilter === 'all' ? 'idle_overbreak_wc' : 'all'); clearExtraStatuses(); }}
@@ -2151,6 +2239,18 @@ export default function App() {
                                className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeNonModGlobal ? 'bg-teal-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                NON-MOD
+                             </button>
+                             <button
+                               onClick={() => { setIncludeRaGlobal(!includeRaGlobal); clearExtraStatuses(); }}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeRaGlobal ? 'bg-teal-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               R&A
+                             </button>
+                             <button
+                               onClick={() => { setIncludeAtGlobal(!includeAtGlobal); clearExtraStatuses(); }}
+                               className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeAtGlobal ? 'bg-teal-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               A.T
                              </button>
                              <button
                                onClick={() => { setIncludeTardinessGlobal(!includeTardinessGlobal); clearExtraStatuses(); }}
@@ -2315,6 +2415,7 @@ export default function App() {
                       globalIncludeIdle={includeIdleGlobal} 
                       globalIncludeNonMod={includeNonModGlobal} 
                       globalIncludeTardiness={includeTardinessGlobal} 
+                      globalIncludeMinorTardiness={includeMinorTardinessGlobal}
                       globalIncludeEarlyLeave={includeEarlyLeaveGlobal} 
                       globalIncludeShort30Min={includeShort30MinGlobal} 
                       globalIncludeAbsences={includeAbsencesGlobal}
@@ -2336,7 +2437,7 @@ export default function App() {
                   ) : activeTab === 'howto' ? (
                     <HowTo onBack={() => setActiveTab('dashboard')} />
                   ) : (
-                    <EmployeeList availableFilters={availableFilters} summaries={filteredSummaries} allSummaries={mergedSummaries} staffInfoData={staffInfoData} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalIncludeCheck={includeCheckGlobal} globalShiftFilter={shiftFilter} globalFilterMajorOverbreaks={false} />
+                    <EmployeeList availableFilters={availableFilters} summaries={filteredSummaries} allSummaries={mergedSummaries} staffInfoData={staffInfoData} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeRa={includeRaGlobal} globalIncludeAt={includeAtGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeMinorTardiness={includeMinorTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalIncludeCheck={includeCheckGlobal} globalShiftFilter={shiftFilter} globalFilterMajorOverbreaks={false} />
                   )}
                 </div>
               </motion.div>

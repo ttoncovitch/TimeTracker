@@ -253,7 +253,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
         if (foundInf >= 0) infShiftIndex = foundInf;
 
         employeeMap.forEach((allRows, _email) => {
-          const dailyRecords: EmployeeDayRecord[] = [];
+          const dailyRecordsMap = new Map<string, EmployeeDayRecord>();
           let totalWorkMinutes = 0;
           let totalBreakMinutes = 0;
           let totalOverbreakMinutes = 0;
@@ -323,7 +323,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              const tasks = Math.round(Number(row[tasksIndex]) || 0);
 
              const rawInfo = String(row[3] || '') + ' ' + String(row[4] || '');
-             
+              
              const baseDateArgs = date.split('-').map(Number);
              const baseDate = baseDateArgs.length === 3 ? new Date(baseDateArgs[0], baseDateArgs[1] - 1, baseDateArgs[2]) : new Date();
 
@@ -354,6 +354,10 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
                     // It's a typo. E.g., 13:05 to 09:11. We ignore the bad end time.
                     endTime = new Date(startTime.getTime() + durationMinutes * 60000);
                 }
+             }
+
+             if (employeeName.includes('karely')) {
+                 console.log('Karely Event:', { startTime, endTime, status, subStatus, durationMinutes });
              }
 
              return { date, employeeName, department: String(row[2] || ''), status, subStatus, remarks, originalStatus, originalSubStatus, originalRemark, rawInfo, durationMinutes, startTime, endTime, tasks, row };
@@ -417,13 +421,47 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
 
           shifts.forEach(shiftInfo => {
              const shiftEvents = shiftInfo.events;
-             // Date of the shift is based on the first event time
              const firstRowDate = format(shiftInfo.firstEventTime, 'yyyy-MM-dd'); 
              const record = processDailyRowsFromEvents(firstRowDate, shiftEvents, resignedIndex, schedShiftIndex, infShiftIndex);
              
              const hasSignificantActivity = record.totalWorkTimeMillis > 0 || record.breaks.some(b => b.type !== 'offline') || record.isOFF || record.isPTO || record.isLOA || record.isSL || record.isSUSPP || record.isATT;
              
              if (hasSignificantActivity && record.date >= globalMinDateStr) {
+               if (dailyRecordsMap.has(record.date)) {
+                   const existing = dailyRecordsMap.get(record.date)!;
+                   existing.totalWorkTimeMillis += record.totalWorkTimeMillis;
+                   existing.breaks.push(...record.breaks);
+                   existing.tasks += record.tasks;
+                   existing.mealDuration += record.mealDuration;
+                   existing.shortDuration += record.shortDuration;
+                   existing.wellnessDuration += record.wellnessDuration;
+                   existing.wcDuration += record.wcDuration;
+                   existing.prayingDuration += record.prayingDuration;
+                   existing.idleDuration += record.idleDuration;
+                   existing.nonModDuration += record.nonModDuration;
+                   existing.reviewAndAppealDuration += record.reviewAndAppealDuration;
+                   existing.awaitingTasksDuration += record.awaitingTasksDuration;
+                   existing.forgotStatusDuration += record.forgotStatusDuration;
+                   existing.mealOverbreak += record.mealOverbreak;
+                   existing.shortOverbreak += record.shortOverbreak;
+                   existing.wellnessOverbreak += record.wellnessOverbreak;
+                   existing.prayingOverbreak += record.prayingOverbreak;
+                   existing.wcOverbreak += record.wcOverbreak;
+                   existing.idleOverbreak += record.idleOverbreak;
+                   existing.totalOverbreak += record.totalOverbreak;
+                   
+                   if (record.actualStartTime && (!existing.actualStartTime || record.actualStartTime < existing.actualStartTime)) existing.actualStartTime = record.actualStartTime;
+                   if (record.actualEndTime && (!existing.actualEndTime || record.actualEndTime > existing.actualEndTime)) existing.actualEndTime = record.actualEndTime;
+               } else {
+                   dailyRecordsMap.set(record.date, record);
+               }
+             }
+          });
+          
+          const dailyRecords: EmployeeDayRecord[] = [];
+          const sortedDates = Array.from(dailyRecordsMap.keys()).sort();
+          sortedDates.forEach(date => {
+              const record = dailyRecordsMap.get(date)!;
               dailyRecords.push(record);
               totalWorkMinutes += record.totalWorkTimeMillis / (1000 * 60);
               sumTasks += record.tasks || 0;
@@ -438,7 +476,6 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               totalReviewAndAppealMinutes += record.reviewAndAppealDuration;
               totalAwaitingTasksMinutes += record.awaitingTasksDuration;
               totalForgotStatusMinutes += record.forgotStatusDuration;
-             }
           });
 
           if (dailyRecords.length > 0 || isOffboarded) {
@@ -492,6 +529,27 @@ const SHIFTS = [
   { startHour: 22, startMinute: 30, endHour: 7, endMinute: 30, label: '22:30-07:30', crossesMidnight: true }
 ];
 
+function isEventWork(e: any): boolean {
+    const combinedInfo = `${e.status} ${e.subStatus} ${e.remarks}`.toLowerCase();
+    
+    return combinedInfo.includes('trabalho') || 
+                 combinedInfo.includes('work') || 
+                 combinedInfo.includes('available') || 
+                 combinedInfo.includes('on queue') || 
+                 combinedInfo.includes('em chamada') || 
+                 combinedInfo.includes('in call') || 
+                 combinedInfo.includes('moderation task') ||
+                 combinedInfo.includes('moderation') ||
+                 combinedInfo.includes('moderat') ||
+                 combinedInfo.includes('moderação') ||
+                 combinedInfo.includes('non moderation') ||
+                 combinedInfo.includes('non-moderation') ||
+                 combinedInfo.includes('non moderating') ||
+                 combinedInfo.includes('reuniao') ||
+                 combinedInfo.includes('meeting') ||
+                 combinedInfo.includes('reuni');
+}
+
 function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: number, schedShiftIdx: number, infShiftIdx: number): EmployeeDayRecord {
   const breaks: BreakSession[] = [];
   let totalWorkTimeMillis = 0;
@@ -528,7 +586,10 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
   }
 
   // 2. Identify Shift
-  const minWorkTime = events.reduce((min, e) => (e.startTime < min ? e.startTime : min), events[0].startTime);
+  const workEvents = events.filter(isEventWork);
+  // Fallback to all events if no work events
+  const referenceEvents = workEvents.length > 0 ? workEvents : events;
+  const minWorkTime = referenceEvents.reduce((min, e) => (e.startTime < min ? e.startTime : min), referenceEvents[0].startTime);
 
   let explicitShift = null;
   for (const e of events) {
@@ -563,32 +624,41 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
       }
   }
 
-  let closestShift = explicitShift || SHIFTS[0];
-  if (!explicitShift) {
-      let minDiff = Infinity;
-      SHIFTS.forEach(shift => {
-        // Check diff against today's shift start
-        const d = new Date(minWorkTime);
-        d.setHours(shift.startHour, shift.startMinute, 0, 0);
-        let diff = Math.abs(d.getTime() - minWorkTime.getTime());
-        
-        // Check diff against yesterday's shift start (relevant for early morning logs belonging to nightshift)
-        const dYesterday = new Date(minWorkTime);
-        dYesterday.setDate(dYesterday.getDate() - 1);
-        dYesterday.setHours(shift.startHour, shift.startMinute, 0, 0);
-        const diffYesterday = Math.abs(dYesterday.getTime() - minWorkTime.getTime());
-        
-        diff = Math.min(diff, diffYesterday);
-
-        if (diff < minDiff) {
-           minDiff = diff;
-           closestShift = shift;
-        }
-      });
+  let candidates = SHIFTS.slice();
+  if (explicitShift) {
+      candidates.push(explicitShift);
   }
+
+  let minDiff = Infinity;
+  let closestShift = SHIFTS[0];
+
+  candidates.forEach(shift => {
+      // Check diff against today's shift start
+      const d = new Date(minWorkTime);
+      d.setHours(shift.startHour, shift.startMinute, 0, 0);
+      let diff = Math.abs(d.getTime() - minWorkTime.getTime());
+      
+      // Check diff against yesterday's shift start (relevant for early morning logs belonging to nightshift)
+      const dYesterday = new Date(minWorkTime);
+      dYesterday.setDate(dYesterday.getDate() - 1);
+      dYesterday.setHours(shift.startHour, shift.startMinute, 0, 0);
+      const diffYesterday = Math.abs(dYesterday.getTime() - minWorkTime.getTime());
+      
+      diff = Math.min(diff, diffYesterday);
+
+      if (diff < minDiff) {
+         minDiff = diff;
+         closestShift = shift;
+      }
+  });
 
   const shiftStartLimit = new Date(minWorkTime);
   shiftStartLimit.setHours(closestShift.startHour, closestShift.startMinute, 0, 0);
+
+  if (employeeName.includes('karely')) {
+      console.log('Karely Shift Detection:', { minWorkTime, closestShift, shiftStartLimit });
+  }
+
   // If the first event is well before the shift start limit today, 
   // it means the shift actually started yesterday.
   if (minWorkTime.getTime() < shiftStartLimit.getTime() - 6 * 3600000) {
@@ -598,15 +668,16 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
   const shiftEndLimit = new Date(shiftStartLimit);
   if (closestShift.crossesMidnight) {
     shiftEndLimit.setDate(shiftEndLimit.getDate() + 1);
-  } else {
-    // Since we handle both crossed and uncrossed shifts, ensure end is after start
-    // Morning shifts don't cross, but Late shifts might slightly cross or night shifts definitely do.
   }
   shiftEndLimit.setHours(closestShift.endHour, closestShift.endMinute, 0, 0);
   if (shiftEndLimit.getTime() <= shiftStartLimit.getTime()) {
       shiftEndLimit.setDate(shiftEndLimit.getDate() + 1);
   }
   
+  if (employeeName.includes('karely')) {
+      console.log('Karely Shift Limits:', { shiftStartLimit, shiftEndLimit });
+  }
+
   const shiftEndPlus10 = new Date(shiftEndLimit.getTime() + 10 * 60000);
 
   let actualStartTime: Date | null = null;
@@ -616,20 +687,8 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
   events.forEach(e => {
     // Combine status, subStatus, and remarks for comprehensive detection
     const combinedInfo = `${e.status} ${e.subStatus} ${e.remarks}`.toLowerCase();
-    
-    let isWork = combinedInfo.includes('trabalho') || 
-                 combinedInfo.includes('work') || 
-                 combinedInfo.includes('available') || 
-                 combinedInfo.includes('on queue') || 
-                 combinedInfo.includes('em chamada') || 
-                 combinedInfo.includes('in call') || 
-                 combinedInfo.includes('moderat') || 
-                 combinedInfo.includes('moderation') ||
-                 combinedInfo.includes('non moderation') ||
-                 combinedInfo.includes('non-moderation') ||
-                 combinedInfo.includes('non moderating') ||
-                 combinedInfo.includes('meeting') ||
-                 combinedInfo.includes('reuni');
+
+    let isWork = isEventWork(e);
 
     let currentBreakType: BreakSession['type'] = 'other';
     
@@ -663,9 +722,10 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
        }
        
      // Only reclassify as 'forgot_status' if it's REALLY not work, and long.
-     if (!isWork && e.durationMinutes > 180 && currentBreakType !== 'offline') {
-         currentBreakType = 'forgot_status';
-     }
+     // Removed dynamic reclassification to avoid mislabelling known statuses as IDLE
+     // if (!isWork && e.durationMinutes > 180 && currentBreakType !== 'offline') {
+     //    currentBreakType = 'forgot_status';
+     // }
      
      // default work type if not set
      if (isWork && currentBreakType === 'other') {
@@ -675,7 +735,7 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
      let finalEndTime = e.endTime;
      let finalDuration = e.durationMinutes;
      
-     const isOvertimeAllowed = currentBreakType === 'moderating' || currentBreakType === 'training' || currentBreakType === 'meeting';
+     const isOvertimeAllowed = currentBreakType === 'moderating' || currentBreakType === 'training' || currentBreakType === 'meeting' || currentBreakType === 'non_moderating';
      const minutesPastShiftLimit = Math.round((e.endTime.getTime() - shiftEndLimit.getTime()) / 60000);
      
      if (!isOvertimeAllowed && e.endTime > shiftEndLimit) {
