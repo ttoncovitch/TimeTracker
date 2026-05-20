@@ -66,7 +66,7 @@ export function StatsDashboard({
   basePeriodCount,
   showRealTime
 }: StatsDashboardProps) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   
   const isWcOnly = globalIncludeWc && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeIdle && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
   const isIdleOnly = globalIncludeIdle && !globalIncludeShort30Min && !globalIncludeAbsences && !globalIncludeOffboarded && !globalIncludeWc && !globalIncludeNonMod && !globalIncludeTardiness && !globalIncludeEarlyLeave && !globalIncludeCheck && !globalIncludeATT && !globalIncludeLOA && !globalIncludePTO && !globalIncludeSL && !globalIncludeSUSPP && !globalIncludeOFF && globalTypeFilter === 'all';
@@ -1051,7 +1051,7 @@ export function StatsDashboard({
                       {isCheckOnly ? (
                         <div className="flex items-baseline gap-1">
                            <p className="text-2xl font-black text-slate-900">{avgAgentsMismatched}</p>
-                           <span className="text-xs font-bold text-slate-400">{globalTimeFilter === 'day' ? 'agentes fora de turno' : 'agentes em média'}</span>
+                           <span className="text-xs font-bold text-slate-400">{globalTimeFilter === 'day' ? t('agentsOutOfShift') : t('agentsAverage')}</span>
                         </div>
                       ) : isShort30MinOnly ? (
                         <div className="flex items-baseline gap-1">
@@ -1236,7 +1236,7 @@ export function StatsDashboard({
                          ))
                       )}
                       {(isCheckOnly ? topCheck : isShort30MinOnly ? topShort30Min : isNonModOnly ? agentsBottom5Special : isWcOnly ? topWc : agentsByOverbreakDuration).length === 0 && (
-                        <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                        <div className="p-8 text-center text-xs font-bold text-slate-400">{t('noData')}</div>
                       )}
                     </div>
                   </CardContent>
@@ -1264,7 +1264,7 @@ export function StatsDashboard({
                            />
                         ))}
                         {topWc.length === 0 && (
-                          <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                          <div className="p-8 text-center text-xs font-bold text-slate-400">{t('noData')}</div>
                         )}
                       </div>
                     </CardContent>
@@ -1287,13 +1287,13 @@ export function StatsDashboard({
                               summary={s} 
                               rank={i+1} 
                               metricValue={`${s.totalShort30MinRecords}`} 
-                              metricLabel={s.totalShort30MinRecords === 1 ? "dia" : "dias"} 
+                              metricLabel={s.totalShort30MinRecords === 1 ? (lang === 'pt' ? 'dia' : 'day') : (lang === 'pt' ? 'dias' : 'days')} 
                               colorClass="text-emerald-700"
                               
                            />
                         ))}
                         {topShort30Min.length === 0 && (
-                          <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                          <div className="p-8 text-center text-xs font-bold text-slate-400">{t('noData')}</div>
                         )}
                       </div>
                     </CardContent>
@@ -1317,14 +1317,14 @@ export function StatsDashboard({
                                 key={`${s.employeeName}-${i}`} 
                                 summary={s} 
                                 rank={i+1} 
-                                metricValue={s.totalOverbreakMinutes === 0 ? "Perfeito" : `${s.totalOverbreakMinutes}m`} 
+                                metricValue={s.totalOverbreakMinutes === 0 ? (lang === 'pt' ? 'Perfeito' : 'Perfect') : `${s.totalOverbreakMinutes}m`} 
                                 metricLabel={s.totalOverbreakMinutes === 0 ? "" : t('overbreakExceeded')} 
                                 colorClass="text-emerald-700"
                                 
                              />
                         ))}
                         {topPerformers.length === 0 && (
-                          <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                          <div className="p-8 text-center text-xs font-bold text-slate-400">{t('noData')}</div>
                         )}
                       </div>
                     </CardContent>
@@ -1348,13 +1348,13 @@ export function StatsDashboard({
                               summary={s} 
                               rank={i+1} 
                               metricValue={`${Math.floor(s.totalForgotStatusMinutes / 60)}h ${Math.round(s.totalForgotStatusMinutes % 60)}m`} 
-                              metricLabel="tempo" 
+                              metricLabel={lang === 'pt' ? 'tempo' : 'time'} 
                               colorClass="text-slate-700"
                               
                            />
                         ))}
                         {topForgotStatus.length === 0 && (
-                          <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                          <div className="p-8 text-center text-xs font-bold text-slate-400">{t('noData')}</div>
                         )}
                       </div>
                     </CardContent>
@@ -1375,13 +1375,13 @@ export function StatsDashboard({
                               summary={s} 
                               rank={i+1} 
                               metricValue={`${Math.floor(s.totalReviewAndAppealMinutes / 60)}h ${s.totalReviewAndAppealMinutes % 60}m`} 
-                              metricLabel="tempo" 
+                              metricLabel={lang === 'pt' ? 'tempo' : 'time'} 
                               colorClass="text-purple-700"
                               
                            />
                         ))}
                         {topReviewAndAppeal.length === 0 && (
-                          <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                          <div className="p-8 text-center text-xs font-bold text-slate-400">{t('noData')}</div>
                         )}
                       </div>
                     </CardContent>
@@ -1402,13 +1402,13 @@ export function StatsDashboard({
                               summary={s} 
                               rank={i+1} 
                               metricValue={`${Math.floor(s.totalAwaitingTasksMinutes / 60)}h ${s.totalAwaitingTasksMinutes % 60}m`} 
-                              metricLabel="tempo" 
+                              metricLabel={lang === 'pt' ? 'tempo' : 'time'} 
                               colorClass="text-indigo-700"
                               
                            />
                         ))}
                         {topAwaitingTasks.length === 0 && (
-                          <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                          <div className="p-8 text-center text-xs font-bold text-slate-400">{t('noData')}</div>
                         )}
                       </div>
                     </CardContent>
@@ -1429,13 +1429,13 @@ export function StatsDashboard({
                               summary={s} 
                               rank={i+1} 
                               metricValue={`${Math.floor(s.totalNonModMinutes / 60)}h ${s.totalNonModMinutes % 60}m`} 
-                              metricLabel="tempo" 
+                              metricLabel={lang === 'pt' ? 'tempo' : 'time'} 
                               colorClass="text-teal-700"
                               
                            />
                         ))}
                         {topNonModTotal.length === 0 && (
-                          <div className="p-8 text-center text-xs font-bold text-slate-400">Nenhum dado</div>
+                          <div className="p-8 text-center text-xs font-bold text-slate-400">{t('noData')}</div>
                         )}
                       </div>
                     </CardContent>

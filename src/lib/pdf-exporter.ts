@@ -247,53 +247,61 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
         if (isNonModOnlyMode) {
           const nonModTotal = Math.round(s.dailyRecords.reduce((acc, r) => acc + r.breaks.filter(b => {
              if (b.type !== 'non_moderating') return false;
-             if (options.isNonMod && !b.subType?.toLowerCase().includes('review') && !b.subType?.toLowerCase().includes('appeal') && !b.subType?.toLowerCase().includes('awaiting task')) return true;
-             if (options.isRa && (b.subType?.toLowerCase().includes('review') || b.subType?.toLowerCase().includes('appeal'))) return true;
-             if (options.isAt && b.subType?.toLowerCase().includes('awaiting task')) return true;
+             if (options.isNonMod && !b.subType?.toLowerCase()?.includes('review') && !b.subType?.toLowerCase()?.includes('appeal') && !b.subType?.toLowerCase()?.includes('awaiting task')) return true;
+             if (options.isRa && (b.subType?.toLowerCase()?.includes('review') || b.subType?.toLowerCase()?.includes('appeal'))) return true;
+             if (options.isAt && b.subType?.toLowerCase()?.includes('awaiting task')) return true;
              return false;
           }).reduce((sum, b) => sum + b.durationMinutes, 0), 0));
 
           if (options.isRa || options.isAt) {
-             head1Raw = [t('pdfWorkTime'), lang === 'pt' ? 'Tempo total em non-moderating' : 'Total non-moderating time'];
+             head1Raw = [lang === 'pt' ? 'Tempo total em non-moderating' : 'Total non-moderating time'];
              tableData1Row = [
-               `${Math.floor(totalModeratingMinutes / 60)}h ${totalModeratingMinutes % 60}m`,
                `${nonModTotal}m`
              ];
-             head1Raw.push(t('pdfOverbreakTime'), t('pdfWcTime'), t('pdfWcAlerts'));
-             tableData1Row.push(
-                `${s.totalOverbreakMinutes}m`,
-                s.wcTotalMinutes > 0 ? `${s.wcTotalMinutes}m` : '0m',
-                s.wcAlerts > 0 ? `${s.wcAlerts} ${t('pdfAlerts')}` : t('pdfNone')
-             );
+             head1Raw.push(t('pdfOverbreakTime'));
+             if (options.isWc) head1Raw.push(t('pdfWcTime'), t('pdfWcAlerts'));
+             
+             tableData1Row.push(`${s.totalOverbreakMinutes}m`);
+             if (options.isWc) {
+                 tableData1Row.push(
+                    s.wcTotalMinutes > 0 ? `${s.wcTotalMinutes}m` : '0m',
+                    s.wcAlerts > 0 ? `${s.wcAlerts} ${t('pdfAlerts')}` : t('pdfNone')
+                 );
+             }
           } else {
-             head1Raw = [t('pdfWorkTime'), lang === 'pt' ? 'Tempo total em non-moderating' : 'Total non-moderating time', t('pdfTotalBreaks'), t('pdfOverbreakTypes')];
+             head1Raw = [lang === 'pt' ? 'Tempo total em non-moderating' : 'Total non-moderating time', t('pdfTotalBreaks'), t('pdfOverbreakTypes')];
              tableData1Row = [
-               `${Math.floor(totalModeratingMinutes / 60)}h ${totalModeratingMinutes % 60}m`,
                `${nonModTotal}m`,
                `${s.totalBreakMinutes}m`,
                typesStr
              ];
-             head1Raw.push(t('pdfOverbreakTime'), t('pdfWcTime'), t('pdfWcAlerts'));
-             tableData1Row.push(
-                `${s.totalOverbreakMinutes}m`,
-                s.wcTotalMinutes > 0 ? `${s.wcTotalMinutes}m` : '0m',
-                s.wcAlerts > 0 ? `${s.wcAlerts} ${t('pdfAlerts')}` : t('pdfNone')
-             );
+             head1Raw.push(t('pdfOverbreakTime'));
+             if (options.isWc) head1Raw.push(t('pdfWcTime'), t('pdfWcAlerts'));
+             
+             tableData1Row.push(`${s.totalOverbreakMinutes}m`);
+             if (options.isWc) {
+                 tableData1Row.push(
+                    s.wcTotalMinutes > 0 ? `${s.wcTotalMinutes}m` : '0m',
+                    s.wcAlerts > 0 ? `${s.wcAlerts} ${t('pdfAlerts')}` : t('pdfNone')
+                 );
+             }
           }
         } else {
-          head1Raw = [t('pdfWorkTime'), t('pdfTotalBreaks'), t('pdfOverbreakTypes')];
+          head1Raw = [t('pdfTotalBreaks'), t('pdfOverbreakTypes')];
           tableData1Row = [
-            `${Math.floor(totalModeratingMinutes / 60)}h ${totalModeratingMinutes % 60}m`,
             `${s.totalBreakMinutes}m`,
             typesStr
           ];
           
-          head1Raw.push(t('pdfOverbreakTime'), t('pdfWcTime'), t('pdfWcAlerts'));
-          tableData1Row.push(
-            `${s.totalOverbreakMinutes}m`,
-            s.wcTotalMinutes > 0 ? `${s.wcTotalMinutes}m` : '0m',
-            s.wcAlerts > 0 ? `${s.wcAlerts} ${t('pdfAlerts')}` : t('pdfNone')
-          );
+          head1Raw.push(t('pdfOverbreakTime'));
+          if (options.isWc) head1Raw.push(t('pdfWcTime'), t('pdfWcAlerts'));
+          tableData1Row.push(`${s.totalOverbreakMinutes}m`);
+          if (options.isWc) {
+              tableData1Row.push(
+                s.wcTotalMinutes > 0 ? `${s.wcTotalMinutes}m` : '0m',
+                s.wcAlerts > 0 ? `${s.wcAlerts} ${t('pdfAlerts')}` : t('pdfNone')
+              );
+          }
         }
         
         const head1 = [head1Raw];
@@ -386,20 +394,22 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
                  if (options.isIdle && typeKey === 'idle' && isOverbreakInstance) {
                      matchesFilter = true;
                  }
-                 if (options.isNonMod && b.type === 'non_moderating' && !b.subType?.toLowerCase().includes('review') && !b.subType?.toLowerCase().includes('appeal') && !b.subType?.toLowerCase().includes('awaiting task')) {
+                 if (options.isNonMod && b.type === 'non_moderating' && !b.subType?.toLowerCase()?.includes('review') && !b.subType?.toLowerCase()?.includes('appeal') && !b.subType?.toLowerCase()?.includes('awaiting task')) {
                      matchesFilter = true;
                  }
-                 if (options.isRa && b.type === 'non_moderating' && (b.subType?.toLowerCase().includes('review') || b.subType?.toLowerCase().includes('appeal'))) {
+                 if (options.isRa && b.type === 'non_moderating' && (b.subType?.toLowerCase()?.includes('review') || b.subType?.toLowerCase()?.includes('appeal'))) {
                      matchesFilter = true;
                  }
-                 if (options.isAt && b.type === 'non_moderating' && b.subType?.toLowerCase().includes('awaiting task')) {
+                 if (options.isAt && b.type === 'non_moderating' && b.subType?.toLowerCase()?.includes('awaiting task')) {
                      matchesFilter = true;
                  }
                  
                  let noSpecificFilter = !options.isOverbreaks && !options.isWc && !options.isIdle && !options.isNonMod && !options.isShort30Min && !options.isRa && !options.isAt;
                  
                  if (noSpecificFilter) {
-                     matchesFilter = true;
+                     if (b.type !== 'wc') {
+                         matchesFilter = true;
+                     }
                  }
 
                  if (!matchesFilter) {
@@ -589,14 +599,13 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
       });
     });
   } else if (options.isCheck) {
-    head = [[t('pdfAgent'), t('pdfDate'), t('pdfScheduledShift'), t('pdfWorkedShift')]];
+    head = [[t('pdfAgent'), t('pdfDate'), t('pdfScheduledShift')]];
     summaries.forEach(s => {
       s.dailyRecords.filter(r => isShiftMismatch(r.scheduledShift, r.inferredShift)).forEach(r => {
         tableData.push([
           s.email ? `${s.employeeName} (${s.email})` : s.employeeName,
           r.date,
-          r.scheduledShift || t('pdfUnknown'),
-          r.inferredShift || t('pdfUnknown')
+          r.scheduledShift || t('pdfUnknown')
         ]);
       });
     });
@@ -706,7 +715,9 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
            let noSpecificFilter = !options.isOverbreaks && !options.isWc && !options.isIdle && !options.isNonMod && !options.isShort30Min;
            
            if (noSpecificFilter) {
-               matchesFilter = true;
+               if (b.type !== 'wc') {
+                   matchesFilter = true;
+               }
            }
 
            if (!matchesFilter) {
@@ -758,7 +769,7 @@ export function exportToPDF(summaries: EmployeeSummary[], title: string = "Break
     body: tableData,
     headStyles: { fillColor: [41, 128, 185], textColor: 255 },
     columnStyles: {
-      1: { minCellWidth: 24 } // Date
+      1: { minCellWidth: 28 } // Date
     },
     didDrawCell: function (data) {
       if (data.section === 'body' && data.row.index > 0) {

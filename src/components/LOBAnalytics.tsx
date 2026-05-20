@@ -179,14 +179,12 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx, showRealTime
       let idleAlerts = 0;
       let employeeWithAbsences = 0;
       let totalTardiness = 0;
-      let totalTasks = 0;
-      const topAgents: { name: string; overbreak: number; absences: number; lang: string; summary: EmployeeSummary; tasks: number }[] = [];
+      const topAgents: { name: string; overbreak: number; absences: number; lang: string; summary: EmployeeSummary }[] = [];
 
       filtered.forEach(s => {
          agentCount++;
          totalOverbreak += s.totalOverbreakMinutes || 0;
          totalAbsences += s.totalAbsences || 0;
-         totalTasks += s.totalTasks || 0;
          if ((s.totalAbsences || 0) > 0) employeeWithAbsences++;
          wcAlerts += s.wcAlerts || 0;
          idleAlerts += s.idleAlerts || 0;
@@ -198,15 +196,12 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx, showRealTime
                 overbreak: s.totalOverbreakMinutes || 0,
                 absences: s.totalAbsences || 0,
                 lang: (s.language && s.language.trim() !== '') ? s.language.toUpperCase().trim() : 'N/A',
-                tasks: s.totalTasks || 0,
                 summary: s
              } as any);
          }
       });
 
-      if (showRealTime) {
-         topAgents.sort((a, b) => b.tasks - a.tasks);
-      } else {
+      if (!showRealTime) {
          topAgents.sort((a, b) => (b.overbreak + b.absences * 60) - (a.overbreak + a.absences * 60));
       }
 
@@ -214,7 +209,6 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx, showRealTime
          agentCount,
          totalOverbreak,
          totalAbsences,
-         totalTasks,
          wcAlerts,
          idleAlerts,
          employeeWithAbsences,
@@ -280,18 +274,14 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx, showRealTime
 
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                {showRealTime ? (
-                   <><Target className="w-3 h-3" /> TASKS</>
-                ) : (
-                   <><CalendarX className="w-3 h-3" /> {t('absencesString')}</>
-                )}
+                <CalendarX className="w-3 h-3" /> {t('absencesString')}
               </span>
               <div className="flex flex-col">
-                <span className={`text-xl font-black leading-none ${showRealTime ? 'text-indigo-600' : (stats.totalAbsences > 0 ? 'text-red-600' : 'text-emerald-600')}`}>
-                  {showRealTime ? stats.totalTasks : stats.totalAbsences}
+                <span className={`text-xl font-black leading-none ${stats.totalAbsences > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                  {stats.totalAbsences}
                 </span>
                 <span className="text-[10px] font-bold text-slate-400 mt-1">
-                  {showRealTime ? 'Total Cases' : `${stats.employeeWithAbsences} ${t('agMissed')}`}
+                  {`${stats.employeeWithAbsences} ${t('agMissed')}`}
                 </span>
               </div>
             </div>
@@ -354,6 +344,7 @@ const LOBCard: React.FC<LOBCardProps> = ({ lobName, summaries, idx, showRealTime
 
 const AgentVarianceRow: React.FC<{ agent: any, aIdx: number, selectedLang: string, t: any, showRealTime?: boolean }> = ({ agent, aIdx, selectedLang, t, showRealTime }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const { lang } = useLanguage();
 
   const exceptions = useMemo(() => {
     if (!agent.summary || !agent.summary.dailyRecords) return [];
@@ -361,13 +352,13 @@ const AgentVarianceRow: React.FC<{ agent: any, aIdx: number, selectedLang: strin
     const results: any[] = [];
     agent.summary.dailyRecords.forEach((r: any) => {
       if (r.isAbsence) {
-        results.push({ date: r.date, type: 'FALTA', duration: '-', time: '-', isOverbreakType: false });
+        results.push({ date: r.date, type: lang === 'pt' ? 'FALTA' : 'ABSENCE', duration: '-', time: '-', isOverbreakType: false });
       }
       if ((r.tardinessMinutes || 0) >= 15) {
-        results.push({ date: r.date, type: 'ATRASO', duration: `${r.tardinessMinutes}m`, time: r.actualStartTime ? format(r.actualStartTime, 'HH:mm') : '-', isOverbreakType: false });
+        results.push({ date: r.date, type: lang === 'pt' ? 'ATRASO' : 'DELAY', duration: `${r.tardinessMinutes}m`, time: r.actualStartTime ? format(r.actualStartTime, 'HH:mm') : '-', isOverbreakType: false });
       }
       if ((r.earlyLeaveMinutes || 0) > 0) {
-        results.push({ date: r.date, type: 'SAÍDA ANTECIPADA', duration: `${r.earlyLeaveMinutes}m`, time: r.actualEndTime ? format(r.actualEndTime, 'HH:mm') : '-', isOverbreakType: false });
+        results.push({ date: r.date, type: lang === 'pt' ? 'SAÍDA ANTECIPADA' : 'EARLY LEAVE', duration: `${r.earlyLeaveMinutes}m`, time: r.actualEndTime ? format(r.actualEndTime, 'HH:mm') : '-', isOverbreakType: false });
       }
 
       const typeSums: Record<string, number> = {};
@@ -445,11 +436,6 @@ const AgentVarianceRow: React.FC<{ agent: any, aIdx: number, selectedLang: strin
              <span className="text-[9px] font-black text-indigo-500 bg-indigo-50 px-1.5 py-0.5 border border-indigo-100 rounded flex items-center gap-0.5">
                {agent.lang}
              </span>
-          )}
-          {agent.tasks > 0 && (
-            <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 border border-emerald-200 rounded shadow-sm">
-              TASKS: {agent.tasks}
-            </span>
           )}
           {(!showRealTime && agent.absences > 0) && (
             <span className="text-[9px] font-black text-red-600 bg-red-50/80 px-1.5 py-0.5 border border-red-100 rounded shadow-sm">{t('absencesLabel')}: {agent.absences}</span>

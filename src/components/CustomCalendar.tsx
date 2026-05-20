@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
 import { parseISO, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface CustomCalendarProps {
   summaries: EmployeeSummary[];
@@ -12,6 +13,7 @@ interface CustomCalendarProps {
 }
 
 export function CustomCalendar({ summaries, selectedDates, onSelectDates }: CustomCalendarProps) {
+  const { t, lang } = useLanguage();
   const [view, setView] = useState<'year' | 'month' | 'day'>('year');
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function CustomCalendar({ summaries, selectedDates, onSelectDates }: Cust
   if (view === 'year') {
     return (
       <div className="p-4 w-64">
-        <h4 className="text-sm font-bold text-slate-700 mb-3 text-center uppercase tracking-wider">Selecione o Ano</h4>
+        <h4 className="text-sm font-bold text-slate-700 mb-3 text-center uppercase tracking-wider">{lang === 'pt' ? 'Selecione o Ano' : 'Select Year'}</h4>
         <div className="grid grid-cols-2 gap-2">
           {years.map(year => (
             <Button
@@ -60,7 +62,7 @@ export function CustomCalendar({ summaries, selectedDates, onSelectDates }: Cust
               {year}
             </Button>
           ))}
-          {years.length === 0 && <p className="text-xs text-slate-500 col-span-2 text-center">Nenhum dado disponível.</p>}
+          {years.length === 0 && <p className="text-xs text-slate-500 col-span-2 text-center">{lang === 'pt' ? 'Nenhum dado disponível.' : 'No data available.'}</p>}
         </div>
       </div>
     );
@@ -80,7 +82,7 @@ export function CustomCalendar({ summaries, selectedDates, onSelectDates }: Cust
         <div className="grid grid-cols-2 gap-2">
           {months.map(monthStr => {
             const date = parseISO(`${monthStr}-01`);
-            const monthName = format(date, 'MMM', { locale: ptBR });
+            const monthName = format(date, 'MMM', { locale: lang === 'pt' ? ptBR : undefined });
             return (
               <Button
                 key={monthStr}
@@ -165,7 +167,7 @@ export function CustomCalendar({ summaries, selectedDates, onSelectDates }: Cust
       }
     };
 
-    const weekDays = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+    const weekDays = lang === 'pt' ? ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'] : ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
     return (
       <div className="p-4 w-[320px]">
@@ -174,7 +176,7 @@ export function CustomCalendar({ summaries, selectedDates, onSelectDates }: Cust
             <ChevronLeft size={16} />
           </button>
           <h4 className="text-sm font-bold text-slate-700 flex-1 text-center uppercase tracking-wider">
-            {format(parseISO(`${selectedMonth}-01`), 'MMM yyyy', { locale: ptBR })}
+            {format(parseISO(`${selectedMonth}-01`), 'MMM yyyy', { locale: lang === 'pt' ? ptBR : undefined })}
           </h4>
           <div className="w-6" />
         </div>
@@ -185,7 +187,7 @@ export function CustomCalendar({ summaries, selectedDates, onSelectDates }: Cust
           className="w-full mb-4 text-xs font-bold bg-slate-100/50 hover:bg-slate-200/50"
           onClick={handleSelectAll}
         >
-          SELECIONAR MÊS TODO
+          {lang === 'pt' ? 'SELECIONAR MÊS TODO' : 'SELECT ENTIRE MONTH'}
         </Button>
 
         <div className="grid grid-cols-7 gap-1 mb-2">

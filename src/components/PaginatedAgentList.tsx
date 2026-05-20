@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { EmployeeSummary } from '../types';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface PaginatedAgentListProps {
   items: any[];
@@ -9,11 +10,12 @@ interface PaginatedAgentListProps {
 }
 
 export function PaginatedAgentList({ items, renderItem, pageSize = 10 }: PaginatedAgentListProps) {
+  const { t, lang } = useLanguage();
   const [page, setPage] = useState(0);
   const totalPages = Math.ceil(items.length / pageSize);
 
   if (items.length === 0) {
-    return <div className="p-4 text-center text-slate-400 text-xs">Nenhum agente encontrado</div>;
+    return <div className="p-4 text-center text-slate-400 text-xs">{t('noMatchAgent')}</div>;
   }
 
   const currentItems = items.slice(page * pageSize, (page + 1) * pageSize);
@@ -32,7 +34,7 @@ export function PaginatedAgentList({ items, renderItem, pageSize = 10 }: Paginat
           >
             <ChevronUp size={16} />
           </button>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{page + 1} de {totalPages}</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{page + 1} {lang === 'pt' ? 'de' : 'of'} {totalPages}</span>
           <button 
             disabled={page === totalPages - 1} 
             onClick={() => setPage(p => p + 1)}

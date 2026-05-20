@@ -236,15 +236,11 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
         
         const resignedIndex = headersStr.findIndex((s: string) => s.includes('RESIGNED') || s.includes('离职') || s.includes('OFFBOARDED') || s.includes('SAÍDA'));
         
-        let tasksIndex = 12; // default
         let schedShiftIndex = 11; // default
         let infShiftIndex = 12; // default
         let durationIndex = 6;
         let startIndex = 7;
         let endIndex = 8;
-        
-        const foundTasks = headersStr.findIndex((h: string) => h === 'TASKS' || h === 'TASKS PROCESSED' || h.includes('PROCESSED'));
-        if (foundTasks >= 0) tasksIndex = foundTasks;
         
         const foundSched = headersStr.findIndex((h: string) => h === 'SCHEDULED SHIFT' || h.includes('SCHEDULE') || h.includes('VÁRIOS'));
         if (foundSched >= 0) schedShiftIndex = foundSched;
@@ -266,7 +262,6 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           let totalReviewAndAppealMinutes = 0;
           let totalAwaitingTasksMinutes = 0;
           let totalForgotStatusMinutes = 0;
-          let sumTasks = 0;
           let isOffboarded = false;
           
           let finalName = '';
@@ -319,8 +314,6 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
              
              const durationHours = isNaN(Number(row[durationIndex])) ? 0 : Number(row[durationIndex]);
              const durationMinutes = Math.round(durationHours * 60);
-             
-             const tasks = Math.round(Number(row[tasksIndex]) || 0);
 
              const rawInfo = String(row[3] || '') + ' ' + String(row[4] || '');
               
@@ -360,7 +353,7 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
                  console.log('Karely Event:', { startTime, endTime, status, subStatus, durationMinutes });
              }
 
-             return { date, employeeName, department: String(row[2] || ''), status, subStatus, remarks, originalStatus, originalSubStatus, originalRemark, rawInfo, durationMinutes, startTime, endTime, tasks, row };
+             return { date, employeeName, department: String(row[2] || ''), status, subStatus, remarks, originalStatus, originalSubStatus, originalRemark, rawInfo, durationMinutes, startTime, endTime, row };
           }).sort((a,b) => a.startTime.getTime() - b.startTime.getTime());
 
           if (allEvents.length === 0) return;
@@ -421,7 +414,40 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
 
           shifts.forEach(shiftInfo => {
              const shiftEvents = shiftInfo.events;
-             const firstRowDate = format(shiftInfo.firstEventTime, 'yyyy-MM-dd'); 
+             
+             let logicalStartTime = new Date(shiftInfo.firstEventTime);
+             const firstEventRow = shiftEvents[0].row;
+             const schedString = String(firstEventRow[schedShiftIndex] || '');
+             
+             const isCrossing = (shiftStr: string) => {
+                 if (!shiftStr) return false;
+                 const cleaned = shiftStr.replace(/\s+/g, '').toUpperCase();
+                 if (cleaned === 'OFF') return false;
+                 const parseT = (t: string) => {
+                     const isPM = t.includes('PM');
+                     const isAM = t.includes('AM');
+                     const core = t.replace(/[A-Z]/g, '').replace(':', '.');
+                     const parts = core.split('.');
+                     let h = parseInt(parts[0]) || 0;
+                     let m = parseInt(parts[1]) || 0;
+                     if (isPM && h !== 12) h += 12;
+                     if (isAM && h === 12) h = 0;
+                     return h * 60 + m;
+                 };
+                 const times = cleaned.split('-');
+                 if (times.length === 2) {
+                     let sT = parseT(times[0]);
+                     let eT = parseT(times[1]);
+                     if (eT <= sT) return true;
+                 }
+                 return false;
+             };
+
+             if (isCrossing(schedString) && logicalStartTime.getHours() < 12) {
+                 logicalStartTime.setDate(logicalStartTime.getDate() - 1);
+             }
+
+             const firstRowDate = format(logicalStartTime, 'yyyy-MM-dd'); 
              const record = processDailyRowsFromEvents(firstRowDate, shiftEvents, resignedIndex, schedShiftIndex, infShiftIndex);
              
              const hasSignificantActivity = record.totalWorkTimeMillis > 0 || record.breaks.some(b => b.type !== 'offline') || record.isOFF || record.isPTO || record.isLOA || record.isSL || record.isSUSPP || record.isATT;
@@ -431,7 +457,6 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
                    const existing = dailyRecordsMap.get(record.date)!;
                    existing.totalWorkTimeMillis += record.totalWorkTimeMillis;
                    existing.breaks.push(...record.breaks);
-                   existing.tasks += record.tasks;
                    existing.mealDuration += record.mealDuration;
                    existing.shortDuration += record.shortDuration;
                    existing.wellnessDuration += record.wellnessDuration;
@@ -464,7 +489,6 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               const record = dailyRecordsMap.get(date)!;
               dailyRecords.push(record);
               totalWorkMinutes += record.totalWorkTimeMillis / (1000 * 60);
-              sumTasks += record.tasks || 0;
               totalBreakMinutes += (record.mealDuration + record.shortDuration + record.wellnessDuration + record.wcDuration + record.prayingDuration + record.idleDuration);
               totalOverbreakMinutes += record.totalOverbreak;
               totalTardinessMinutes += record.tardinessMinutes;
@@ -493,7 +517,6 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
               totalReviewAndAppealMinutes: Math.round(totalReviewAndAppealMinutes),
               totalAwaitingTasksMinutes: Math.round(totalAwaitingTasksMinutes),
               totalForgotStatusMinutes: Math.round(totalForgotStatusMinutes),
-              totalTasks: sumTasks,
               totalShort30MinRecords,
               totalAbsences: 0,
               isOffboarded,
@@ -553,7 +576,6 @@ function isEventWork(e: any): boolean {
 function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: number, schedShiftIdx: number, infShiftIdx: number): EmployeeDayRecord {
   const breaks: BreakSession[] = [];
   let totalWorkTimeMillis = 0;
-  let totalTasksForDay = 0;
   
   const checkDailyStatus = (keywords: string[]) => {
       const index = resignedIndex >= 0 ? resignedIndex : 15;
@@ -577,7 +599,7 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
   
   if (events.length === 0) {
       return {
-        date, employeeName: employeeName || 'Unknown', totalWorkTimeMillis: 0, breaks: [], tasks: 0,
+        date, employeeName: employeeName || 'Unknown', totalWorkTimeMillis: 0, breaks: [],
         mealDuration: 0, shortDuration: 0, wellnessDuration: 0, wcDuration: 0, prayingDuration: 0, idleDuration: 0,
         nonModDuration: 0, reviewAndAppealDuration: 0, awaitingTasksDuration: 0, forgotStatusDuration: 0,
         mealOverbreak: 0, shortOverbreak: 0, wellnessOverbreak: 0, prayingOverbreak: 0, wcOverbreak: 0, idleOverbreak: 0, totalOverbreak: 0,
@@ -797,9 +819,6 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
 
      if (isWork && currentBreakType !== 'forgot_status' && currentBreakType !== 'offline') {
          totalWorkTimeMillis += finalDuration * 60 * 1000;
-         if (e.tasks && e.tasks > 0) {
-             totalTasksForDay += e.tasks;
-         }
      }
 
      if (finalDuration > 0 || currentBreakType === 'offline') {
@@ -912,8 +931,8 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
   const wcDuration = breaks.filter(b => b.type === 'wc').reduce((sum, b) => sum + b.durationMinutes, 0);
   const idleDuration = breaks.filter(b => b.type === 'idle').reduce((sum, b) => sum + b.durationMinutes, 0);
   const nonModDuration = breaks.filter(b => b.type === 'non_moderating').reduce((sum, b) => sum + b.durationMinutes, 0);
-  const reviewAndAppealDuration = breaks.filter(b => b.type === 'non_moderating' && (b.subType?.toLowerCase().includes('review') || b.subType?.toLowerCase().includes('appeal'))).reduce((sum, b) => sum + b.durationMinutes, 0);
-  const awaitingTasksDuration = breaks.filter(b => b.type === 'non_moderating' && b.subType?.toLowerCase().includes('awaiting tasks')).reduce((sum, b) => sum + b.durationMinutes, 0);
+  const reviewAndAppealDuration = breaks.filter(b => b.type === 'non_moderating' && (b.subType?.toLowerCase()?.includes('review') || b.subType?.toLowerCase()?.includes('appeal'))).reduce((sum, b) => sum + b.durationMinutes, 0);
+  const awaitingTasksDuration = breaks.filter(b => b.type === 'non_moderating' && b.subType?.toLowerCase()?.includes('awaiting tasks')).reduce((sum, b) => sum + b.durationMinutes, 0);
   const forgotStatusDuration = breaks.filter(b => b.type === 'forgot_status').reduce((sum, b) => sum + b.durationMinutes, 0);
 
   let mealOver = Math.max(0, mealDuration - LIMITS.MEAL);
@@ -948,7 +967,6 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
     date: format(shiftStartLimit, 'yyyy-MM-dd'),
     employeeName: employeeName || 'Unknown',
     inferredShift: closestShift.label,
-    tasks: totalTasksForDay,
     hasMealWithoutShortAnomaly,
     hasSingleShort30m,
     totalWorkTimeMillis,

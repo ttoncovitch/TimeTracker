@@ -349,7 +349,6 @@ export default function App() {
             s.dailyRecords.forEach(dr => {
                 const existingDr = existing.dailyRecords.find(e => e.date === dr.date);
                 if (existingDr) {
-                    existingDr.tasks = (existingDr.tasks || 0) + (dr.tasks || 0);
                     existingDr.breaks.push(...dr.breaks);
                     existingDr.totalWorkTimeMillis += dr.totalWorkTimeMillis;
                     existingDr.totalOfflineTimeMillis += dr.totalOfflineTimeMillis;
@@ -357,7 +356,6 @@ export default function App() {
                     existing.dailyRecords.push(dr);
                 }
             });
-            existing.totalTasks = (existing.totalTasks || 0) + (s.totalTasks || 0);
             if (s.email && !existing.email) existing.email = s.email;
         } else {
             dedupedMap.set(key, s);
@@ -1144,7 +1142,7 @@ export default function App() {
         } else if (isIdleOnly) {
            if (r.idleDuration <= 0) return false;
         } else if (isNonModOnly) {
-           if (!r.breaks.some(b => b.type === 'non_moderating' && !b.subType?.toLowerCase().includes('review') && !b.subType?.toLowerCase().includes('appeal') && !b.subType?.toLowerCase().includes('awaiting task'))) return false;
+           if (!r.breaks.some(b => b.type === 'non_moderating' && !b.subType?.toLowerCase()?.includes('review') && !b.subType?.toLowerCase()?.includes('appeal') && !b.subType?.toLowerCase()?.includes('awaiting task'))) return false;
         } else if (isTardinessOnly) {
            if ((r.tardinessMinutes || 0) < 15) return false;
         } else if (isMinorTardinessOnly) {
@@ -1157,13 +1155,13 @@ export default function App() {
         } else if (isAbsencesOnly) {
            if (!r.isAbsence) return false;
         } else if (typeFilter === 'idle_overbreak_wc' && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeRaGlobal && !includeAtGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal) {
-           if (r.totalOverbreak <= 0 && (r.wcDuration || 0) <= 0 && (r.idleDuration || 0) <= 0) return false;
+           if (r.totalOverbreak <= 0) return false;
         } else if (includeWcGlobal || includeIdleGlobal || includeNonModGlobal || includeRaGlobal || includeAtGlobal || includeTardinessGlobal || includeEarlyLeaveGlobal || includeShort30MinGlobal || includeAbsencesGlobal || includeOffboardedGlobal || typeFilter === 'idle_overbreak_wc') {
            // Mixed filters logic
            let keep = false;
            if (includeWcGlobal && r.wcDuration > 0) keep = true;
            if (includeIdleGlobal && r.idleDuration > 0) keep = true;
-           if (includeNonModGlobal && r.breaks.some(b => b.type === 'non_moderating' && !b.subType?.toLowerCase().includes('review') && !b.subType?.toLowerCase().includes('appeal') && !b.subType?.toLowerCase().includes('awaiting task'))) keep = true;
+           if (includeNonModGlobal && r.breaks.some(b => b.type === 'non_moderating' && !b.subType?.toLowerCase()?.includes('review') && !b.subType?.toLowerCase()?.includes('appeal') && !b.subType?.toLowerCase()?.includes('awaiting task'))) keep = true;
            if (includeRaGlobal && (r.reviewAndAppealDuration || 0) > 0) keep = true;
            if (includeAtGlobal && (r.awaitingTasksDuration || 0) > 0) keep = true;
            if (includeTardinessGlobal) {
@@ -1202,11 +1200,14 @@ export default function App() {
       const totalAbsences = records.length > 0 ? records.reduce((acc, r) => acc + (r.isAbsence ? 1 : 0), 0) : 0;
       const totalWorkMinutes = records.length > 0 ? records.reduce((acc, r) => acc + (r.totalWorkTimeMillis / 60000), 0) : 0;
       const totalBreakMinutes = records.length > 0 ? records.reduce((acc, r) => {
-        const breakMins = r.breaks.reduce((bAcc, b) => bAcc + b.durationMinutes, 0);
+        const breakMins = (r.mealDuration || 0) +
+          (r.shortDuration || 0) +
+          (r.wellnessDuration || 0) +
+          (r.wcDuration || 0) +
+          (r.prayingDuration || 0) +
+          (r.idleDuration || 0);
         return acc + breakMins;
       }, 0) : 0;
-
-      const totalTasks = records.length > 0 ? records.reduce((acc, r) => acc + (r.tasks || 0), 0) : 0;
 
       if (filterMinorOverbreaks && (totalOverbreak > 2 || totalOverbreak === 0)) return null;
 
@@ -1217,7 +1218,6 @@ export default function App() {
         totalWorkMinutes: Math.round(totalWorkMinutes),
         totalBreakMinutes: Math.round(totalBreakMinutes),
         totalOverbreakMinutes: Math.round(totalOverbreak),
-        totalTasks: totalTasks,
         wcTotalOverbreak: Math.round(wcTotalOverbreak),
         totalTardinessMinutes: Math.round(totalTardinessMinutes),
         totalEarlyLeaveMinutes: Math.round(totalEarlyLeaveMinutes),
@@ -1976,9 +1976,9 @@ export default function App() {
                         <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-100">
                           <FileSpreadsheet size={40} />
                         </div>
-                        <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight mb-4">Bem-vindo ao Live Overview</h2>
-                        <p className="text-slate-500 mb-8 max-w-md mx-auto text-lg">Siga os passos e prepare o ambiente adicionando os relatórios necessários.</p>
-                        <Button onClick={() => setWizardStep('staffInfo')} className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-lg font-bold shadow-xl shadow-blue-600/20 px-12">Vamos começar</Button>
+                        <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight mb-4">{t('wizardWelcome')}</h2>
+                        <p className="text-slate-500 mb-8 max-w-md mx-auto text-lg">{t('wizardIntroDesc')}</p>
+                        <Button onClick={() => setWizardStep('staffInfo')} className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-lg font-bold shadow-xl shadow-blue-600/20 px-12">{t('wizardStartBtn')}</Button>
                       </motion.div>
                   )}
 
@@ -1987,10 +1987,10 @@ export default function App() {
                         <div className="w-20 h-20 bg-purple-100 text-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-purple-100">
                            <Users size={40} />
                         </div>
-                        <h2 className="text-3xl font-extrabold text-slate-900 mb-4">Upload do Staff Info</h2>
-                        <p className="text-slate-500 mb-8 max-w-sm mx-auto text-base">O Staff Info mapeia os agentes pelo e-mail e garante que eles fiquem associados ao LOB, Idioma e Team Leader corretos.</p>
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-4">{t('wizardStaffTitle')}</h2>
+                        <p className="text-slate-500 mb-8 max-w-sm mx-auto text-base">{t('wizardStaffDesc')}</p>
                         <label className="w-full flex items-center justify-center bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-lg font-bold shadow-xl shadow-purple-600/20 cursor-pointer transition-all px-12 h-12">
-                           Fazer Upload
+                           {t('wizardUploadBtn')}
                            <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleStaffInfoUpload} />
                         </label>
                       </motion.div>
@@ -2001,10 +2001,10 @@ export default function App() {
                         <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-emerald-100">
                            <CalendarIcon size={40} />
                         </div>
-                        <h2 className="text-3xl font-extrabold text-slate-900 mb-4">Upload do Calendário</h2>
-                        <p className="text-slate-500 mb-8 max-w-sm mx-auto text-base">O arquivo de calendário do mês atual permite analisar faltas, atrasos e comparar com os turnos reais corretamente.</p>
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-4">{t('wizardCalendarTitle')}</h2>
+                        <p className="text-slate-500 mb-8 max-w-sm mx-auto text-base">{t('wizardCalendarDesc')}</p>
                         <label className="w-full flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-lg font-bold shadow-xl shadow-emerald-600/20 cursor-pointer transition-all px-12 h-12">
-                           Fazer Upload
+                           {t('wizardUploadBtn')}
                            <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleCalendarUpload} />
                         </label>
                       </motion.div>
@@ -2015,10 +2015,10 @@ export default function App() {
                         <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-100">
                            <Upload size={40} />
                         </div>
-                        <h2 className="text-3xl font-extrabold text-slate-900 mb-4">Upload do Extract</h2>
-                        <p className="text-slate-500 mb-8 max-w-sm mx-auto text-base">Por fim, extraia o relatório de status atual do Byteworks. Assim que for carregado, o Dashboard aparecerá automaticamente!</p>
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-4">{t('wizardExtractTitle')}</h2>
+                        <p className="text-slate-500 mb-8 max-w-sm mx-auto text-base">{t('wizardExtractDesc')}</p>
                         <label className="w-full flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-lg font-bold shadow-xl shadow-blue-600/20 cursor-pointer transition-all px-12 h-12">
-                           Fazer Upload
+                           {t('wizardUploadBtn')}
                            <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
                         </label>
                       </motion.div>
