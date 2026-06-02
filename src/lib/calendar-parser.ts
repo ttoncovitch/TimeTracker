@@ -337,9 +337,19 @@ export const parseCalendarFile = async (file: File): Promise<{ data: CalendarDat
                 }
 
                 const normName = String(name).toLowerCase().trim();
-                const existingEntry = calendarData.find(c => (email && c.email && c.email.toLowerCase() === String(email).toLowerCase()) || (normName && c.name.toLowerCase().trim() === normName));
+                const existingEntry = calendarData.find(c => {
+                   const parsedEmail = String(email || '').toLowerCase().trim();
+                   const entryEmail = String(c.email || '').toLowerCase().trim();
+                   if (parsedEmail && entryEmail) {
+                      return entryEmail === parsedEmail;
+                   }
+                   return normName && c.name.toLowerCase().trim() === normName;
+                });
                 
                 if (existingEntry) {
+                   if (!existingEntry.email && email) {
+                      existingEntry.email = String(email).toLowerCase().trim();
+                   }
                    Object.assign(existingEntry.schedule, schedule);
                    if (existingEntry.lobSchedule) {
                       Object.assign(existingEntry.lobSchedule, lobSchedule);

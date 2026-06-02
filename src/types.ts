@@ -103,6 +103,8 @@ export interface EmployeeSummary {
   isSL?: boolean;
   isSUSPP?: boolean;
   isOFF?: boolean;
+  isRefresher?: boolean;
+  refresherDate?: string;
   wcAlerts: number;
   idleAlerts: number;
   wcTotalMinutes?: number;

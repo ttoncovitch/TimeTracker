@@ -340,12 +340,12 @@ export function SupportSchedule({ summaries, allSummaries }: SupportScheduleProp
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{String(t('period') || '').toUpperCase()}:</span>
           <div className="flex bg-white rounded-lg p-1 border border-slate-200 shadow-sm overflow-x-auto no-scrollbar">
             {[
-              { id: 'all', label: 'TODOS' },
-              { id: 'prevMonth', label: 'MÊS PASSADO' },
-              { id: 'month', label: 'MÊS ATUAL' },
-              { id: 'week', label: '7 DIAS' },
-              { id: 'yesterday', label: 'ONTEM' },
-              { id: 'today', label: 'HOJE' }
+              { id: 'all', label: lang === 'pt' ? 'TODOS' : 'ALL' },
+              { id: 'prevMonth', label: lang === 'pt' ? 'MÊS PASSADO' : 'LAST MONTH' },
+              { id: 'month', label: lang === 'pt' ? 'MÊS ATUAL' : 'CURRENT MONTH' },
+              { id: 'week', label: lang === 'pt' ? '7 DIAS' : '7 DAYS' },
+              { id: 'yesterday', label: lang === 'pt' ? 'ONTEM' : 'YESTERDAY' },
+              { id: 'today', label: lang === 'pt' ? 'HOJE' : 'TODAY' }
             ].map((opt) => (
               <button
                 key={opt.id}

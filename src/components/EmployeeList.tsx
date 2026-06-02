@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { EmployeeSummary, EmployeeDayRecord } from "../types";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { isShiftMismatch, formatLOB } from "../lib/shiftUtils";
 import {
   Calendar as CalendarIcon,
@@ -34,6 +34,7 @@ import { toast } from "sonner";
 interface EmployeeListProps {
   summaries: EmployeeSummary[];
   allSummaries: EmployeeSummary[];
+  periodSummaries?: EmployeeSummary[];
   staffInfoData?: any[];
   latestDate?: Date;
   initialFilter?: "all" | "month" | "week" | "day";
@@ -50,8 +51,17 @@ interface EmployeeListProps {
   globalIncludeShort30Min?: boolean;
   globalIncludeCheck?: boolean;
   globalIncludeAbsences?: boolean;
+  globalIncludeATT?: boolean;
+  globalIncludeLOA?: boolean;
+  globalIncludePTO?: boolean;
+  globalIncludeSL?: boolean;
+  globalIncludeSUSPP?: boolean;
+  globalIncludeOFF?: boolean;
+  globalIncludeNextVacations?: boolean;
+  globalIncludeRefresher?: boolean;
   globalShiftFilter?: string[];
   globalFilterMajorOverbreaks: boolean;
+  showRealTime?: boolean;
 }
 
 function getAbsenceStatusText(
@@ -97,7 +107,12 @@ function getAbsenceStatusText(
   }
 
   const fullEmp =
-    allSummaries.find((emp) => emp.employeeName === s.employeeName) || s;
+    allSummaries.find(
+      (emp) =>
+        (emp.email && s.email && emp.email.toLowerCase().trim() === s.email.toLowerCase().trim()) ||
+        emp.employeeName === s.employeeName ||
+        emp.employeeName.toLowerCase().trim() === s.employeeName.toLowerCase().trim(),
+    ) || s;
   const sortedRecords = [...fullEmp.dailyRecords].sort((a, b) =>
     a.date.localeCompare(b.date),
   );
@@ -128,15 +143,37 @@ function getAbsenceStatusText(
   }
 
   let endIndex = targetIndex;
+  let lastValidEnd = targetIndex;
+
   while (endIndex < sortedRecords.length - 1) {
     const next = sortedRecords[endIndex + 1];
-    // Stop at the last consecutive absence day. Don't include following OFF days in the range.
     if (next[checkProp]) {
       endIndex++;
+      lastValidEnd = endIndex;
+    } else if (next.isOFF) {
+      let foundAhead = false;
+      for (let offset = 2; offset <= 4; offset++) {
+        if (endIndex + offset < sortedRecords.length) {
+          const ahead = sortedRecords[endIndex + offset];
+          if (ahead[checkProp]) {
+            foundAhead = true;
+            break;
+          }
+          if (!ahead.isOFF) {
+            break;
+          }
+        }
+      }
+      if (foundAhead) {
+        endIndex++;
+      } else {
+        break;
+      }
     } else {
       break;
     }
   }
+  endIndex = lastValidEnd;
 
   let actualStart = startIndex;
   while (actualStart <= endIndex && !sortedRecords[actualStart][checkProp]) {
@@ -157,6 +194,11 @@ function getAbsenceStatusText(
   };
 
   const todayStr = latestDate.toLocaleDateString("en-CA");
+
+  if (lastAbsenceDateStr < todayStr) {
+    return null;
+  }
+
   const isActive =
     todayStr >= startDateStr && (!returnDateStr || todayStr < returnDateStr);
 
@@ -178,18 +220,28 @@ function isLeaveShift(sh: string) {
     upper.includes("VAC") ||
     upper.includes("MAR") ||
     upper.includes("FÉRIAS") ||
+    upper.includes("FERIAS") ||
     upper === "SL" ||
     upper.includes("SICK") ||
     upper.includes("MEDICO") ||
+    upper.includes("MED") ||
     upper.includes("ATESTADO") ||
     upper === "LOA" ||
-    upper.includes("LICENÇA")
+    upper.includes("LICENÇA") ||
+    upper.includes("LICENCA") ||
+    upper.includes("OFF") ||
+    upper.includes("FOLGA") ||
+    upper.includes("SAÚDE") ||
+    upper.includes("SAUDE") ||
+    upper.includes("SAÍDA") ||
+    upper.includes("SAIDA")
   );
 }
 
 export function EmployeeList({
   summaries,
   allSummaries,
+  periodSummaries,
   staffInfoData,
   latestDate,
   initialFilter = "all",
@@ -206,8 +258,17 @@ export function EmployeeList({
   globalIncludeShort30Min,
   globalIncludeCheck,
   globalIncludeAbsences,
+  globalIncludeATT,
+  globalIncludeLOA,
+  globalIncludePTO,
+  globalIncludeSL,
+  globalIncludeSUSPP,
+  globalIncludeOFF,
+  globalIncludeNextVacations,
+  globalIncludeRefresher,
   globalShiftFilter,
   globalFilterMajorOverbreaks,
+  showRealTime,
 }: EmployeeListProps) {
   const { t, lang } = useLanguage();
   const isWcOnly =
@@ -279,6 +340,43 @@ export function EmployeeList({
       .trim()
       .replace(/[\.,\-]/g, " ");
 
+  React.useEffect(() => {
+    if (globalIncludeRefresher) {
+      if (sortBy !== "mais_recente" && sortBy !== "mais_distante" && sortBy !== "alfabetica") {
+        setSortBy("mais_recente");
+      }
+    } else {
+      if (sortBy === "mais_recente" || sortBy === "mais_distante") {
+        setSortBy("maiores");
+      }
+    }
+  }, [globalIncludeRefresher]);
+
+  // Reset dropdown filters to "ALL" if a filter combination yields 0 results for the current active status summaries
+  React.useEffect(() => {
+    if (summaries.length === 0) return;
+
+    const anyMatchesSearch = summaries.some((s) =>
+      normalizeName(s.employeeName).includes(normalizeName(searchTerm))
+    );
+
+    if (anyMatchesSearch || !searchTerm) {
+      const matchesWithFilters = summaries.some((s) => {
+        const matchesSearch = normalizeName(s.employeeName).includes(normalizeName(searchTerm));
+        const matchesLob = selectedLob === "ALL" || s.lob === selectedLob;
+        const matchesLang = selectedLang === "ALL" || s.language?.toUpperCase().trim() === selectedLang;
+        const matchesTL = selectedTL === "ALL" || s.supervisor?.trim() === selectedTL;
+        return matchesSearch && matchesLob && matchesLang && matchesTL;
+      });
+
+      if (!matchesWithFilters) {
+        setSelectedLob("ALL");
+        setSelectedTL("ALL");
+        setSelectedLang("ALL");
+      }
+    }
+  }, [summaries, searchTerm, selectedLob, selectedTL, selectedLang]);
+
   const lobs = Array.from(
     new Set(summaries.map((s) => s.lob?.trim()).filter(Boolean)),
   )
@@ -301,9 +399,25 @@ export function EmployeeList({
       ].includes(upper);
     })
     .sort() as string[];
-  const tls = Array.from(
-    new Set(summaries.map((s) => s.supervisor?.trim()).filter(Boolean)),
-  ).sort() as string[];
+  const tls = useMemo(() => {
+    let list = summaries;
+    if (selectedLob !== "ALL") {
+      list = list.filter((s) => s.lob === selectedLob);
+    }
+    if (selectedLang !== "ALL") {
+      list = list.filter((s) => s.language?.toUpperCase().trim() === selectedLang.toUpperCase().trim());
+    }
+    return Array.from(
+      new Set(list.map((s) => s.supervisor?.trim()).filter(Boolean)),
+    ).sort() as string[];
+  }, [summaries, selectedLob, selectedLang]);
+
+  React.useEffect(() => {
+    if (selectedTL !== "ALL" && !tls.includes(selectedTL)) {
+      setSelectedTL("ALL");
+    }
+  }, [tls, selectedTL]);
+
   const languages =
     selectedLob === "ALL"
       ? []
@@ -332,10 +446,51 @@ export function EmployeeList({
       })
       .sort((a, b) => {
         // If using predefined sorts
-        if (sortBy === "maiores")
-          return b.totalOverbreakMinutes - a.totalOverbreakMinutes;
-        if (sortBy === "menores")
-          return a.totalOverbreakMinutes - b.totalOverbreakMinutes;
+        if (sortBy === "maiores" || sortBy === "menores") {
+          let aVal = a.totalOverbreakMinutes;
+          let bVal = b.totalOverbreakMinutes;
+
+          if (globalIncludeWc) {
+            aVal = a.dailyRecords.reduce((acc, r) => acc + r.wcOverbreak, 0);
+            bVal = b.dailyRecords.reduce((acc, r) => acc + r.wcOverbreak, 0);
+          } else if (globalIncludeIdle) {
+            aVal = a.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0);
+            bVal = b.dailyRecords.reduce((acc, r) => acc + r.idleOverbreak, 0);
+          } else if (globalIncludeNonMod) {
+            aVal = a.dailyRecords.reduce((acc, r) => acc + (r.nonModDuration || 0), 0);
+            bVal = b.dailyRecords.reduce((acc, r) => acc + (r.nonModDuration || 0), 0);
+          } else if (globalIncludeRa) {
+            aVal = a.totalReviewAndAppealMinutes;
+            bVal = b.totalReviewAndAppealMinutes;
+          } else if (globalIncludeAt) {
+            aVal = a.totalAwaitingTasksMinutes;
+            bVal = b.totalAwaitingTasksMinutes;
+          } else if (globalIncludeTardiness) {
+            aVal = a.totalTardinessMinutes;
+            bVal = b.totalTardinessMinutes;
+          } else if (globalIncludeEarlyLeave) {
+            aVal = a.totalEarlyLeaveMinutes;
+            bVal = b.totalEarlyLeaveMinutes;
+          } else if (globalIncludeShort30Min) {
+            aVal = a.totalShort30MinRecords || 0;
+            bVal = b.totalShort30MinRecords || 0;
+          } else if (globalIncludeAbsences) {
+            aVal = a.totalAbsences || 0;
+            bVal = b.totalAbsences || 0;
+          } else if (globalIncludeCheck) {
+            aVal = a.dailyRecords.filter((r) => isShiftMismatch(r.scheduledShift, r.inferredShift)).length;
+            bVal = b.dailyRecords.filter((r) => isShiftMismatch(r.scheduledShift, r.inferredShift)).length;
+          }
+
+          if (aVal === bVal) return a.employeeName.localeCompare(b.employeeName);
+          return sortBy === "maiores" ? bVal - aVal : aVal - bVal;
+        }
+        if (sortBy === "mais_recente" || sortBy === "mais_distante") {
+          const aDate = a.isRefresher ? (a.refresherDate || "9999-99-99") : "9999-99-99";
+          const bDate = b.isRefresher ? (b.refresherDate || "9999-99-99") : "9999-99-99";
+          if (aDate === bDate) return a.employeeName.localeCompare(b.employeeName);
+          return sortBy === "mais_recente" ? aDate.localeCompare(bDate) : bDate.localeCompare(aDate);
+        }
         if (sortBy === "alfabetica")
           return a.employeeName.localeCompare(b.employeeName);
 
@@ -513,9 +668,10 @@ export function EmployeeList({
                 onChange={(e) => {
                   setSelectedLob(e.target.value);
                   setSelectedLang("ALL");
+                  setSelectedTL("ALL");
                 }}
               >
-                <option value="ALL">Todos os LOB's</option>
+                <option value="ALL">{lang === "pt" ? "Todos os LOB's" : "All LOBs"}</option>
                 {lobs.map((l) => (
                   <option key={l} value={l}>
                     {formatLOB(l)}
@@ -523,13 +679,13 @@ export function EmployeeList({
                 ))}
               </select>
             )}
-            {tls.length > 0 && (
+            {tls.length > 1 && (
               <select
                 className="h-11 bg-white border border-slate-200 text-slate-700 rounded-xl px-3 text-xs font-bold w-full sm:w-auto shadow-sm outline-none cursor-pointer"
                 value={selectedTL}
                 onChange={(e) => setSelectedTL(e.target.value)}
               >
-                <option value="ALL">Todos os TL's</option>
+                <option value="ALL">{lang === "pt" ? "Todos os TL's" : "All TLs"}</option>
                 {tls.map((t) => (
                   <option key={t} value={t}>
                     {t}
@@ -714,17 +870,36 @@ export function EmployeeList({
                   typeParts.push("Minor Tardiness");
                 if (globalIncludeEarlyLeave) typeParts.push("Early Leave");
                 if (globalIncludeCheck) typeParts.push("Check");
+                if (globalIncludeATT) typeParts.push("ATT");
+                if (globalIncludeLOA) typeParts.push("LOA");
+                if (globalIncludePTO || globalIncludeNextVacations) typeParts.push("PTO");
+                if (globalIncludeSL) typeParts.push("SL");
+                if (globalIncludeSUSPP) typeParts.push("SUSPP");
+                if (globalIncludeOFF) typeParts.push("OFF");
 
                 let statusFiltersText =
                   typeParts.length > 0
                     ? `Status info: ${typeParts.join(", ")}`
                     : undefined;
 
+                const activeExtraStatuses: string[] = [];
+                const attrKeys: string[] = [];
+                if (globalIncludeATT) { activeExtraStatuses.push('ATT'); attrKeys.push('isATT'); }
+                if (globalIncludeLOA) { activeExtraStatuses.push('LOA'); attrKeys.push('isLOA'); }
+                if (globalIncludePTO || globalIncludeNextVacations) { activeExtraStatuses.push('PTO/VAC'); attrKeys.push('isPTO'); }
+                if (globalIncludeSL) { activeExtraStatuses.push('SL'); attrKeys.push('isSL'); }
+                if (globalIncludeSUSPP) { activeExtraStatuses.push('SUSPP'); attrKeys.push('isSUSPP'); }
+                if (globalIncludeOFF) { activeExtraStatuses.push('OFF'); attrKeys.push('isOFF'); }
+
+                const activeExtraStatus = activeExtraStatuses.length > 0 ? activeExtraStatuses.join('/') : null;
+                const attrKey = attrKeys.length === 1 ? attrKeys[0] : null;
+
                 exportToPDF(
                   filtered,
                   `${t("agents")}${mainFilterLabel}`,
                   `Extract${filenameFilter}_${format(new Date(), "yyyy-MM-dd")}`,
                   {
+                    showRealTime: showRealTime,
                     isTardiness: globalIncludeTardiness,
                     isMinorTardiness: globalIncludeMinorTardiness,
                     isEarlyLeave: globalIncludeEarlyLeave,
@@ -736,27 +911,39 @@ export function EmployeeList({
                     isRa: globalIncludeRa,
                     isAt: globalIncludeAt,
                     isOverbreaks: globalTypeFilter === "idle_overbreak_wc",
+                    isNextVacations: globalIncludeNextVacations,
                     isAgentDetail:
-                      globalIncludeIdle ||
-                      globalIncludeWc ||
-                      globalIncludeShort30Min ||
+                      !activeExtraStatus &&
+                      !(
+                        globalIncludeIdle ||
+                        globalIncludeWc ||
+                        globalTypeFilter === "idle_overbreak_wc"
+                      ) &&
+                      (globalIncludeShort30Min ||
                       globalIncludeNonMod ||
                       globalIncludeRa ||
                       globalIncludeAt ||
-                      globalTypeFilter === "idle_overbreak_wc" ||
                       !(
                         globalIncludeTardiness ||
                         globalIncludeMinorTardiness ||
                         globalIncludeEarlyLeave ||
                         globalIncludeCheck ||
                         globalIncludeAbsences
-                      ),
+                      )),
+                    activeExtraStatus,
+                    activeExtraStatuses,
+                    attrKey,
+                    attrKeys,
                     showAllTimeline: typeParts.length === 0,
                     statusFiltersText,
                     periodFilter: initialFilter,
                     lang: t("pdfAgentCount") === "Agents" ? "en" : "pt",
                     teamProductiveMinutes: exportedTeamProductiveMinutes,
                     teamNonModMinutes: exportedTeamNonModMinutes,
+                    isGroupedByTL: true,
+                    allSummaries,
+                    periodSummaries,
+                    latestDate,
                   },
                 );
 
@@ -971,21 +1158,41 @@ export function EmployeeList({
                         typeParts.push("Minor Tardiness");
                       if (globalIncludeEarlyLeave) typeParts.push("Early Leave");
                       if (globalIncludeCheck) typeParts.push("Check");
+                      if (globalIncludeATT) typeParts.push("ATT");
+                      if (globalIncludeLOA) typeParts.push("LOA");
+                      if (globalIncludePTO) typeParts.push("PTO");
+                      if (globalIncludeSL) typeParts.push("SL");
+                      if (globalIncludeSUSPP) typeParts.push("SUSPP");
+                      if (globalIncludeOFF) typeParts.push("OFF");
 
                       let statusFiltersText =
                         typeParts.length > 0
                           ? `Status info: ${typeParts.join(", ")}`
                           : undefined;
 
+                      const activeExtraStatuses: string[] = [];
+                      const attrKeys: string[] = [];
+                      if (globalIncludeATT) { activeExtraStatuses.push('ATT'); attrKeys.push('isATT'); }
+                      if (globalIncludeLOA) { activeExtraStatuses.push('LOA'); attrKeys.push('isLOA'); }
+                      if (globalIncludePTO) { activeExtraStatuses.push('PTO/VAC'); attrKeys.push('isPTO'); }
+                      if (globalIncludeSL) { activeExtraStatuses.push('SL'); attrKeys.push('isSL'); }
+                      if (globalIncludeSUSPP) { activeExtraStatuses.push('SUSPP'); attrKeys.push('isSUSPP'); }
+                      if (globalIncludeOFF) { activeExtraStatuses.push('OFF'); attrKeys.push('isOFF'); }
+
+                      const activeExtraStatus = activeExtraStatuses.length > 0 ? activeExtraStatuses.join('/') : null;
+                      const attrKey = attrKeys.length === 1 ? attrKeys[0] : null;
+
                       exportToPDF(
                         filtered,
                         `${t("agents")}${mainFilterLabel}`,
                         `Extract${filenameFilter}_${format(new Date(), "yyyy-MM-dd")}`,
                         {
+                          showRealTime: showRealTime,
                           isTardiness: globalIncludeTardiness,
                           isMinorTardiness: globalIncludeMinorTardiness,
                           isEarlyLeave: globalIncludeEarlyLeave,
                           showCheck: globalIncludeCheck,
+                          isCheck: globalIncludeCheck,
                           isShort30Min: globalIncludeShort30Min,
                           isWc: globalIncludeWc,
                           isIdle: globalIncludeIdle,
@@ -994,26 +1201,37 @@ export function EmployeeList({
                           isAt: globalIncludeAt,
                           isOverbreaks: globalTypeFilter === "idle_overbreak_wc",
                           isAgentDetail:
-                            globalIncludeIdle ||
-                            globalIncludeWc ||
-                            globalIncludeShort30Min ||
+                            !activeExtraStatus &&
+                            !(
+                              globalIncludeIdle ||
+                              globalIncludeWc ||
+                              globalTypeFilter === "idle_overbreak_wc"
+                            ) &&
+                            (globalIncludeShort30Min ||
                             globalIncludeNonMod ||
                             globalIncludeRa ||
                             globalIncludeAt ||
-                            globalTypeFilter === "idle_overbreak_wc" ||
                             !(
                               globalIncludeTardiness ||
                               globalIncludeMinorTardiness ||
                               globalIncludeEarlyLeave ||
                               globalIncludeCheck ||
                               globalIncludeAbsences
-                            ),
+                            )),
+                          activeExtraStatus,
+                          activeExtraStatuses,
+                          attrKey,
+                          attrKeys,
                           showAllTimeline: typeParts.length === 0,
                           statusFiltersText,
                           periodFilter: initialFilter,
                           lang: t("pdfAgentCount") === "Agents" ? "en" : "pt",
                           teamProductiveMinutes: exportedTeamProductiveMinutes,
                           teamNonModMinutes: exportedTeamNonModMinutes,
+                          isGroupedByTL: true,
+                          allSummaries,
+                          periodSummaries,
+                          latestDate,
                         },
                       );
 
@@ -1083,17 +1301,36 @@ export function EmployeeList({
                   typeParts.push("Minor Tardiness");
                 if (globalIncludeEarlyLeave) typeParts.push("Early Leave");
                 if (globalIncludeCheck) typeParts.push("Check");
+                if (globalIncludeATT) typeParts.push("ATT");
+                if (globalIncludeLOA) typeParts.push("LOA");
+                if (globalIncludePTO || globalIncludeNextVacations) typeParts.push("PTO");
+                if (globalIncludeSL) typeParts.push("SL");
+                if (globalIncludeSUSPP) typeParts.push("SUSPP");
+                if (globalIncludeOFF) typeParts.push("OFF");
 
                 let statusFiltersText =
                   typeParts.length > 0
                     ? `Status info: ${typeParts.join(", ")}`
                     : undefined;
 
+                const activeExtraStatuses: string[] = [];
+                const attrKeys: string[] = [];
+                if (globalIncludeATT) { activeExtraStatuses.push('ATT'); attrKeys.push('isATT'); }
+                if (globalIncludeLOA) { activeExtraStatuses.push('LOA'); attrKeys.push('isLOA'); }
+                if (globalIncludePTO || globalIncludeNextVacations) { activeExtraStatuses.push('PTO/VAC'); attrKeys.push('isPTO'); }
+                if (globalIncludeSL) { activeExtraStatuses.push('SL'); attrKeys.push('isSL'); }
+                if (globalIncludeSUSPP) { activeExtraStatuses.push('SUSPP'); attrKeys.push('isSUSPP'); }
+                if (globalIncludeOFF) { activeExtraStatuses.push('OFF'); attrKeys.push('isOFF'); }
+
+                const activeExtraStatus = activeExtraStatuses.length > 0 ? activeExtraStatuses.join('/') : null;
+                const attrKey = attrKeys.length === 1 ? attrKeys[0] : null;
+
                 exportToPDF(
                   filtered,
                   `${t("agents")}${mainFilterLabel}`,
                   `Extract${filenameFilter}_${format(new Date(), "yyyy-MM-dd")}`,
                   {
+                    showRealTime: showRealTime,
                     isTardiness: globalIncludeTardiness,
                     isMinorTardiness: globalIncludeMinorTardiness,
                     isEarlyLeave: globalIncludeEarlyLeave,
@@ -1105,27 +1342,39 @@ export function EmployeeList({
                     isRa: globalIncludeRa,
                     isAt: globalIncludeAt,
                     isOverbreaks: globalTypeFilter === "idle_overbreak_wc",
+                    isNextVacations: globalIncludeNextVacations,
                     isAgentDetail:
-                      globalIncludeIdle ||
-                      globalIncludeWc ||
-                      globalIncludeShort30Min ||
+                      !activeExtraStatus &&
+                      !(
+                        globalIncludeIdle ||
+                        globalIncludeWc ||
+                        globalTypeFilter === "idle_overbreak_wc"
+                      ) &&
+                      (globalIncludeShort30Min ||
                       globalIncludeNonMod ||
                       globalIncludeRa ||
                       globalIncludeAt ||
-                      globalTypeFilter === "idle_overbreak_wc" ||
                       !(
                         globalIncludeTardiness ||
                         globalIncludeMinorTardiness ||
                         globalIncludeEarlyLeave ||
                         globalIncludeCheck ||
                         globalIncludeAbsences
-                      ),
+                      )),
+                    activeExtraStatus,
+                    activeExtraStatuses,
+                    attrKey,
+                    attrKeys,
                     showAllTimeline: typeParts.length === 0,
                     statusFiltersText,
                     periodFilter: initialFilter,
                     lang: t("pdfAgentCount") === "Agents" ? "en" : "pt",
                     teamProductiveMinutes: exportedTeamProductiveMinutes,
                     teamNonModMinutes: exportedTeamNonModMinutes,
+                    isGroupedByTL: true,
+                    allSummaries,
+                    periodSummaries,
+                    latestDate,
                   },
                 );
               }}
@@ -1135,15 +1384,33 @@ export function EmployeeList({
               <FileDown size={16} className="text-emerald-600" />
               <span className="hidden sm:inline">Extract</span>
             </button>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="bg-white border text-sm font-bold border-slate-200 text-slate-700 rounded-xl px-4 h-11 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
-            >
-              <option value="maiores">{t("biggestViolators")}</option>
-              <option value="menores">{t("smallestViolators")}</option>
-              <option value="alfabetica">{t("alphabeticalMatch")}</option>
-            </select>
+            {globalIncludeRefresher ? (
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="bg-white border text-sm font-bold border-slate-200 text-slate-700 rounded-[2rem] px-4 h-11 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer whitespace-nowrap overflow-ellipsis appearance-none pr-10 relative"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='3' stroke='%23475569'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 12px center',
+                  backgroundSize: '12px'
+                }}
+              >
+                <option value="mais_recente">{lang === 'pt' ? 'Mais recente' : 'More recent'}</option>
+                <option value="mais_distante">{lang === 'pt' ? 'Mais distante' : 'More distant'}</option>
+                <option value="alfabetica">{t("alphabeticalMatch")}</option>
+              </select>
+            ) : (
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="bg-white border text-sm font-bold border-slate-200 text-slate-700 rounded-xl px-4 h-11 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer"
+              >
+                <option value="maiores">{t("biggestViolators")}</option>
+                <option value="menores">{t("smallestViolators")}</option>
+                <option value="alfabetica">{t("alphabeticalMatch")}</option>
+              </select>
+            )}
           </div>
         </div>
 
@@ -1193,17 +1460,6 @@ export function EmployeeList({
                 >
                   Pray.{" "}
                   {sortBy === "praying" && (
-                    <span className="text-[10px] ml-1">
-                      {sortDirection === "asc" ? "↑" : "↓"}
-                    </span>
-                  )}
-                </th>
-                <th
-                  className="py-2.5 px-2 text-center font-black whitespace-nowrap cursor-pointer hover:text-blue-600 select-none group"
-                  onClick={() => handleSort("nonMod")}
-                >
-                  NON-MOD{" "}
-                  {sortBy === "nonMod" && (
                     <span className="text-[10px] ml-1">
                       {sortDirection === "asc" ? "↑" : "↓"}
                     </span>
@@ -1417,13 +1673,24 @@ export function EmployeeList({
                 return (
                   <tr
                     key={`${s.employeeName}-${idx}`}
-                    onClick={() =>
-                      setSelectedEmp(
-                        allSummaries.find(
-                          (all) => all.employeeName === s.employeeName,
-                        ) || s,
-                      )
-                    }
+                    onClick={() => {
+                      const found = allSummaries.find(
+                        (all) => all.employeeName === s.employeeName,
+                      );
+                      if (found) {
+                        setSelectedEmp({
+                          ...found,
+                          lob: s.lob,
+                          language: s.language,
+                          role: s.role,
+                          supervisor: s.supervisor,
+                          email: s.email,
+                          shift: s.shift,
+                        });
+                      } else {
+                        setSelectedEmp(s);
+                      }
+                    }}
                     className={`cursor-pointer transition-all hover:bg-slate-50/80 group ${isAlertRow ? "bg-rose-50/10" : "bg-white"}`}
                   >
                     <td className="py-2.5 pl-8 pr-4 relative">
@@ -1645,25 +1912,6 @@ export function EmployeeList({
                     <td
                       className="py-2.5 px-2 text-center"
                       title={
-                        nonModTotal > 0
-                          ? `${nonModTotal}m em NON-MOD`
-                          : "0m em NON-MOD"
-                      }
-                    >
-                      <span
-                        className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded transition-colors ${nonModTotal > 0 ? "bg-teal-50 text-teal-700 font-black border border-teal-200" : "text-slate-300 font-bold"}`}
-                      >
-                        {nonModTotal > 0
-                          ? `${nonModTotal}m`
-                          : isTotallyAbsent
-                            ? "-"
-                            : "0m"}
-                      </span>
-                    </td>
-
-                    <td
-                      className="py-2.5 px-2 text-center"
-                      title={
                         s.totalReviewAndAppealMinutes > 0
                           ? `${s.totalReviewAndAppealMinutes}m em R&A`
                           : "0m em R&A"
@@ -1839,7 +2087,11 @@ export function EmployeeList({
                     </td>
 
                     <td className="py-2.5 pl-4 pr-8 text-right">
-                      {s.isATT ? (
+                      {s.isRefresher ? (
+                        <span className="inline-block px-1.5 py-0.5 bg-orange-600 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm whitespace-nowrap">
+                          REFRESHER (Volta: {s.refresherDate ? (() => { try { return format(parseISO(s.refresherDate), 'dd/MM'); } catch(e) { return s.refresherDate; } })() : 'N/A'})
+                        </span>
+                      ) : s.isATT ? (
                         <span className="inline-block px-1.5 py-0.5 bg-slate-900 text-white rounded-md text-[10px] font-black uppercase tracking-tighter shadow-sm">
                           ATT
                         </span>
@@ -1950,12 +2202,60 @@ export function EmployeeList({
               globalFilterMajorOverbreaks={globalFilterMajorOverbreaks}
               teamProductiveMinutes={exportedTeamProductiveMinutes}
               teamNonModMinutes={exportedTeamNonModMinutes}
+              showRealTime={showRealTime}
             />
           )}
         </DialogContent>
       </Dialog>
     </>
   );
+}
+
+function recalculateRecordOverbreaks(r: any): any {
+  let wcDur = 0, mealDur = 0, shortDur = 0, wellnessDur = 0, prayingDur = 0, idleDur = 0;
+
+  (r.breaks || []).forEach((b: any) => {
+     if (b.type === 'wc') wcDur += b.durationMinutes;
+     else if (b.type === 'meal') mealDur += b.durationMinutes;
+     else if (b.type === 'short') shortDur += b.durationMinutes;
+     else if (b.type === 'wellness') wellnessDur += b.durationMinutes;
+     else if (b.type === 'praying') prayingDur += b.durationMinutes;
+     else if (b.type === 'idle') idleDur += b.durationMinutes;
+  });
+
+  const shortBreaks = (r.breaks || []).filter((b: any) => b.type === 'short');
+  const hasSingleShort30m = shortBreaks.length === 1 && shortBreaks[0].durationMinutes >= 20;
+
+  let wcOverbreak = Math.max(0, wcDur - 10);
+  let mealOverbreak = Math.max(0, mealDur - 60);
+  let shortOverbreak = Math.max(0, shortDur - 30);
+  
+  if (hasSingleShort30m && shortOverbreak <= 2) {
+      shortOverbreak = 0;
+  }
+  let wellnessOverbreak = Math.max(0, wellnessDur - 15);
+  let prayingOverbreak = Math.max(0, prayingDur - 15);
+  let idleOverbreak = idleDur;
+
+  let dailyOverbreak = mealOverbreak + shortOverbreak + wellnessOverbreak + prayingOverbreak;
+
+  return {
+    ...r,
+    wcDuration: wcDur,
+    mealDuration: mealDur,
+    shortDuration: shortDur,
+    wellnessDuration: wellnessDur,
+    prayingDuration: prayingDur,
+    idleDuration: idleDur,
+    hasSingleShort30m,
+    wcOverbreak,
+    mealOverbreak,
+    shortOverbreak,
+    wellnessOverbreak,
+    prayingOverbreak,
+    idleOverbreak,
+    totalOverbreak: dailyOverbreak
+  };
 }
 
 function EmployeeDetail({
@@ -1981,6 +2281,7 @@ function EmployeeDetail({
   globalFilterMajorOverbreaks,
   teamProductiveMinutes,
   teamNonModMinutes,
+  showRealTime,
 }: {
   summary: EmployeeSummary;
   allSummaries: EmployeeSummary[];
@@ -2004,6 +2305,7 @@ function EmployeeDetail({
   globalFilterMajorOverbreaks: boolean;
   teamProductiveMinutes?: number;
   teamNonModMinutes?: number;
+  showRealTime?: boolean;
 }) {
   const { lang } = useLanguage();
   const today = latestDate;
@@ -2041,8 +2343,15 @@ function EmployeeDetail({
   const [includeCheck, setIncludeCheck] = useState(false);
   const [includeFaltas, setIncludeFaltas] = useState(false);
 
-  const fullSummary =
+  const rawCleanedSummary =
     allSummaries.find((as) => as.employeeName === s.employeeName) || s;
+
+  const fullSummary = useMemo(() => {
+    return {
+      ...rawCleanedSummary,
+      dailyRecords: (rawCleanedSummary.dailyRecords || []).map(recalculateRecordOverbreaks),
+    };
+  }, [rawCleanedSummary]);
 
   let records = fullSummary.dailyRecords;
 
@@ -2109,51 +2418,7 @@ function EmployeeDetail({
         d.getDate() === today.getDate() &&
         d.getMonth() === today.getMonth() &&
         d.getFullYear() === today.getFullYear();
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const isYesterday =
-        d.getDate() === yesterday.getDate() &&
-        d.getMonth() === yesterday.getMonth() &&
-        d.getFullYear() === yesterday.getFullYear();
-
-      if (
-        isYesterday &&
-        (isShiftCrossingMidnight(r.scheduledShift) ||
-          isShiftCrossingMidnight(r.inferredShift))
-      )
-        return true;
-
-      if (isToday) {
-        const isNightShift =
-          isShiftCrossingMidnight(r.scheduledShift) ||
-          isShiftCrossingMidnight(r.inferredShift);
-        if (isNightShift) {
-          const hasActivity = r.totalWorkTimeMillis > 0 || r.breaks.length > 0;
-          let shiftStartMins = 0;
-          const schedUpper = String(r.scheduledShift || r.inferredShift || "")
-            .replace(/\s+/g, "")
-            .toUpperCase();
-          const times = schedUpper.split("-");
-          if (times.length > 0) {
-            const t = times[0];
-            const isPM = t.includes("PM");
-            const isAM = t.includes("AM");
-            let parts = t.replace(/[A-Z]/g, "").replace(":", ".").split(".");
-            let h = parseInt(parts[0]) || 0;
-            let m = parseInt(parts[1]) || 0;
-            if (isPM && h !== 12) h += 12;
-            if (isAM && h === 12) h = 0;
-            shiftStartMins = h * 60 + m;
-          }
-
-          const currentMins = today.getHours() * 60 + today.getMinutes();
-          if (!hasActivity && shiftStartMins > currentMins) {
-            return false;
-          }
-        }
-        return true;
-      }
-      return false;
+      return isToday;
     });
   } else if (view === "yesterday") {
     records = fullSummary.dailyRecords.filter((r) => {
@@ -2165,21 +2430,7 @@ function EmployeeDetail({
         d.getMonth() === yesterday.getMonth() &&
         d.getFullYear() === yesterday.getFullYear();
 
-      const beforeYesterday = new Date(yesterday);
-      beforeYesterday.setDate(beforeYesterday.getDate() - 1);
-      const isBeforeYesterday =
-        d.getDate() === beforeYesterday.getDate() &&
-        d.getMonth() === beforeYesterday.getMonth() &&
-        d.getFullYear() === beforeYesterday.getFullYear();
-
-      if (isYesterday) return true;
-      if (
-        isBeforeYesterday &&
-        (isShiftCrossingMidnight(r.scheduledShift) ||
-          isShiftCrossingMidnight(r.inferredShift))
-      )
-        return true;
-      return false;
+      return isYesterday;
     });
   }
 
@@ -2189,9 +2440,7 @@ function EmployeeDetail({
       r.mealOverbreak > 0 ||
       r.shortOverbreak > 0 ||
       r.wellnessOverbreak > 0 ||
-      r.prayingOverbreak > 0 ||
-      r.wcDuration > 10 ||
-      r.idleOverbreak > 0,
+      r.prayingOverbreak > 0,
   );
   const hasOrganicData = viewRecords.some((r) => r.wcDuration > 0);
   const hasNonModData = viewRecords.some((r) =>
@@ -2228,13 +2477,7 @@ function EmployeeDetail({
         r.mealOverbreak > 0 ||
         r.shortOverbreak > 0 ||
         r.wellnessOverbreak > 0 ||
-        r.prayingOverbreak > 0 ||
-        (includeWc ? r.wcDuration > 10 : false) ||
-        r.idleOverbreak > 0 ||
-        (includeMinorTardiness
-          ? (r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15
-          : (r.tardinessMinutes || 0) >= 15) ||
-        (r.earlyLeaveMinutes || 0) > 0;
+        r.prayingOverbreak > 0;
 
       if (onlyExceptions && hasAnyOverbreak) keep = true;
       if (includeWc && r.wcDuration > 0) keep = true;
@@ -2563,37 +2806,56 @@ function EmployeeDetail({
                                 let lim = 0;
                                 let acc = 0;
                                 if (b.type === "meal") {
-                                  lim = 60;
+                                  lim = r.mealDuration - r.mealOverbreak || 60;
                                   accMeal += b.durationMinutes;
                                   acc = accMeal;
                                 } else if (b.type === "short") {
-                                  lim = 20;
+                                  lim = r.shortDuration - r.shortOverbreak || 30;
                                   accShort += b.durationMinutes;
                                   acc = accShort;
                                 } else if (b.type === "wellness") {
-                                  lim = 10;
+                                  lim = r.wellnessDuration - r.wellnessOverbreak || 15;
                                   accWell += b.durationMinutes;
                                   acc = accWell;
                                 } else if (b.type === "praying") {
-                                  lim = 15;
+                                  lim = r.prayingDuration - r.prayingOverbreak || 15;
                                   accPray += b.durationMinutes;
                                   acc = accPray;
                                 }
 
                                 let oldAcc = acc - b.durationMinutes;
-                                if (acc > lim) {
-                                  let exceeded = acc - Math.max(oldAcc, lim);
-                                  if (exceeded > 0) {
-                                    const start = `${b.startTime.getHours().toString().padStart(2, "0")}:${b.startTime.getMinutes().toString().padStart(2, "0")}`;
-                                    const end = `${b.endTime.getHours().toString().padStart(2, "0")}:${b.endTime.getMinutes().toString().padStart(2, "0")}`;
-                                    const typeNames = {
-                                      meal: "Meal",
-                                      short: "Short",
-                                      wellness: "Wellness",
-                                      praying: "Praying",
-                                    };
+                                let hasOverbreakForThisType = false;
+                                if (b.type === "meal") hasOverbreakForThisType = r.mealOverbreak > 0;
+                                else if (b.type === "short") hasOverbreakForThisType = r.shortOverbreak > 0;
+                                else if (b.type === "wellness") hasOverbreakForThisType = r.wellnessOverbreak > 0;
+                                else if (b.type === "praying") hasOverbreakForThisType = r.prayingOverbreak > 0;
+
+                                const start = `${b.startTime.getHours().toString().padStart(2, "0")}:${b.startTime.getMinutes().toString().padStart(2, "0")}`;
+                                const end = `${b.endTime.getHours().toString().padStart(2, "0")}:${b.endTime.getMinutes().toString().padStart(2, "0")}`;
+                                const typeNames = {
+                                  meal: "Meal",
+                                  short: "Short",
+                                  wellness: "Wellness",
+                                  praying: "Praying",
+                                };
+                                const labelName = typeNames[b.type as keyof typeof typeNames] || b.type;
+
+                                if (hasOverbreakForThisType) {
+                                  if (acc > lim) {
+                                    let exceeded = acc - Math.max(oldAcc, lim);
+                                    if (exceeded > 0) {
+                                      let allowed = b.durationMinutes - exceeded;
+                                      details.push(
+                                        `${labelName} ${start} ~ ${end} [${allowed > 0 ? `${allowed}m within remaining allowed, ` : ""}${Math.round(exceeded)}m exceeded]`
+                                      );
+                                    } else {
+                                      details.push(
+                                        `${labelName} ${start} ~ ${end} [${b.durationMinutes}m]`
+                                      );
+                                    }
+                                  } else {
                                     details.push(
-                                      `${typeNames[b.type as keyof typeof typeNames]} ${start} ~ ${end} [${Math.round(exceeded)} min exceeded]`,
+                                      `${labelName} ${start} ~ ${end} [${b.durationMinutes}m]`
                                     );
                                   }
                                 }
@@ -2632,7 +2894,8 @@ function EmployeeDetail({
                                 const actualStart = r.actualStartTime
                                   ? `${new Date(r.actualStartTime).getHours().toString().padStart(2, "0")}:${new Date(r.actualStartTime).getMinutes().toString().padStart(2, "0")}`
                                   : "N/A";
-                                return `  • ${fmtD(r.date)}: ${r.tardinessMinutes} minutes (Shift: ${r.scheduledShift || r.inferredShift || "N/A"} | Clock In: ${actualStart})`;
+                                const shiftLabel = isShiftMismatch(r.scheduledShift, r.inferredShift) ? `${r.scheduledShift} (Efetivo: ${r.inferredShift})` : (r.scheduledShift || r.inferredShift || "N/A");
+                                return `  • ${fmtD(r.date)}: ${r.tardinessMinutes} minutes (Shift: ${shiftLabel} | Clock In: ${actualStart})`;
                               })
                               .join("\n");
                             occurrences += "\n";
@@ -2659,7 +2922,8 @@ function EmployeeDetail({
                                 const actualEnd = r.actualEndTime
                                   ? `${new Date(r.actualEndTime).getHours().toString().padStart(2, "0")}:${new Date(r.actualEndTime).getMinutes().toString().padStart(2, "0")}`
                                   : "N/A";
-                                return `  • ${fmtD(r.date)}: ${r.earlyLeaveMinutes} minutes (Shift: ${r.scheduledShift || r.inferredShift || "N/A"} | Clock Out: ${actualEnd})`;
+                                const shiftLabel = isShiftMismatch(r.scheduledShift, r.inferredShift) ? `${r.scheduledShift} (Efetivo: ${r.inferredShift})` : (r.scheduledShift || r.inferredShift || "N/A");
+                                return `  • ${fmtD(r.date)}: ${r.earlyLeaveMinutes} minutes (Shift: ${shiftLabel} | Clock Out: ${actualEnd})`;
                               })
                               .join("\n");
                             occurrences += "\n";
@@ -2992,6 +3256,7 @@ function EmployeeDetail({
                           `${s.employeeName} - ${t("agentReport")}`,
                           `Report_${sanitizedName}`,
                           {
+                            showRealTime: showRealTime,
                             isTardiness: includeTardiness,
                             isMinorTardiness: includeMinorTardiness,
                             isEarlyLeave: includeEarlyLeave,
@@ -3025,6 +3290,8 @@ function EmployeeDetail({
                             lang: t("pdfAgentCount") === "Agents" ? "en" : "pt",
                             teamProductiveMinutes: teamProductiveMinutes,
                             teamNonModMinutes: teamNonModMinutes,
+                            allSummaries,
+                            latestDate,
                           },
                         );
                       }}
@@ -3049,7 +3316,7 @@ function EmployeeDetail({
                       new Set(
                         records
                           .map((r) => r.inferredShift || r.scheduledShift)
-                          .filter(Boolean),
+                          .filter(Boolean) as string[],
                       ),
                     );
                     const realSchedShifts = schedShifts.filter(
@@ -3431,14 +3698,7 @@ const DayRecordCard: React.FC<{
     record.mealOverbreak > 0 ||
     record.shortOverbreak > 0 ||
     record.wellnessOverbreak > 0 ||
-    record.prayingOverbreak > 0 ||
-    isWcAlert ||
-    record.idleOverbreak > 0 ||
-    (includeMinorTardiness
-      ? (record.tardinessMinutes || 0) > 0 &&
-        (record.tardinessMinutes || 0) < 15
-      : (record.tardinessMinutes || 0) >= 15) ||
-    (record.earlyLeaveMinutes || 0) > 0;
+    record.prayingOverbreak > 0;
 
   // Check if any local filter is active
   const anyLocalFilterActive =
@@ -3549,16 +3809,20 @@ const DayRecordCard: React.FC<{
     let usedIdeal = 0;
 
     if (b.type === "idle" || b.type === "forgot_status") {
-      if (!globalFilterMajorOverbreaks || b.durationMinutes > 2) {
-        isOverbreak = true;
-        excessTime = b.durationMinutes;
-        usedIdeal = 0;
-      }
+      isOverbreak = false;
+      excessTime = b.durationMinutes;
+      usedIdeal = 0;
     } else if (idealTime > 0) {
       if (newSum > idealTime) {
         const excess = Math.min(b.durationMinutes, newSum - idealTime);
         if (b.type === "wc" || b.type === "praying" || b.type === "wellness") {
           isOverbreak = true;
+        } else if (b.type === "short") {
+          if (record.hasSingleShort30m && excess <= 2) {
+            isOverbreak = false;
+          } else {
+            if (!globalFilterMajorOverbreaks || excess > 2) isOverbreak = true;
+          }
         } else {
           if (!globalFilterMajorOverbreaks || excess > 2) isOverbreak = true;
         }
@@ -3602,7 +3866,13 @@ const DayRecordCard: React.FC<{
       return true;
     if (includeWc && b.type === "wc") return true;
     if (includeIdle && b.type === "idle") return true;
-    if (onlyExceptions && b.isOverbreak) return true;
+    if (onlyExceptions) {
+      // If of the same type there's any overbreak on this day, show this break too to provide context
+      const hasOverbreakOfSameType = taggedBreaks.some(
+        (tb) => tb.type === b.type && tb.isOverbreak
+      );
+      if (hasOverbreakOfSameType) return true;
+    }
     if (
       b.type === "offline" &&
       !onlyExceptions &&
@@ -3655,8 +3925,7 @@ const DayRecordCard: React.FC<{
           {(record.mealOverbreak > 0 ||
             record.shortOverbreak > 0 ||
             record.wellnessOverbreak > 0 ||
-            record.prayingOverbreak > 0 ||
-            record.idleOverbreak > 0) &&
+            record.prayingOverbreak > 0) &&
           !filterNm &&
           !filterRa &&
           !filterAt ? (
@@ -3723,6 +3992,11 @@ const DayRecordCard: React.FC<{
                     >
                       {record.mealDuration}m
                     </span>
+                    {record.mealOverbreak > 0 && (
+                      <span className="text-[10px] text-rose-500 font-extrabold ml-0.5">
+                        (+{record.mealOverbreak}m)
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div
@@ -3741,6 +4015,11 @@ const DayRecordCard: React.FC<{
                     >
                       {record.shortDuration}m
                     </span>
+                    {record.shortOverbreak > 0 && (
+                      <span className="text-[10px] text-rose-500 font-extrabold ml-0.5">
+                        (+{record.shortOverbreak}m)
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div
@@ -3759,6 +4038,11 @@ const DayRecordCard: React.FC<{
                     >
                       {record.wellnessDuration}m
                     </span>
+                    {record.wellnessOverbreak > 0 && (
+                      <span className="text-[10px] text-rose-500 font-extrabold ml-0.5">
+                        (+{record.wellnessOverbreak}m)
+                      </span>
+                    )}
                   </div>
                 </div>
                 {record.prayingDuration > 0 && (
@@ -3778,6 +4062,11 @@ const DayRecordCard: React.FC<{
                       >
                         {record.prayingDuration}m
                       </span>
+                      {record.prayingOverbreak > 0 && (
+                        <span className="text-[10px] text-rose-500 font-extrabold ml-0.5">
+                          (+{record.prayingOverbreak}m)
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
@@ -3798,13 +4087,20 @@ const DayRecordCard: React.FC<{
                       {record.wcDuration % 60}m
                     </span>
                   ) : (
-                    <span
-                      className={
-                        isWcAlert ? "text-amber-600" : "text-emerald-500"
-                      }
-                    >
-                      {record.wcDuration}m
-                    </span>
+                    <>
+                      <span
+                        className={
+                          isWcAlert ? "text-amber-600" : "text-emerald-500"
+                        }
+                      >
+                        {record.wcDuration}m
+                      </span>
+                      {record.wcOverbreak > 0 && (
+                        <span className="text-[10px] text-rose-500 font-extrabold ml-0.5">
+                          (+{record.wcOverbreak}m)
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

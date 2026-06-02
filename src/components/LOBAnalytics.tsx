@@ -114,7 +114,7 @@ export function LOBAnalytics({ summaries, showRealTime }: LOBAnalyticsProps) {
                    onChange={(e) => setSelectedGlobalLob(e.target.value)}
                    className="h-10 bg-white border border-slate-200 text-slate-700 rounded-xl px-3 text-sm font-bold outline-none cursor-pointer shadow-sm hover:border-indigo-300 focus:border-indigo-500 transition-colors"
                 >
-                   <option value="ALL">Todos os LOB's</option>
+                   <option value="ALL">{lang === 'pt' ? "Todos os LOB's" : "All LOB's"}</option>
                    {allLobNames.map(lob => (
                       <option key={lob} value={lob}>{formatLOB(lob)}</option>
                    ))}

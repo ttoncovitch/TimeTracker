@@ -2,6 +2,14 @@ import * as XLSX from 'xlsx';
 import { differenceInMinutes, parse, format, isValid } from 'date-fns';
 import { EmployeeDayRecord, BreakSession, EmployeeSummary } from '../types';
 
+function formatDateSafe(d: Date): string {
+  const isNegativeTimezone = d.getTimezoneOffset() > 0;
+  const year = isNegativeTimezone ? d.getUTCFullYear() : d.getFullYear();
+  const month = (isNegativeTimezone ? d.getUTCMonth() : d.getMonth()) + 1;
+  const day = isNegativeTimezone ? d.getUTCDate() : d.getDate();
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 const LIMITS = {
   MEAL: 60,
   SHORT: 30,
@@ -171,13 +179,13 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           
           let date = '';
           if (row[0] instanceof Date) {
-            date = row[0].toISOString().split('T')[0];
+            date = formatDateSafe(row[0]);
           } else if (typeof row[0] === 'number') {
             if (row[0] > 100000) {
-              date = new Date(row[0]).toISOString().split('T')[0];
+              date = formatDateSafe(new Date(row[0]));
             } else {
               const d = new Date(Math.round((row[0] - 25569) * 86400 * 1000));
-              date = d.toISOString().split('T')[0];
+              date = formatDateSafe(d);
             }
           } else if (row[0]) {
             const dateStr = String(row[0]).trim();
@@ -299,64 +307,134 @@ export async function parseExcelFile(file: File): Promise<EmployeeSummary[]> {
           isOffboarded = isATT;
 
           // Process all rows into timeline events for this employee
-          let lastRawStartTime: Date | null = null;
-          const allEvents = allRows.map(row => {
-             const date = String(row[0] || '');
-             const employeeName = row[row.length - 2];
-             
-             const status = String(row[3] || '').trim().toLowerCase();
-             const subStatus = String(row[4] || '').trim().toLowerCase();
-             const remarks = String(row[5] || '').trim();
-             
-             const originalStatus = String(row[3] || '').trim();
-             const originalSubStatus = String(row[4] || '').trim();
-             const originalRemark = String(row[5] || '').trim();
-             
-             const durationHours = isNaN(Number(row[durationIndex])) ? 0 : Number(row[durationIndex]);
-             const durationMinutes = Math.round(durationHours * 60);
+          const rawEvents: any[] = [];
+          
+          // Group rows by their literal date string (row[0])
+          const rowsByDate = new Map<string, any[]>();
+          allRows.forEach(row => {
+              const dStr = String(row[0] || '');
+              if (!rowsByDate.has(dStr)) {
+                  rowsByDate.set(dStr, []);
+              }
+              rowsByDate.get(dStr)!.push(row);
+          });
 
-             const rawInfo = String(row[3] || '') + ' ' + String(row[4] || '');
-              
-             const baseDateArgs = date.split('-').map(Number);
-             const baseDate = baseDateArgs.length === 3 ? new Date(baseDateArgs[0], baseDateArgs[1] - 1, baseDateArgs[2]) : new Date();
+          // Process each date group independently
+          rowsByDate.forEach((groupRows, gDate) => {
+              // Parse naive start/end times
+              const parsedGroup = groupRows.map(row => {
+                  const employeeName = row[row.length - 2];
+                  const status = String(row[3] || '').trim().toLowerCase();
+                  const subStatus = String(row[4] || '').trim().toLowerCase();
+                  const remarks = String(row[5] || '').trim();
+                  
+                  const originalStatus = String(row[3] || '').trim();
+                  const originalSubStatus = String(row[4] || '').trim();
+                  const originalRemark = String(row[5] || '').trim();
+                  
+                  const durationHours = isNaN(Number(row[durationIndex])) ? 0 : Number(row[durationIndex]);
+                  const durationMinutes = Math.round(durationHours * 60);
 
-             let startTime = parseTime(date, row[startIndex]);
-             if (!startTime) {
-                startTime = new Date(baseDate);
-                startTime.setHours(0,0,0,0);
-             }
-             if (lastRawStartTime && startTime < lastRawStartTime && (lastRawStartTime.getTime() - startTime.getTime()) > 12 * 3600000) {
-                 startTime.setDate(startTime.getDate() + 1);
-             }
-             lastRawStartTime = new Date(startTime);
+                  const rawInfo = String(row[3] || '') + ' ' + String(row[4] || '');
+                   
+                  const baseDateArgs = gDate.split('-').map(Number);
+                  const baseDate = baseDateArgs.length === 3 ? new Date(baseDateArgs[0], baseDateArgs[1] - 1, baseDateArgs[2]) : new Date();
 
-             let endTime = parseTime(date, row[endIndex]);
-             if (endTime && durationMinutes > 0) {
-                 const diffMins = (endTime.getTime() - startTime.getTime()) / 60000;
-                 if (diffMins < 0 || Math.abs(diffMins - durationMinutes) > 60) {
+                  let startTime = parseTime(gDate, row[startIndex]);
+                  if (!startTime) {
+                     startTime = new Date(baseDate);
+                     startTime.setHours(0,0,0,0);
+                  }
+
+                  let endTime = parseTime(gDate, row[endIndex]);
+                  if (endTime && durationMinutes > 0) {
+                      const diffMins = (endTime.getTime() - startTime.getTime()) / 60000;
+                      if (diffMins < 0 || Math.abs(diffMins - durationMinutes) > 60) {
+                          endTime = new Date(startTime.getTime() + durationMinutes * 60000);
+                      }
+                  } else if (!endTime) {
                      endTime = new Date(startTime.getTime() + durationMinutes * 60000);
-                 }
-             } else if (!endTime) {
-                endTime = new Date(startTime.getTime() + durationMinutes * 60000);
-             } else if (endTime < startTime) {
-                // Only wrap if it represents a realistic shift or break across midnight
-                const wrappedDuration = (endTime.getTime() + 86400000 - startTime.getTime()) / 60000;
-                if (wrappedDuration <= 16 * 60) {
-                    endTime.setDate(endTime.getDate() + 1);
-                } else {
-                    // It's a typo. E.g., 13:05 to 09:11. We ignore the bad end time.
-                    endTime = new Date(startTime.getTime() + durationMinutes * 60000);
-                }
-             }
+                  } else if (endTime < startTime) {
+                     const wrappedDuration = (endTime.getTime() + 86400000 - startTime.getTime()) / 60000;
+                     if (wrappedDuration <= 16 * 60) {
+                         endTime.setDate(endTime.getDate() + 1);
+                     } else {
+                         endTime = new Date(startTime.getTime() + durationMinutes * 60000);
+                     }
+                  }
 
-             if (employeeName.includes('karely')) {
-                 console.log('Karely Event:', { startTime, endTime, status, subStatus, durationMinutes });
-             }
+                  return { gDate, employeeName, department: String(row[2] || ''), status, subStatus, remarks, originalStatus, originalSubStatus, originalRemark, rawInfo, durationMinutes, startTime, endTime, row };
+              });
 
-             return { date, employeeName, department: String(row[2] || ''), status, subStatus, remarks, originalStatus, originalSubStatus, originalRemark, rawInfo, durationMinutes, startTime, endTime, row };
-          }).sort((a,b) => a.startTime.getTime() - b.startTime.getTime());
+              // Sort chronologically by naive startTime
+              parsedGroup.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
 
-          if (allEvents.length === 0) return;
+              // Apply cross-midnight wrapping on the sorted list
+              let lastGroupStartTime: Date | null = null;
+              parsedGroup.forEach(e => {
+                  const rawTimeVal = e.row[startIndex];
+                  const isAbsoluteDate = (rawTimeVal instanceof Date && (rawTimeVal.getTimezoneOffset() > 0 ? rawTimeVal.getUTCFullYear() : rawTimeVal.getFullYear()) >= 2000) ||
+                                         (typeof rawTimeVal === 'string' && /[\/\-]/.test(rawTimeVal)) ||
+                                         (typeof rawTimeVal === 'number' && rawTimeVal >= 1);
+
+                  if (!isAbsoluteDate && lastGroupStartTime && e.startTime < lastGroupStartTime && (lastGroupStartTime.getTime() - e.startTime.getTime()) > 12 * 3600000) {
+                      e.startTime.setDate(e.startTime.getDate() + 1);
+                      if (e.endTime < e.startTime) {
+                          e.endTime.setDate(e.endTime.getDate() + 1);
+                      }
+                  }
+                  lastGroupStartTime = new Date(e.startTime);
+
+                  if (e.employeeName && String(e.employeeName).includes('karely')) {
+                      console.log('Karely Event:', { startTime: e.startTime, endTime: e.endTime, status: e.status, subStatus: e.subStatus, durationMinutes: e.durationMinutes });
+                  }
+
+                  rawEvents.push({
+                      date: e.gDate,
+                      employeeName: e.employeeName,
+                      department: e.department,
+                      status: e.status,
+                      subStatus: e.subStatus,
+                      remarks: e.remarks,
+                      originalStatus: e.originalStatus,
+                      originalSubStatus: e.originalSubStatus,
+                      originalRemark: e.originalRemark,
+                      rawInfo: e.rawInfo,
+                      durationMinutes: e.durationMinutes,
+                      startTime: e.startTime,
+                      endTime: e.endTime,
+                      row: e.row
+                  });
+              });
+          });
+
+          if (rawEvents.length === 0) return;
+
+          const uniqueEvents: typeof rawEvents = [];
+          rawEvents.forEach(e => {
+              const formatLocalTimeStr = (d: Date) => {
+                  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+              };
+              const key = `${e.date}_${formatLocalTimeStr(e.startTime)}_${formatLocalTimeStr(e.endTime)}`;
+              
+              const existingIndex = uniqueEvents.findIndex(item => {
+                  const itemKey = `${item.date}_${formatLocalTimeStr(item.startTime)}_${formatLocalTimeStr(item.endTime)}`;
+                  return itemKey === key;
+              });
+
+              if (existingIndex === -1) {
+                  uniqueEvents.push(e);
+              } else {
+                  const existing = uniqueEvents[existingIndex];
+                  // Keep the more descriptive/detailed event
+                  const existingScore = (existing.subStatus ? 2 : 0) + (existing.status && existing.status.toLowerCase() !== 'trabalho' ? 1 : 0);
+                  const newScore = (e.subStatus ? 2 : 0) + (e.status && e.status.toLowerCase() !== 'trabalho' ? 1 : 0);
+                  if (newScore > existingScore) {
+                      uniqueEvents[existingIndex] = e;
+                  }
+              }
+          });
+          const allEvents = uniqueEvents;
           
           if (!finalName) finalName = finalEmail.split('@')[0];
           finalDepartment = allEvents[0].department;
@@ -570,7 +648,13 @@ function isEventWork(e: any): boolean {
                  combinedInfo.includes('non moderating') ||
                  combinedInfo.includes('reuniao') ||
                  combinedInfo.includes('meeting') ||
-                 combinedInfo.includes('reuni');
+                 combinedInfo.includes('reuni') ||
+                 combinedInfo.includes('training') ||
+                 combinedInfo.includes('treinamento') ||
+                 combinedInfo.includes('coaching') ||
+                 combinedInfo.includes('feedback') ||
+                 combinedInfo.includes('1:1') ||
+                 combinedInfo.includes('1on1');
 }
 
 function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: number, schedShiftIdx: number, infShiftIdx: number): EmployeeDayRecord {
@@ -959,7 +1043,7 @@ function processDailyRowsFromEvents(date: string, events: any[], resignedIndex: 
   
   const idleOver = idleDuration;
   
-  const totalOver = mealOver + shortOver + wellnessOver + prayingOver + idleOver;
+  const totalOver = mealOver + shortOver + wellnessOver + prayingOver;
 
   breaks.sort((a,b) => a.startTime.getTime() - b.startTime.getTime());
 
@@ -1010,8 +1094,28 @@ function parseTime(dateStr: string, rawTime: any): Date | null {
     let d = new Date(year, month - 1, day);
 
     if (rawTime instanceof Date) {
-        d.setHours(rawTime.getHours(), rawTime.getMinutes(), rawTime.getSeconds(), 0);
-        return d;
+        const isNegativeTimezone = rawTime.getTimezoneOffset() > 0;
+        const rawYear = isNegativeTimezone ? rawTime.getUTCFullYear() : rawTime.getFullYear();
+        const rawMonth = isNegativeTimezone ? rawTime.getUTCMonth() : rawTime.getMonth();
+        const rawDate = isNegativeTimezone ? rawTime.getUTCDate() : rawTime.getDate();
+        const rawHours = isNegativeTimezone ? rawTime.getUTCHours() : rawTime.getHours();
+        const rawMinutes = isNegativeTimezone ? rawTime.getUTCMinutes() : rawTime.getMinutes();
+        const rawSeconds = isNegativeTimezone ? rawTime.getUTCSeconds() : rawTime.getSeconds();
+
+        if (rawYear >= 2000) {
+            return new Date(
+                rawYear,
+                rawMonth,
+                rawDate,
+                rawHours,
+                rawMinutes,
+                rawSeconds,
+                0
+            );
+        } else {
+            d.setHours(rawHours, rawMinutes, rawSeconds, 0);
+            return d;
+        }
     }
 
     if (typeof rawTime === 'number') {
@@ -1025,9 +1129,17 @@ function parseTime(dateStr: string, rawTime: any): Date | null {
     }
     
     const timeStr = String(rawTime).trim();
-    if (/^\d{1,2}:\d{2}/.test(timeStr)) {
-        const parts = timeStr.split(':').map(Number);
-        d.setHours(parts[0] || 0, parts[1] || 0, parts[2] || 0, 0);
+    const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([APap][Mm])?/);
+    if (timeMatch) {
+        let hours = parseInt(timeMatch[1], 10);
+        const minutes = parseInt(timeMatch[2], 10);
+        const seconds = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+        const ampm = timeMatch[4] ? timeMatch[4].toUpperCase() : null;
+        
+        if (ampm === 'PM' && hours !== 12) hours += 12;
+        if (ampm === 'AM' && hours === 12) hours = 0;
+        
+        d.setHours(hours, minutes, seconds, 0);
         return d;
     }
 

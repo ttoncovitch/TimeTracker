@@ -82,8 +82,23 @@ export default function App() {
   };
   const [summaries, setSummaries] = useState<EmployeeSummary[]>([]);
   const [lastExtractTime, setLastExtractTime] = useState<Date | null>(null);
+  const [needsUpdate, setNeedsUpdate] = useState(false);
   const [wizardStep, setWizardStep] = useState<'intro' | 'staffInfo' | 'calendar' | 'extract' | 'done'>('intro');
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    if (!lastExtractTime) {
+      setNeedsUpdate(false);
+      return;
+    }
+
+    setNeedsUpdate(false); // Reset on any update
+    const timer = setTimeout(() => {
+      setNeedsUpdate(true);
+    }, 3600000); // 1 hour
+
+    return () => clearTimeout(timer);
+  }, [lastExtractTime]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -117,6 +132,8 @@ export default function App() {
   const [includeSLGlobal, setIncludeSLGlobal] = useState(false);
   const [includeSUSPPGlobal, setIncludeSUSPPGlobal] = useState(false);
   const [includeOFFGlobal, setIncludeOFFGlobal] = useState(false);
+  const [includeNextVacationsGlobal, setIncludeNextVacationsGlobal] = useState(false);
+  const [includeRefresherGlobal, setIncludeRefresherGlobal] = useState(false);
   const [includeSupportStaff, setIncludeSupportStaff] = useState(false);
   const [includeCheckGlobal, setIncludeCheckGlobal] = useState(false);
   const [filterMinorOverbreaks, setFilterMinorOverbreaks] = useState(false);
@@ -129,9 +146,75 @@ export default function App() {
 
   const normalizeName = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/[\.,\-]/g, ' ');
 
+  const getAgentStatusGroups = (s: EmployeeSummary, keys: string[]): { startDate: string; endDate: string; status: string }[] => {
+    const recordsWithStatus: { date: string; status: string }[] = [];
+    s.dailyRecords.forEach(r => {
+      const matchingKeys = keys.filter(k => !!r[k as keyof typeof r]);
+      if (matchingKeys.length > 0) {
+        const matchedStatusLabels = matchingKeys.map(k => {
+          if (k === 'isATT') return 'ATT';
+          if (k === 'isLOA') return 'LOA';
+          if (k === 'isPTO') return 'PTO/VAC';
+          if (k === 'isSL') return 'SL';
+          if (k === 'isSUSPP') return 'SUSPP';
+          if (k === 'isOFF') return 'OFF';
+          return 'ACTIVE';
+        });
+        recordsWithStatus.push({
+          date: r.date,
+          status: matchedStatusLabels.join('/')
+        });
+      }
+    });
+    if (recordsWithStatus.length === 0) return [];
+    
+    const sorted = [...recordsWithStatus].sort((a, b) => a.date.localeCompare(b.date));
+    const groups: { startDate: string; endDate: string; status: string }[] = [];
+    
+    let currentStart = sorted[0].date;
+    let currentEnd = sorted[0].date;
+    let currentStatus = sorted[0].status;
+    
+    for (let i = 1; i < sorted.length; i++) {
+      const nextRec = sorted[i];
+      const currentEndD = new Date(currentEnd + 'T12:00:00');
+      const nextD = new Date(nextRec.date + 'T12:00:00');
+      
+      const diffTime = Math.abs(nextD.getTime() - currentEndD.getTime());
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays <= 3 && nextRec.status === currentStatus) {
+        currentEnd = nextRec.date;
+      } else {
+        groups.push({
+          startDate: currentStart,
+          endDate: currentEnd,
+          status: currentStatus
+        });
+        currentStart = nextRec.date;
+        currentEnd = nextRec.date;
+        currentStatus = nextRec.status;
+      }
+    }
+    
+    groups.push({
+      startDate: currentStart,
+      endDate: currentEnd,
+      status: currentStatus
+    });
+    
+    return groups;
+  };
+
   const findCalendarEntry = useCallback((staffEmail: string, staffName: string) => {
       // 1. Email matching
       let calEntry = calendarData.find(c => c.email && c.email.toLowerCase() === staffEmail.toLowerCase());
+
+      if (!calEntry) {
+          // 1.5. Pure name matching (with accents, case-insensitive, trimmed)
+          const lowerStaffName = staffName.toLowerCase().trim();
+          calEntry = calendarData.find(c => c.name.toLowerCase().trim() === lowerStaffName);
+      }
 
       if (!calEntry) {
           // 2. Exact name matching
@@ -335,6 +418,12 @@ export default function App() {
           dailyRecords: s.dailyRecords.map(r => ({ 
               ...r, 
               employeeName: finalName, 
+              isATT: false,
+              isLOA: false,
+              isPTO: false,
+              isSL: false,
+              isSUSPP: false,
+              isOFF: false,
               lob: finalLob 
           }))
        };
@@ -343,7 +432,7 @@ export default function App() {
     const dedupedMap = new Map<string, EmployeeSummary>();
     mergedSummaries.forEach(s => {
         if (!s) return;
-        const key = normalizeName(s.employeeName);
+        const key = s.email ? s.email.toLowerCase().trim() : normalizeName(s.employeeName);
         if (dedupedMap.has(key)) {
             const existing = dedupedMap.get(key)!;
             s.dailyRecords.forEach(dr => {
@@ -362,6 +451,44 @@ export default function App() {
         }
     });
     mergedSummaries = Array.from(dedupedMap.values()).filter(Boolean) as EmployeeSummary[];
+
+    const matchedEmails = new Set(Array.from(dedupedMap.keys()));
+    const matchedNames = new Set(Array.from(dedupedMap.values()).map(s => normalizeName(s.employeeName)));
+
+    allStaff.forEach(si => {
+       const emailKey = si.email ? si.email.toLowerCase().trim() : '';
+       const nameKey = normalizeName(si.fullName);
+       
+       const alreadyMatched = (emailKey && matchedEmails.has(emailKey)) || matchedNames.has(nameKey);
+       if (!alreadyMatched) {
+          const dummySummary: EmployeeSummary = {
+             employeeName: si.fullName,
+             email: si.email || '',
+             department: si.lob || '',
+             lob: si.lob,
+             language: normalizeLanguage(si.language),
+             role: si.role,
+             supervisor: si.tl,
+             isTraining: false,
+             totalWorkMinutes: 0,
+             totalBreakMinutes: 0,
+             totalOverbreakMinutes: 0,
+             totalTardinessMinutes: 0,
+             totalEarlyLeaveMinutes: 0,
+             totalNonModMinutes: 0,
+             totalReviewAndAppealMinutes: 0,
+             totalAwaitingTasksMinutes: 0,
+             totalForgotStatusMinutes: 0,
+             totalAbsences: 0,
+             wcAlerts: 0,
+             idleAlerts: 0,
+             dailyRecords: []
+          };
+          mergedSummaries.push(dummySummary);
+          if (emailKey) matchedEmails.add(emailKey);
+          matchedNames.add(nameKey);
+       }
+    });
 
     if (calendarData.length === 0) return mergedSummaries;
 
@@ -396,7 +523,13 @@ export default function App() {
                     if (shiftForDay) {
                         const schedUpper = String(shiftForDay).toUpperCase();
                         const isWorkingShift = /\d{1,2}:\d{2}/.test(schedUpper);
-                        const isWorkday = !schedUpper.includes('OFF') && !schedUpper.includes('VAC') && !schedUpper.includes('MAR') && !schedUpper.includes('FESTA') && !schedUpper.includes('HOLIDAY') && !schedUpper.includes('LOA') && !schedUpper.includes('PTO') && !schedUpper.includes('SL') && !schedUpper.includes('ATT') && !schedUpper.includes('SUSPP');
+                        const isWorkday = !schedUpper.includes('OFF') && !schedUpper.includes('FOLGA') &&
+                                          !schedUpper.includes('VAC') && !schedUpper.includes('MAR') && !schedUpper.includes('PTO') && !schedUpper.includes('FÉRIAS') && !schedUpper.includes('FERIAS') &&
+                                          !schedUpper.includes('FESTA') && !schedUpper.includes('HOLIDAY') &&
+                                          !schedUpper.includes('LOA') && !schedUpper.includes('LICENÇA') && !schedUpper.includes('LICENCA') &&
+                                          !schedUpper.includes('SL') && !schedUpper.includes('SICK') && !schedUpper.includes('MEDICO') && !schedUpper.includes('MED') && !schedUpper.includes('ATESTADO') &&
+                                          !schedUpper.includes('ATT') && !schedUpper.includes('SAÍDA') && !schedUpper.includes('SAIDA') && !schedUpper.includes('RESIGN') &&
+                                          !schedUpper.includes('SUSPP') && !schedUpper.includes('SUSPENSÃO') && !schedUpper.includes('SUSPENSAO');
                         const latestDateStr = format(latestDate, 'yyyy-MM-dd');
                         const maxBwStr = format(maxByteworksDate, 'yyyy-MM-dd');
                         
@@ -491,22 +624,23 @@ export default function App() {
               const isWorkingShift = /\d{1,2}:\d{2}/.test(shiftUpper);
               const isOffShift = shiftUpper.includes('OFF') || shiftUpper.includes('FOLGA');
               const isVacationShift = (shiftUpper.includes('VAC') || shiftUpper.includes('MAR') || shiftUpper.includes('PTO') || shiftUpper.includes('FÉRIAS')) && !isWorkingShift;
-              const isSickShift = (shiftUpper.includes('SL') || shiftUpper.includes('SICK') || shiftUpper.includes('MEDICO') || shiftUpper.includes('ATESTADO')) && !isWorkingShift;
-              const isLoaShift = (shiftUpper.includes('LOA') || shiftUpper.includes('LICENÇA')) && !isWorkingShift;
-              const isSusppShift = (shiftUpper.includes('SUSPP') || shiftUpper.includes('SUSPENSÃO')) && !isWorkingShift;
-              const isAttShift = (shiftUpper.includes('ATT') || shiftUpper.includes('ATTRITION') || shiftUpper.includes('RESIGN') || shiftUpper.includes('SAÍDA')) && !isWorkingShift;
+              const isSickShift = (shiftUpper.includes('SL') || shiftUpper.includes('SICK') || shiftUpper.includes('MEDICO') || shiftUpper.includes('MED') || shiftUpper.includes('ATESTADO')) && !isWorkingShift;
+              const isLoaShift = (shiftUpper.includes('LOA') || shiftUpper.includes('LICENÇA') || shiftUpper.includes('LICENCA')) && !isWorkingShift;
+              const isSusppShift = (shiftUpper.includes('SUSPP') || shiftUpper.includes('SUSPENSÃO') || shiftUpper.includes('SUSPENSAO')) && !isWorkingShift;
+              const isAttShift = (shiftUpper.includes('ATT') || shiftUpper.includes('ATTRITION') || shiftUpper.includes('RESIGN') || shiftUpper.includes('SAÍDA') || shiftUpper.includes('SAIDA')) && !isWorkingShift;
               
               return {
                  ...r,
                  scheduledShift: scheduledShift,
                  inferredShift: inferredShift,
                  lob: currentLob,
-                 isATT: isAttShift || (specificShift ? false : (isWorkingShift ? false : r.isATT)),
-                 isLOA: isLoaShift || (specificShift ? false : (isWorkingShift ? false : r.isLOA)),
-                 isPTO: isVacationShift || (specificShift ? false : (isWorkingShift ? false : r.isPTO)),
-                 isSL: isSickShift || (specificShift ? false : (isWorkingShift ? false : r.isSL)),
-                 isSUSPP: isSusppShift || (specificShift ? false : (isWorkingShift ? false : r.isSUSPP)),
-                 isOFF: isOffShift || (specificShift ? false : (isWorkingShift ? false : r.isOFF))
+                 isATT: isAttShift,
+                 isLOA: isLoaShift,
+                 isPTO: isVacationShift,
+                 isSL: isSickShift,
+                 isSUSPP: isSusppShift,
+                 isOFF: isOffShift,
+                  isAbsence: (isAttShift || isLoaShift || isVacationShift || isSickShift || isSusppShift || isOffShift) ? false : r.isAbsence
               };
            }).sort((a, b) => a.date.localeCompare(b.date));
 
@@ -569,8 +703,10 @@ export default function App() {
              nameToUse = 'Ricardo Antunes Ribeiro';
          }
 
-         const staffEntry = (emailToUse && emailToStaff.get(emailToUse.toLowerCase())) || 
-                            allStaff.find(si => normalizeName(si.fullName) === normalizeName(nameToUse));
+         const staffEntry = (emailToUse && emailToStaff.get(emailToUse.toLowerCase())) || allStaff.find(si => si.fullName.toLowerCase().trim() === nameToUse.toLowerCase().trim()) || 
+                           allStaff.find(si => si.fullName.toLowerCase().trim() === nameToUse.toLowerCase().trim()) ||
+                           allStaff.find(si => si.fullName.toLowerCase().trim() === nameToUse.toLowerCase().trim()) ||
+                           allStaff.find(si => normalizeName(si.fullName) === normalizeName(nameToUse));
 
          const dailyRecords: EmployeeDayRecord[] = [];
          if (globalMinDate <= globalMaxDate && c.schedule) {
@@ -726,6 +862,9 @@ export default function App() {
             let shiftMatchesNow = false;
 
             if (r.date === yesterdayStr) {
+                if (curTotal >= 8 * 60) {
+                    return false;
+                }
                 if (endTotal > 24 * 60) {
                     if (curTotal <= (endTotal - 24 * 60)) { 
                         shiftMatchesNow = true;
@@ -882,7 +1021,7 @@ export default function App() {
               const isToday = d.getDate() === td && d.getMonth() === tm && d.getFullYear() === ty;
               const isYesterday = d.getDate() === yd && d.getMonth() === ym && d.getFullYear() === yy;
               if (isToday) return true;
-              if (isYesterday && (isShiftCrossingMidnight(r.scheduledShift) || isShiftCrossingMidnight(r.inferredShift))) return true;
+              if (false && isYesterday && (isShiftCrossingMidnight(r.scheduledShift) || isShiftCrossingMidnight(r.inferredShift))) return true;
               return false;
            }
            if (timeFilter === 'yesterday') {
@@ -891,7 +1030,7 @@ export default function App() {
               b4Date.setDate(b4Date.getDate() - 1);
               const isDayBeforeYesterday = d.getDate() === b4Date.getDate() && d.getMonth() === b4Date.getMonth() && d.getFullYear() === b4Date.getFullYear();
               if (isYesterday) return true;
-              if (isDayBeforeYesterday && (isShiftCrossingMidnight(r.scheduledShift) || isShiftCrossingMidnight(r.inferredShift))) return true;
+              if (false && isDayBeforeYesterday && (isShiftCrossingMidnight(r.scheduledShift) || isShiftCrossingMidnight(r.inferredShift))) return true;
               return false;
            }
         }
@@ -932,7 +1071,7 @@ export default function App() {
       const finalIsSL = isGlobalView ? s.dailyRecords.some(r => r.isSL) : isSLInfo;
       const finalIsSUSPP = isGlobalView ? s.dailyRecords.some(r => r.isSUSPP) : isSUSPPInfo;
       const finalIsOFF = isGlobalView ? s.dailyRecords.some(r => r.isOFF) : isOFFInfo;
-      const totalAbsences = records.reduce((acc, r) => acc + (r.isAbsence && !r.isATT ? 1 : 0), 0);
+      const totalAbsences = records.reduce((acc, r) => acc + (r.isAbsence && !r.isATT && !r.isLOA && !r.isPTO && !r.isOFF ? 1 : 0), 0);
       
       const activeLob = [...records].reverse().find(r => r.lob)?.lob || s.lob;
 
@@ -994,7 +1133,7 @@ export default function App() {
       const finalIsSL = isGlobalView ? s.dailyRecords.some(r => r.isSL) : isSLInfo;
       const finalIsSUSPP = isGlobalView ? s.dailyRecords.some(r => r.isSUSPP) : isSUSPPInfo;
       const finalIsOFF = isGlobalView ? s.dailyRecords.some(r => r.isOFF) : isOFFInfo;
-      const totalAbsences = records.reduce((acc, r) => acc + (r.isAbsence && !r.isATT ? 1 : 0), 0);
+      const totalAbsences = records.reduce((acc, r) => acc + (r.isAbsence && !r.isATT && !r.isLOA && !r.isPTO && !r.isOFF ? 1 : 0), 0);
       
       const activeLob = [...records].reverse().find(r => r.lob)?.lob || s.lob;
 
@@ -1058,7 +1197,7 @@ export default function App() {
            else if (b.type === 'short') shortDur += b.durationMinutes;
            else if (b.type === 'wellness') wellnessDur += b.durationMinutes;
            else if (b.type === 'praying') prayingDur += b.durationMinutes;
-           else if (b.type === 'idle') idleDur += b.durationMinutes;
+           else if (b.type === 'idle' || b.type === 'forgot_status') idleDur += b.durationMinutes;
         });
 
         let wcOverbreak = Math.max(0, wcDur - 10);
@@ -1085,11 +1224,6 @@ export default function App() {
         const isOverbreakOnly = typeFilter === 'idle_overbreak_wc' && !includeWcGlobal && !includeRaGlobal && !includeAtGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal;
 
         let dailyOverbreak = mealOverbreak + shortOverbreak + wellnessOverbreak + prayingOverbreak;
-        if (isIdleOnly) {
-          dailyOverbreak += idleOverbreak;
-        } else if (!isOverbreakOnly && !isWcOnly) {
-          if (includeIdleGlobal) dailyOverbreak += idleOverbreak;
-        }
 
         // We explicitly compute wcTotalOverbreak instead of pushing it into dailyOverbreak
         // So that "OVERBREAKS" metric genuinely ignores Organic per user request.
@@ -1138,7 +1272,7 @@ export default function App() {
         const isOffboardedOnly = includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
 
         if (isWcOnly) {
-           if (r.wcDuration <= 0) return false;
+           if (r.wcOverbreak <= 0) return false;
         } else if (isIdleOnly) {
            if (r.idleDuration <= 0) return false;
         } else if (isNonModOnly) {
@@ -1159,7 +1293,7 @@ export default function App() {
         } else if (includeWcGlobal || includeIdleGlobal || includeNonModGlobal || includeRaGlobal || includeAtGlobal || includeTardinessGlobal || includeEarlyLeaveGlobal || includeShort30MinGlobal || includeAbsencesGlobal || includeOffboardedGlobal || typeFilter === 'idle_overbreak_wc') {
            // Mixed filters logic
            let keep = false;
-           if (includeWcGlobal && r.wcDuration > 0) keep = true;
+           if (includeWcGlobal && r.wcOverbreak > 0) keep = true;
            if (includeIdleGlobal && r.idleDuration > 0) keep = true;
            if (includeNonModGlobal && r.breaks.some(b => b.type === 'non_moderating' && !b.subType?.toLowerCase()?.includes('review') && !b.subType?.toLowerCase()?.includes('appeal') && !b.subType?.toLowerCase()?.includes('awaiting task'))) keep = true;
            if (includeRaGlobal && (r.reviewAndAppealDuration || 0) > 0) keep = true;
@@ -1182,7 +1316,22 @@ export default function App() {
         return true;
       });
 
-      if (records.length === 0 && !s.isOffboarded && !s.isATT && !s.isLOA && !s.isPTO && !s.isSL && !s.isSUSPP && !s.isOFF) return null;
+      const hasActiveStatusFilter = includeOFFGlobal || includeATTGlobal || includeLOAGlobal || includePTOGlobal || includeSLGlobal || includeSUSPPGlobal || includeAbsencesGlobal || includeOffboardedGlobal;
+      if (records.length === 0) {
+        if (!hasActiveStatusFilter) {
+          return null;
+        } else {
+          const matchesActiveStatus = 
+            (includeOFFGlobal && s.isOFF) ||
+            (includeATTGlobal && (s.isATT || s.isOffboarded)) ||
+            (includeLOAGlobal && s.isLOA) ||
+            (includePTOGlobal && s.isPTO) ||
+            (includeSLGlobal && s.isSL) ||
+            (includeSUSPPGlobal && s.isSUSPP) ||
+            (includeOffboardedGlobal && s.isOffboarded);
+          if (!matchesActiveStatus) return null;
+        }
+      }
 
       const totalOverbreak = records.length > 0 ? records.reduce((acc, r) => acc + r.totalOverbreak, 0) : 0;
       const wcTotalOverbreak = records.length > 0 ? records.reduce((acc, r) => acc + r.wcOverbreak, 0) : 0;
@@ -1197,7 +1346,7 @@ export default function App() {
       const totalReviewAndAppealMinutes = records.length > 0 ? records.reduce((acc, r) => acc + (r.reviewAndAppealDuration || 0), 0) : 0;
       const totalAwaitingTasksMinutes = records.length > 0 ? records.reduce((acc, r) => acc + (r.awaitingTasksDuration || 0), 0) : 0;
       const totalForgotStatusMinutes = records.length > 0 ? records.reduce((acc, r) => acc + (r.forgotStatusDuration || 0), 0) : 0;
-      const totalAbsences = records.length > 0 ? records.reduce((acc, r) => acc + (r.isAbsence ? 1 : 0), 0) : 0;
+      const totalAbsences = records.length > 0 ? records.reduce((acc, r) => acc + (r.isAbsence && !r.isLOA && !r.isPTO && !r.isOFF ? 1 : 0), 0) : 0;
       const totalWorkMinutes = records.length > 0 ? records.reduce((acc, r) => acc + (r.totalWorkTimeMillis / 60000), 0) : 0;
       const totalBreakMinutes = records.length > 0 ? records.reduce((acc, r) => {
         const breakMins = (r.mealDuration || 0) +
@@ -1237,9 +1386,113 @@ export default function App() {
     return filtered;
   }, [periodSummaries, timeFilter, typeFilter, shiftFilter, latestDate, selectedDates, includeWcGlobal, includeIdleGlobal, includeNonModGlobal, includeRaGlobal, includeAtGlobal, includeTardinessGlobal, includeMinorTardinessGlobal, includeEarlyLeaveGlobal, filterMinorOverbreaks, includeShort30MinGlobal, includeAbsencesGlobal, includeOffboardedGlobal, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeCheckGlobal, showRealTime]);
 
-  const activeAnyStatus = includeATTGlobal || includeLOAGlobal || includePTOGlobal || includeSLGlobal || includeSUSPPGlobal || includeOFFGlobal || includeOffboardedGlobal || includeAbsencesGlobal;
+  const activeAnyStatus = includeATTGlobal || includeLOAGlobal || includePTOGlobal || includeSLGlobal || includeSUSPPGlobal || includeOFFGlobal || includeOffboardedGlobal || includeAbsencesGlobal || includeNextVacationsGlobal || includeRefresherGlobal;
 
   const filteredSummaries = useMemo(() => {
+    const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Lisbon" }));
+    const todayStr = format(today, 'yyyy-MM-dd');
+
+    const hasExtraActiveFilter = includeOFFGlobal || includeATTGlobal || includeLOAGlobal || includePTOGlobal || includeSLGlobal || includeSUSPPGlobal || includeNextVacationsGlobal || includeRefresherGlobal;
+
+    if (hasExtraActiveFilter) {
+       const activeKeys: string[] = [];
+       if (includeOFFGlobal) activeKeys.push('isOFF');
+       if (includeATTGlobal) activeKeys.push('isATT');
+       if (includeLOAGlobal) activeKeys.push('isLOA');
+       if (includePTOGlobal) activeKeys.push('isPTO');
+       if (includeSLGlobal) activeKeys.push('isSL');
+       if (includeSUSPPGlobal) activeKeys.push('isSUSPP');
+       if (includeNextVacationsGlobal) activeKeys.push('isPTO');
+       if (includeRefresherGlobal) activeKeys.push('isPTO', 'isLOA', 'isSL');
+
+       return mergedSummaries.map(s => {
+          const isSupport = isSupportRole(s);
+          if (includeSupportStaff && !isSupport) return null;
+          if (!includeSupportStaff && isSupport) return null;
+
+          let refresherDateOut: string | undefined;
+
+          const groups = (() => {
+             if (includeNextVacationsGlobal) {
+                const hasVacationBeforeToday = s.dailyRecords.some(r => r.date <= todayStr && r.isPTO);
+                const hasNextVacation = s.dailyRecords.some(r => r.date > todayStr && r.isPTO);
+                if (hasVacationBeforeToday || !hasNextVacation) {
+                   return [];
+                }
+             }
+             if (includeRefresherGlobal) {
+                const rawGroups = getAgentStatusGroups(s, ['isPTO', 'isLOA', 'isSL']);
+                const longGroups = rawGroups.filter(g => {
+                   const start = new Date(g.startDate + 'T12:00:00');
+                   const end = new Date(g.endDate + 'T12:00:00');
+                   const diffDays = Math.round(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                   return diffDays >= 5;
+                });
+                
+                const activeLongGroups: any[] = [];
+                for (const g of longGroups) {
+                   let rd = '';
+                   const returnRecord = s.dailyRecords.find(r => r.date > g.endDate && r.scheduledShift && r.scheduledShift !== 'OFF' && !r.isPTO && !r.isLOA && !r.isSL);
+                   if (returnRecord) {
+                      rd = returnRecord.date;
+                   } else {
+                      const endD = new Date(g.endDate + 'T12:00:00');
+                      endD.setDate(endD.getDate() + 1);
+                      rd = format(endD, 'yyyy-MM-dd');
+                   }
+                   if (rd >= todayStr) {
+                      activeLongGroups.push({ ...g, returnDate: rd });
+                   }
+                }
+                
+                if (activeLongGroups.length > 0) {
+                   const latestGroup = activeLongGroups[activeLongGroups.length - 1];
+                   refresherDateOut = latestGroup.returnDate;
+                   return [latestGroup];
+                }
+                return [];
+             }
+             return getAgentStatusGroups(s, activeKeys);
+          })();
+
+          const hasMatchingGroup = groups.some(g => {
+             if (includeNextVacationsGlobal) {
+                return g.startDate > todayStr;
+             } else if (includeRefresherGlobal) {
+                return true;
+             } else {
+                if (timeFilter === 'day') {
+                   return g.startDate <= todayStr && g.endDate >= todayStr;
+                } else if (timeFilter === 'yesterday') {
+                   const yesterday = new Date(today);
+                   yesterday.setDate(yesterday.getDate() - 1);
+                   const yestStr = format(yesterday, 'yyyy-MM-dd');
+                   return g.startDate <= yestStr && g.endDate >= yestStr;
+                } else {
+                   return g.endDate >= todayStr;
+                }
+             }
+          });
+
+          if (!hasMatchingGroup) return null;
+
+          const filteredRecs = s.dailyRecords.filter(r => recordTimeFilterFn(r));
+
+          return {
+             ...s,
+             dailyRecords: filteredRecs,
+             isOFF: includeOFFGlobal,
+             isATT: includeATTGlobal,
+             isLOA: includeLOAGlobal || includeRefresherGlobal,
+             isPTO: includePTOGlobal || includeNextVacationsGlobal || includeRefresherGlobal,
+             isSL: includeSLGlobal || includeRefresherGlobal,
+             isSUSPP: includeSUSPPGlobal,
+             isRefresher: includeRefresherGlobal,
+             refresherDate: refresherDateOut
+          };
+       }).filter(Boolean) as EmployeeSummary[];
+    }
+
     let base = processedSummaries;
     
     if (!activeAnyStatus) {
@@ -1261,6 +1514,49 @@ export default function App() {
     }
     
     return processedSummaries.map(s => {
+       const isSupport = isSupportRole(s);
+       if (includeSupportStaff && !isSupport) return null;
+       if (!includeSupportStaff && isSupport) return null;
+
+       const hasExtraActiveFilter = includeOFFGlobal || includeATTGlobal || includeLOAGlobal || includePTOGlobal || includeSLGlobal || includeSUSPPGlobal || includeAbsencesGlobal;
+       if (hasExtraActiveFilter) {
+          const passRecord = (r: EmployeeDayRecord) => {
+            if (includeOFFGlobal && r.isOFF) return true;
+            if (includeATTGlobal && r.isATT) return true;
+            if (includeLOAGlobal && r.isLOA) return true;
+            if (includePTOGlobal && r.isPTO) return true;
+            if (includeSLGlobal && r.isSL) return true;
+            if (includeSUSPPGlobal && r.isSUSPP) return true;
+            if (includeAbsencesGlobal && r.isAbsence) return true;
+            return false;
+          };
+          
+          let recs = s.dailyRecords.filter(passRecord);
+          const sMatchesOverall = 
+            (includeOFFGlobal && s.isOFF) ||
+            (includeATTGlobal && (s.isATT || s.isOffboarded)) ||
+            (includeLOAGlobal && s.isLOA) ||
+            (includePTOGlobal && s.isPTO) ||
+            (includeSLGlobal && s.isSL) ||
+            (includeSUSPPGlobal && s.isSUSPP) ||
+            (includeAbsencesGlobal && (s.totalAbsences || 0) > 0);
+            
+          if (recs.length > 0) {
+            return { ...s, dailyRecords: recs };
+          }
+          if (sMatchesOverall && s.dailyRecords.length === 0) {
+            return s;
+          }
+          return null;
+        }
+
+        if (includeOffboardedGlobal) {
+            if (s.isOffboarded) return s;
+            return null;
+        }
+        return null;
+
+        const _ignoreOriginal = () => {
        const isSupport = isSupportRole(s);
        if (includeSupportStaff && !isSupport) return null;
        if (!includeSupportStaff && isSupport) return null;
@@ -1314,8 +1610,9 @@ export default function App() {
            return null;
        }
        return null;
+        };
     }).filter(Boolean) as EmployeeSummary[];
-  }, [processedSummaries, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeOffboardedGlobal, includeAbsencesGlobal, includeSupportStaff]);
+  }, [processedSummaries, mergedSummaries, includeATTGlobal, includeLOAGlobal, includePTOGlobal, includeSLGlobal, includeSUSPPGlobal, includeOFFGlobal, includeOffboardedGlobal, includeAbsencesGlobal, includeSupportStaff, includeNextVacationsGlobal, includeRefresherGlobal]);
 
   const hasSupportStaffWithStatus = useMemo(() => {
     if (!activeAnyStatus) return false;
@@ -1398,8 +1695,15 @@ export default function App() {
     setIncludeSLGlobal(false);
     setIncludeSUSPPGlobal(false);
     setIncludeOFFGlobal(false);
+    setIncludeNextVacationsGlobal(false);
+    setIncludeRefresherGlobal(false);
     setIncludeMinorTardinessGlobal(false);
     setIncludeSupportStaff(false);
+  };
+
+  const clearSpecialStatuses = () => {
+    setIncludeNextVacationsGlobal(false);
+    setIncludeRefresherGlobal(false);
   };
 
   const clearNormalStatuses = () => {
@@ -1598,16 +1902,18 @@ export default function App() {
     const isAbsencesOnly = includeAbsencesGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
     const isCheckOnly = includeCheckGlobal && !includeRaGlobal && !includeAtGlobal && !includeOffboardedGlobal && !includeAbsencesGlobal && !includeShort30MinGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && typeFilter === 'all';
 
-    const baseNoFilters = !includeShort30MinGlobal && !includeRaGlobal && !includeAtGlobal && !includeAbsencesGlobal && !includeOffboardedGlobal && !includeWcGlobal && !includeIdleGlobal && !includeNonModGlobal && !includeTardinessGlobal && !includeEarlyLeaveGlobal && !includeCheckGlobal && typeFilter === 'all';
-    const isATTOnly = includeATTGlobal && baseNoFilters && !includeLOAGlobal && !includePTOGlobal && !includeSLGlobal && !includeSUSPPGlobal && !includeOFFGlobal;
-    const isLOAOnly = includeLOAGlobal && baseNoFilters && !includeATTGlobal && !includePTOGlobal && !includeSLGlobal && !includeSUSPPGlobal && !includeOFFGlobal;
-    const isPTOOnly = includePTOGlobal && baseNoFilters && !includeATTGlobal && !includeLOAGlobal && !includeSLGlobal && !includeSUSPPGlobal && !includeOFFGlobal;
-    const isSLOnly = includeSLGlobal && baseNoFilters && !includeATTGlobal && !includeLOAGlobal && !includePTOGlobal && !includeSUSPPGlobal && !includeOFFGlobal;
-    const isSUSPPOnly = includeSUSPPGlobal && baseNoFilters && !includeATTGlobal && !includeLOAGlobal && !includePTOGlobal && !includeSLGlobal && !includeOFFGlobal;
-    const isOFFOnly = includeOFFGlobal && baseNoFilters && !includeATTGlobal && !includeLOAGlobal && !includePTOGlobal && !includeSLGlobal && !includeSUSPPGlobal;
+    const activeExtraStatuses: string[] = [];
+    const attrKeys: string[] = [];
+    if (includeATTGlobal) { activeExtraStatuses.push('ATT'); attrKeys.push('isATT'); }
+    if (includeLOAGlobal) { activeExtraStatuses.push('LOA'); attrKeys.push('isLOA'); }
+    if (includePTOGlobal || includeNextVacationsGlobal) { activeExtraStatuses.push('PTO/VAC'); attrKeys.push('isPTO'); }
+    if (includeSLGlobal) { activeExtraStatuses.push('SL'); attrKeys.push('isSL'); }
+    if (includeSUSPPGlobal) { activeExtraStatuses.push('SUSPP'); attrKeys.push('isSUSPP'); }
+    if (includeOFFGlobal) { activeExtraStatuses.push('OFF'); attrKeys.push('isOFF'); }
+    if (includeRefresherGlobal) { activeExtraStatuses.push('REFRESHER'); attrKeys.push('isRefresher'); }
 
-    const activeExtraStatus = isATTOnly ? 'ATT' : isLOAOnly ? 'LOA' : isPTOOnly ? 'PTO/VAC' : isSLOnly ? 'SL' : isSUSPPOnly ? 'SUSPP' : isOFFOnly ? 'OFF' : null;
-    const attrKey = isATTOnly ? 'isATT' : isLOAOnly ? 'isLOA' : isPTOOnly ? 'isPTO' : isSLOnly ? 'isSL' : isSUSPPOnly ? 'isSUSPP' : isOFFOnly ? 'isOFF' : null;
+    const activeExtraStatus = activeExtraStatuses.length > 0 ? activeExtraStatuses.join('/') : null;
+    const attrKey = attrKeys.length === 1 ? attrKeys[0] : null;
 
     let periodLabel = t('allTime');
     if (timeFilter === 'month') periodLabel = t('filterMonth');
@@ -1691,6 +1997,14 @@ export default function App() {
                 acc2 + r.breaks.filter(b => b.type === 'non_moderating').reduce((acc3, b) => acc3 + b.durationMinutes, 0), 0), 0));
     }
 
+    let periodDates = periodSummaries.flatMap(s => s.dailyRecords.map(r => r.date)).filter(Boolean).sort((a,b) => a.localeCompare(b));
+    let periodMinDateStr: string | undefined;
+    let periodMaxDateStr: string | undefined;
+    if (periodDates.length > 0) {
+       periodMinDateStr = periodDates[0];
+       periodMaxDateStr = periodDates[periodDates.length - 1];
+    }
+
     exportToPDF(nonSupportExport, titleStr, `Report_${fileSuffix}`, {
       isTardiness: isTardinessOnly,
       isMinorTardiness: isMinorTardinessOnly,
@@ -1706,13 +2020,23 @@ export default function App() {
       isCheck: includeCheckGlobal,
       statusFiltersText,
       activeExtraStatus: activeExtraStatus,
+      activeExtraStatuses: activeExtraStatuses,
       attrKey: attrKey,
+      attrKeys: attrKeys,
       totalAgentsCount,
       affectedAgentsCount,
       lang: lang as 'pt' | 'en',
       periodFilter: timeFilter,
       teamProductiveMinutes: dashTeamProductiveMinutes,
-      teamNonModMinutes: dashTeamNonModMinutes
+      teamNonModMinutes: dashTeamNonModMinutes,
+      isGroupedByTL: true,
+      allSummaries: periodSummaries,
+      showRealTime: showRealTime,
+      latestDate: latestDate,
+      selectedDateStrs: selectedDates && selectedDates.length > 0 ? selectedDates.map(d => format(d, 'yyyy-MM-dd')) : undefined,
+      periodMinDateStr,
+      periodMaxDateStr,
+      periodSummaries: periodSummaries,
     });
     toast.success(t('pdfSuccess'));
   };
@@ -1894,9 +2218,12 @@ export default function App() {
              )}
             {summaries.length > 0 && (
               <div className="relative">
-                <label className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative">
-                   <Upload size={14} className="text-emerald-600" /> 
-                   <span className="hidden sm:inline">{summaries.length > 0 ? t('updateExtract') : t('addExtract')}</span>
+                <label className={needsUpdate 
+                  ? "bg-amber-500 border border-amber-600 text-white hover:bg-amber-600 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative animate-pulse"
+                  : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold flex items-center gap-2 h-8 px-3 shadow-sm cursor-pointer transition-colors relative"
+                }>
+                   <Upload size={14} className={needsUpdate ? "text-white" : "text-emerald-600"} /> 
+                   <span className="hidden sm:inline">{needsUpdate ? "Update necessário" : (summaries.length > 0 ? t('updateExtract') : t('addExtract'))}</span>
                    <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
                 </label>
                 {lastExtractTime && (
@@ -2235,7 +2562,7 @@ export default function App() {
                                IDLE
                              </button>
                              <button
-                               onClick={() => { setIncludeNonModGlobal(!includeNonModGlobal); clearExtraStatuses(); }}
+                               style={{ display: 'none' }} onClick={() => { setIncludeNonModGlobal(!includeNonModGlobal); clearExtraStatuses(); }}
                                className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeNonModGlobal ? 'bg-teal-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
                                NON-MOD
@@ -2305,6 +2632,27 @@ export default function App() {
                            </div>
                            
                            <div className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto mt-1">
+                             <button
+                               onClick={() => {
+                                 const newVal = !includeRefresherGlobal; setIncludeRefresherGlobal(newVal); if (newVal) { setIncludeNextVacationsGlobal(false); setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); setIncludeOffboardedGlobal(false); setIncludeAbsencesGlobal(false); setIncludeCheckGlobal(false); setFilterMinorOverbreaks(false); setIncludeTardinessGlobal(false); setIncludeEarlyLeaveGlobal(false); setIncludeWcGlobal(false); setIncludeIdleGlobal(false); setIncludeNonModGlobal(false); setIncludeRaGlobal(false); setIncludeAtGlobal(false); setIncludeSupportStaff(false); setTypeFilter('all'); setShowRealTime(false); setTimeFilter('all'); setSelectedDates(undefined); };
+                                 clearNormalStatuses();
+                               }}
+                               className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${activeTab === 'dashboard' ? 'hidden' : ''} ${includeRefresherGlobal ? 'bg-orange-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               Refresher
+                             </button>
+                             <button
+                               onClick={() => {
+                                 const newVal = !includeNextVacationsGlobal; setIncludeNextVacationsGlobal(newVal); if (newVal) { setIncludeRefresherGlobal(false); setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); setIncludeOffboardedGlobal(false); setIncludeAbsencesGlobal(false); setIncludeCheckGlobal(false); setFilterMinorOverbreaks(false); setIncludeTardinessGlobal(false); setIncludeEarlyLeaveGlobal(false); setIncludeWcGlobal(false); setIncludeIdleGlobal(false); setIncludeNonModGlobal(false); setIncludeRaGlobal(false); setIncludeAtGlobal(false); setIncludeSupportStaff(false); setTypeFilter('all'); setShowRealTime(false); setTimeFilter('all'); setSelectedDates(undefined); };
+                                 clearNormalStatuses();
+                               }}
+                               className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${activeTab === 'dashboard' ? 'hidden' : ''} ${includeNextVacationsGlobal ? 'bg-indigo-600 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
+                             >
+                               Next Vacations
+                             </button>
+                           </div>
+
+                           <div className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded-[2rem] shadow-sm overflow-x-auto w-full sm:w-auto mt-1">
                              <span className="text-[9px] font-black uppercase text-slate-400 px-2 shrink-0">{t('additionalStatus')}:</span>
                              <AnimatePresence>
                                {includeTardinessGlobal && (
@@ -2323,7 +2671,7 @@ export default function App() {
                                onClick={() => {
                                  setIncludeATTGlobal(!includeATTGlobal);
                                  clearNormalStatuses();
-                                 if (!includeATTGlobal) { setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); }
+                                 clearSpecialStatuses();
                                }}
                                className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeATTGlobal ? 'bg-slate-800 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
@@ -2333,7 +2681,7 @@ export default function App() {
                                onClick={() => {
                                  setIncludeLOAGlobal(!includeLOAGlobal);
                                  clearNormalStatuses();
-                                 if (!includeLOAGlobal) { setIncludeATTGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); }
+                                 clearSpecialStatuses();
                                }}
                                className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeLOAGlobal ? 'bg-indigo-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
@@ -2343,7 +2691,7 @@ export default function App() {
                                onClick={() => {
                                  setIncludePTOGlobal(!includePTOGlobal);
                                  clearNormalStatuses();
-                                 if (!includePTOGlobal) { setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); }
+                                 clearSpecialStatuses();
                                }}
                                className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includePTOGlobal ? 'bg-cyan-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
@@ -2353,7 +2701,7 @@ export default function App() {
                                onClick={() => {
                                  setIncludeSLGlobal(!includeSLGlobal);
                                  clearNormalStatuses();
-                                 if (!includeSLGlobal) { setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSUSPPGlobal(false); setIncludeOFFGlobal(false); }
+                                 clearSpecialStatuses();
                                }}
                                className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeSLGlobal ? 'bg-rose-400 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
@@ -2363,7 +2711,7 @@ export default function App() {
                                onClick={() => {
                                  setIncludeSUSPPGlobal(!includeSUSPPGlobal);
                                  clearNormalStatuses();
-                                 if (!includeSUSPPGlobal) { setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeOFFGlobal(false); }
+                                 clearSpecialStatuses();
                                }}
                                className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeSUSPPGlobal ? 'bg-red-700 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
@@ -2373,7 +2721,7 @@ export default function App() {
                                onClick={() => {
                                  setIncludeOFFGlobal(!includeOFFGlobal);
                                  clearNormalStatuses();
-                                 if (!includeOFFGlobal) { setIncludeATTGlobal(false); setIncludeLOAGlobal(false); setIncludePTOGlobal(false); setIncludeSLGlobal(false); setIncludeSUSPPGlobal(false); }
+                                 clearSpecialStatuses();
                                }}
                                className={`px-2 py-1 w-full sm:w-auto rounded-full text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${includeOFFGlobal ? 'bg-slate-500 text-white shadow-md' : 'bg-transparent text-slate-500 hover:bg-slate-100'}`}
                              >
@@ -2426,6 +2774,7 @@ export default function App() {
                       globalIncludeSL={includeSLGlobal}
                       globalIncludeSUSPP={includeSUSPPGlobal}
                       globalIncludeOFF={includeOFFGlobal}
+                      globalIncludeNextVacations={includeNextVacationsGlobal}
                       globalFilterMajorOverbreaks={false} 
                       globalShiftFilter={shiftFilter} 
                       showRealTime={showRealTime}
@@ -2437,7 +2786,37 @@ export default function App() {
                   ) : activeTab === 'howto' ? (
                     <HowTo onBack={() => setActiveTab('dashboard')} />
                   ) : (
-                    <EmployeeList availableFilters={availableFilters} summaries={filteredSummaries} allSummaries={mergedSummaries} staffInfoData={staffInfoData} latestDate={latestDate} initialFilter={timeFilter} globalTypeFilter={typeFilter} globalIncludeWc={includeWcGlobal} globalIncludeIdle={includeIdleGlobal} globalIncludeNonMod={includeNonModGlobal} globalIncludeRa={includeRaGlobal} globalIncludeAt={includeAtGlobal} globalIncludeTardiness={includeTardinessGlobal} globalIncludeMinorTardiness={includeMinorTardinessGlobal} globalIncludeEarlyLeave={includeEarlyLeaveGlobal} globalIncludeShort30Min={includeShort30MinGlobal} globalIncludeCheck={includeCheckGlobal} globalShiftFilter={shiftFilter} globalFilterMajorOverbreaks={false} />
+                    <EmployeeList
+                      availableFilters={availableFilters}
+                      summaries={filteredSummaries}
+                      allSummaries={mergedSummaries}
+                      staffInfoData={staffInfoData}
+                      latestDate={latestDate}
+                      initialFilter={timeFilter}
+                      globalTypeFilter={typeFilter}
+                      globalIncludeWc={includeWcGlobal}
+                      globalIncludeIdle={includeIdleGlobal}
+                      globalIncludeNonMod={includeNonModGlobal}
+                      globalIncludeRa={includeRaGlobal}
+                      globalIncludeAt={includeAtGlobal}
+                      globalIncludeTardiness={includeTardinessGlobal}
+                      globalIncludeMinorTardiness={includeMinorTardinessGlobal}
+                      globalIncludeEarlyLeave={includeEarlyLeaveGlobal}
+                      globalIncludeShort30Min={includeShort30MinGlobal}
+                      globalIncludeCheck={includeCheckGlobal}
+                      globalIncludeAbsences={includeAbsencesGlobal}
+                      globalIncludeATT={includeATTGlobal}
+                      globalIncludeLOA={includeLOAGlobal}
+                      globalIncludePTO={includePTOGlobal}
+                      globalIncludeSL={includeSLGlobal}
+                      globalIncludeSUSPP={includeSUSPPGlobal}
+                      globalIncludeOFF={includeOFFGlobal}
+                      globalIncludeNextVacations={includeNextVacationsGlobal}
+                      globalIncludeRefresher={includeRefresherGlobal}
+                      globalShiftFilter={shiftFilter}
+                      globalFilterMajorOverbreaks={false}
+                      showRealTime={showRealTime}
+                    />
                   )}
                 </div>
               </motion.div>

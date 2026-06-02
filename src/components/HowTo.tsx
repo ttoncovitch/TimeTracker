@@ -135,7 +135,7 @@ export function HowTo({ onBack }: HowToProps) {
                    <ul className="list-disc pl-5 mt-2 space-y-1 text-slate-500">
                      <li><strong>Tardiness:</strong> Cruzado pelos minutos de diferença onde não houve o Registro no Byteworks vs inicio de turno do calendário.</li>
                      <li><strong>Early Leave:</strong> Agentes que terminaram final de escala mais cedo.</li>
-                     <li><strong>Idle:</strong> Tempo em ócio sem justificação, 1 minuto flaggado já é 1 minuto de <em>overbreak</em> direto.</li>
+                     <li><strong>Idle:</strong> Tempo em ócio sem justificação (não somado no overbreak).</li>
                    </ul>
                 </div>
              </div>

@@ -31,6 +31,7 @@ interface StatsDashboardProps {
   globalIncludeSL?: boolean;
   globalIncludeSUSPP?: boolean;
   globalIncludeOFF?: boolean;
+  globalIncludeNextVacations?: boolean;
   globalIncludeCheck?: boolean;
   globalFilterMajorOverbreaks: boolean;
   globalShiftFilter?: string[];
@@ -60,6 +61,7 @@ export function StatsDashboard({
   globalIncludeSL,
   globalIncludeSUSPP,
   globalIncludeOFF,
+  globalIncludeNextVacations,
   globalIncludeCheck, 
   globalFilterMajorOverbreaks, 
   globalShiftFilter = [], 
@@ -182,14 +184,6 @@ export function StatsDashboard({
         } else {
           // Combined or Default
           dailyOverbreak = mealOver + shortOver + wellnessOver + prayingOver;
-          if (globalIncludeIdle) dailyOverbreak += idleOver;
-          if (globalIncludeTardiness) {
-              if (globalIncludeMinorTardiness) {
-                  dailyOverbreak += ((r.tardinessMinutes || 0) > 0 && (r.tardinessMinutes || 0) < 15 ? r.tardinessMinutes! : 0);
-              } else {
-                  dailyOverbreak += ((r.tardinessMinutes || 0) >= 15 ? r.tardinessMinutes! : 0);
-              }
-          }
         }
 
         return {
